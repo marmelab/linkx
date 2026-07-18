@@ -55,7 +55,12 @@ export function getOrientation(
   return makeOrientation(shapeId, rotation, flipped)
 }
 
-export function getUniqueOrientations(shapeId: ShapeId): Orientation[] {
+// Les orientations d'une forme sont déterministes : on les calcule une fois puis
+// on les met en cache. L'énumération des coups appelle cette fonction à chaque
+// nœud du minimax, où recalculer rotations, miroirs et déduplication coûte cher.
+const uniqueOrientationsCache = new Map<ShapeId, Orientation[]>()
+
+function computeUniqueOrientations(shapeId: ShapeId): Orientation[] {
   const orientations: Orientation[] = []
   const seen = new Set<string>()
 
@@ -73,3 +78,14 @@ export function getUniqueOrientations(shapeId: ShapeId): Orientation[] {
   return orientations
 }
 
+/**
+ * Orientations distinctes d'une forme. Le tableau renvoyé est partagé et mis en
+ * cache ; les appelants doivent le traiter en lecture seule.
+ */
+export function getUniqueOrientations(shapeId: ShapeId): Orientation[] {
+  const cached = uniqueOrientationsCache.get(shapeId)
+  if (cached) return cached
+  const orientations = computeUniqueOrientations(shapeId)
+  uniqueOrientationsCache.set(shapeId, orientations)
+  return orientations
+}

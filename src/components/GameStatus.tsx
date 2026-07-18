@@ -29,12 +29,14 @@ export function GameStatus({
   return (
     <div
       className={`game-status game-status--${activePlayer}${thinking ? ' game-status--thinking' : ''}`}
-      aria-label={`Tour des ${NAMES[activePlayer]}`}
       aria-live="polite"
     >
       <span className="turn-arrow" aria-hidden="true">
         {activePlayer === 'blue' ? '←' : '→'}
       </span>
+      {/* Le changement de joueur vit dans le texte annoncé, pas dans un
+          aria-label : muter un aria-label ne déclenche pas d'annonce. */}
+      <p className="visually-hidden">Tour des {NAMES[activePlayer]}</p>
       {message && <p>{message}</p>}
     </div>
   )

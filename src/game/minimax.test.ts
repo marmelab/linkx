@@ -89,6 +89,71 @@ describe('Minimax', () => {
     })
   })
 
+  it('bloque la connexion immédiate de l’adversaire', () => {
+    // Les bleus occupent les colonnes 0 à 7 de la ligne du bas : ils gagnent en
+    // atteignant le bord droit par la colonne 8. C'est aux blancs (l'ordi) de jouer.
+    const position = createGamePosition('white')
+    for (let x = 0; x < 8; x += 1) {
+      position.board[8][x] = { player: 'blue', shapeId: 'mono', pieceId: `blue-${x}` }
+    }
+
+    const blueThreatens = enumerateLegalMoves(
+      position.board,
+      position.inventories.blue,
+    ).some(
+      (move) =>
+        simulateLegalMove({ ...position, activePlayer: 'blue' }, move).result?.winner ===
+        'blue',
+    )
+    expect(blueThreatens).toBe(true)
+
+    const decision = chooseMinimaxMove(position, { depth: 2 })
+    expect(decision).not.toBeNull()
+    if (!decision) return
+
+    const afterAi = simulateLegalMove(position, decision.move)
+    const blueStillWins = enumerateLegalMoves(
+      afterAi.position.board,
+      afterAi.position.inventories.blue,
+    ).some(
+      (move) => simulateLegalMove(afterAi.position, move).result?.winner === 'blue',
+    )
+    expect(blueStillWins).toBe(false)
+  })
+
+  it('choisit un coup déterministe pour une même position', () => {
+    let position = createGamePosition('blue')
+    position = playMove(position, 'bar3', 0, 0)
+    position = playMove(position, 'domino', 1, 0)
+    const first = chooseMinimaxMove(position, { depth: 2 })
+    const second = chooseMinimaxMove(position, { depth: 2 })
+    expect(second?.move).toEqual(first?.move)
+  })
+
+  it('conclut une simulation par un match nul à zones égales', () => {
+    const position = createGamePosition('blue')
+    position.board[8][0] = { player: 'blue', shapeId: 'mono', pieceId: 'b0' }
+    position.board[8][1] = { player: 'blue', shapeId: 'mono', pieceId: 'b1' }
+    position.board[8][7] = { player: 'white', shapeId: 'mono', pieceId: 'w7' }
+    position.board[8][8] = { player: 'white', shapeId: 'mono', pieceId: 'w8' }
+    for (const player of ['blue', 'white'] as const) {
+      for (const shapeId of SHAPE_IDS) position.inventories[player][shapeId] = 0
+    }
+    position.inventories.blue.mono = 1
+
+    const move = enumerateLegalMoves(position.board, position.inventories.blue).find(
+      (candidate) => candidate.shapeId === 'mono' && candidate.column === 4,
+    )
+    expect(move).toBeDefined()
+    if (!move) return
+
+    expect(simulateLegalMove(position, move).result).toEqual({
+      winner: null,
+      reason: 'draw',
+      largestZones: { blue: 2, white: 2 },
+    })
+  })
+
   it('simule une passe forcée et un blocage total', () => {
     const forcedPass = createGamePosition('blue')
     for (const shapeId of SHAPE_IDS) forcedPass.inventories.white[shapeId] = 0

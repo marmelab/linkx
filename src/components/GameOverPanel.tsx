@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react'
 import type { GameResult, PlayerId } from '../game/types'
 
 type GameOverPanelProps = {
@@ -8,6 +9,14 @@ type GameOverPanelProps = {
 const NAMES: Record<PlayerId, string> = { blue: 'bleus', white: 'blancs' }
 
 export function GameOverPanel({ result, onReset }: GameOverPanelProps) {
+  // Le panneau remplace la barre de statut : sans déplacer le focus, le clavier
+  // retomberait sur <body> quand les commandes de pose disparaissent, et le
+  // résultat ne serait pas lu.
+  const titleRef = useRef<HTMLHeadingElement>(null)
+  useEffect(() => {
+    titleRef.current?.focus()
+  }, [])
+
   const title = result.winner
     ? `Victoire des ${NAMES[result.winner]} !`
     : 'Match nul'
@@ -22,7 +31,7 @@ export function GameOverPanel({ result, onReset }: GameOverPanelProps) {
     <section className={`game-over-panel game-over-panel--${result.winner ?? 'draw'}`} aria-labelledby="game-over-title" aria-live="assertive">
       <span className="winner-medal" aria-hidden="true">✦</span>
       <div className="game-over-copy">
-        <h2 id="game-over-title">{title}</h2>
+        <h2 id="game-over-title" tabIndex={-1} ref={titleRef}>{title}</h2>
         <p>{explanation}</p>
       </div>
       {result.largestZones && (

@@ -276,7 +276,10 @@
 .close-button { position: absolute; top: 0.8rem; right: 0.8rem; width: 36px; height: 36px; border-radius: 50%; background: transparent; color: #616b7b; font-size: 1.5rem; }
 .close-button:hover { background: #e7e8eb; }
 
-@media (max-width: 1050px) {
+/* Les deux réserves de 330px encadrent une grille d'au moins 500px : le passage
+   en une colonne doit intervenir avant 1160px, sinon la mise en page déborde
+   horizontalement sur les largeurs intermédiaires. */
+@media (max-width: 1199px) {
   .game-layout { grid-template-columns: minmax(0, 1fr); }
   .piece-tray { min-width: 0; padding: 1rem 1.2rem; border: 0; border-bottom: 1px solid #d2d5db; }
   .piece-tray--white { border-top: 1px solid #d2d5db; border-bottom: 0; }
@@ -300,7 +303,6 @@
   .setup-screen { padding: 0.8rem; }
   .setup-card { padding: 2rem 1.1rem 1.5rem; }
   .setup-intro { font-size: 0.88rem; }
-  .player-choice { grid-template-columns: 1fr; }
   .modal-backdrop { padding: 0.8rem; }
   .game-over-panel { flex-wrap: wrap; }
   .game-over-panel .primary-button { margin-left: auto; }

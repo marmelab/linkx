@@ -91,27 +91,36 @@ export function Board({
             />
           )}
         </svg>
-        {board.flatMap((row, y) =>
-          row.map((cell, x) => {
-            const isGhost = ghostCells.has(`${x},${y}`)
-            const classNames = [
-              'board-cell',
-              cell ? `board-cell--${cell.player}` : '',
-            ]
-              .filter(Boolean)
-              .join(' ')
-            return (
-              <div
-                className={classNames}
-                role="gridcell"
-                aria-label={`Ligne ${y + 1}, colonne ${x + 1}${cell ? `, ${cell.player === 'blue' ? 'bleu' : 'blanc'}` : ', vide'}${isGhost ? ', aperçu' : ''}`}
-                key={`${x}-${y}`}
-                onMouseEnter={aiming ? () => onPointColumn?.(x) : undefined}
-                onClick={aiming ? () => onDropColumn?.(x) : undefined}
-              />
-            )
-          }),
-        )}
+        {board.map((row, y) => (
+          // `display: contents` garde chaque case comme élément direct de la
+          // grille CSS : la structure ARIA grille › ligne › cellule devient
+          // valide sans changer la mise en page.
+          <div
+            role="row"
+            style={{ display: 'contents' }}
+            key={`row-${y}`}
+          >
+            {row.map((cell, x) => {
+              const isGhost = ghostCells.has(`${x},${y}`)
+              const classNames = [
+                'board-cell',
+                cell ? `board-cell--${cell.player}` : '',
+              ]
+                .filter(Boolean)
+                .join(' ')
+              return (
+                <div
+                  className={classNames}
+                  role="gridcell"
+                  aria-label={`Ligne ${y + 1}, colonne ${x + 1}${cell ? `, ${cell.player === 'blue' ? 'bleu' : 'blanc'}` : ', vide'}${isGhost ? ', aperçu' : ''}`}
+                  key={`${x}-${y}`}
+                  onMouseEnter={aiming ? () => onPointColumn?.(x) : undefined}
+                  onClick={aiming ? () => onDropColumn?.(x) : undefined}
+                />
+              )
+            })}
+          </div>
+        ))}
       </div>
     </div>
   )

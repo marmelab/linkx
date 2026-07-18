@@ -240,6 +240,103 @@ describe('coups et reducer', () => {
       largestZones: { blue: 1, white: 0 },
     })
   })
+
+  it('conclut par un match nul quand les plus grandes zones sont à égalité', () => {
+    let state = gameReducer(createInitialState(), { type: 'START_GAME', firstPlayer: 'blue' })
+    for (const player of ['blue', 'white'] as const) {
+      for (const shapeId of SHAPE_IDS) state.inventories[player][shapeId] = 0
+    }
+    occupy(state.board, [{ x: 0, y: 8 }, { x: 1, y: 8 }], 'blue')
+    occupy(state.board, [{ x: 7, y: 8 }, { x: 8, y: 8 }], 'white')
+    state.inventories.blue.mono = 1
+    state = gameReducer(state, { type: 'SELECT_SHAPE', player: 'blue', shapeId: 'mono' })
+    // La case isolée en (4, 8) laisse la plus grande zone bleue à 2, comme la blanche.
+    state = gameReducer(state, { type: 'DROP_SELECTED_SHAPE', column: 4 })
+    expect(state.phase).toBe('finished')
+    expect(state.result).toEqual({
+      winner: null,
+      reason: 'draw',
+      largestZones: { blue: 2, white: 2 },
+    })
+  })
+})
+
+describe('gardes du reducer', () => {
+  const started = () =>
+    gameReducer(createInitialState(), { type: 'START_GAME', firstPlayer: 'blue' })
+
+  it('ignore une sélection hors phase de jeu', () => {
+    const setup = createInitialState()
+    expect(
+      gameReducer(setup, { type: 'SELECT_SHAPE', player: 'blue', shapeId: 'mono' }),
+    ).toBe(setup)
+  })
+
+  it('ignore la sélection du joueur inactif', () => {
+    const state = started()
+    expect(
+      gameReducer(state, { type: 'SELECT_SHAPE', player: 'white', shapeId: 'mono' }),
+    ).toBe(state)
+  })
+
+  it('ignore la sélection d’une forme épuisée', () => {
+    const state = started()
+    state.inventories.blue.mono = 0
+    expect(
+      gameReducer(state, { type: 'SELECT_SHAPE', player: 'blue', shapeId: 'mono' }),
+    ).toBe(state)
+  })
+
+  it('ignore la sélection d’un exemplaire déjà joué', () => {
+    const state = started()
+    state.playedCopies.blue.mono = [true, false]
+    expect(
+      gameReducer(state, { type: 'SELECT_SHAPE', player: 'blue', shapeId: 'mono', copy: 0 }),
+    ).toBe(state)
+  })
+
+  it('retourne la sélection et l’ignore sans sélection', () => {
+    let state = started()
+    expect(gameReducer(state, { type: 'FLIP_SELECTION' })).toBe(state)
+    state = gameReducer(state, { type: 'SELECT_SHAPE', player: 'blue', shapeId: 's' })
+    const flipped = gameReducer(state, { type: 'FLIP_SELECTION' })
+    expect(flipped.selection?.flipped).toBe(true)
+  })
+
+  it('ignore une rotation sans sélection', () => {
+    const state = started()
+    expect(gameReducer(state, { type: 'ROTATE_SELECTION' })).toBe(state)
+  })
+
+  it('ignore une pose sans sélection', () => {
+    const state = started()
+    expect(gameReducer(state, { type: 'DROP_SELECTED_SHAPE', column: 4 })).toBe(state)
+  })
+
+  it('ignore un coup de l’ordinateur dont les exemplaires sont épuisés', () => {
+    let state = gameReducer(createInitialState(), {
+      type: 'START_GAME',
+      firstPlayer: 'white',
+      mode: 'ai',
+    })
+    state.playedCopies.white.mono = [true, true]
+    expect(
+      gameReducer(state, {
+        type: 'PLAY_AI_MOVE',
+        shapeId: 'mono',
+        rotation: 0,
+        flipped: false,
+        column: 3,
+      }),
+    ).toBe(state)
+  })
+
+  it('réinitialise entièrement la partie', () => {
+    let state = started()
+    state = gameReducer(state, { type: 'SELECT_SHAPE', player: 'blue', shapeId: 'mono' })
+    state = gameReducer(state, { type: 'DROP_SELECTED_SHAPE', column: 4 })
+    expect(gameReducer(state, { type: 'RESET_GAME' })).toEqual(createInitialState())
+  })
 })
 
 describe('partie contre l’ordinateur', () => {
@@ -337,6 +434,16 @@ describe('connexions', () => {
     expect(getWinningPath(diagonal, 'blue')).toEqual(
       Array.from({ length: 9 }, (_, value) => ({ x: value, y: value })),
     )
+  })
+
+  it('reconstruit un chemin gagnant vertical du haut vers le bas', () => {
+    const board = createEmptyBoard()
+    occupy(board, Array.from({ length: 9 }, (_, y) => ({ x: 4, y })))
+    const path = getWinningPath(board, 'blue')
+    expect(path).toHaveLength(9)
+    expect(path[0]).toEqual({ x: 4, y: 0 })
+    expect(path[path.length - 1]).toEqual({ x: 4, y: 8 })
+    expect(path.every(({ x }) => x === 4)).toBe(true)
   })
 
   it('ne connecte pas deux zones séparées ou de couleurs adverses', () => {

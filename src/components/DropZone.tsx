@@ -37,6 +37,7 @@ export function DropZone({
           aria-label={`Faire tomber la pièce depuis la colonne ${column + 1}`}
           onMouseEnter={() => onHover(column)}
           onFocus={() => onHover(column)}
+          onBlur={() => onHover(null)}
           onClick={() => onDrop(column)}
         >
           {!silent && (
