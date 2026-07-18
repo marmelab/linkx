@@ -6,6 +6,15 @@ type GameStatusProps = {
   ghostMessage: string | null
   /** Vrai pendant que l'ordinateur cherche son coup. */
   thinking?: boolean
+  /**
+   * Commande de conseil. Elle n'apparaît que lorsqu'un humain a la main : un
+   * surlignage permanent gâcherait la partie, et l'ordinateur n'a rien à se
+   * faire conseiller.
+   */
+  canHint?: boolean
+  /** Vrai pendant la recherche du conseil, peinte avant que celle-ci démarre. */
+  hintPending?: boolean
+  onHint?: () => void
 }
 
 const NAMES: Record<PlayerId, string> = { blue: 'bleus', white: 'blancs' }
@@ -15,6 +24,9 @@ export function GameStatus({
   event,
   ghostMessage,
   thinking = false,
+  canHint = false,
+  hintPending = false,
+  onHint,
 }: GameStatusProps) {
   let message: string | null = null
 
@@ -24,6 +36,7 @@ export function GameStatus({
     message = 'Pose refusée.'
   }
   if (ghostMessage) message = ghostMessage
+  if (hintPending) message = 'Recherche du meilleur coup…'
   if (thinking) message = 'L’ordinateur réfléchit…'
 
   return (
@@ -48,6 +61,16 @@ export function GameStatus({
         Tour des {NAMES[activePlayer]} : leur réserve devient la réserve active.
       </p>
       {message && <p>{message}</p>}
+      {canHint && onHint && (
+        <button
+          type="button"
+          className="hint-button"
+          disabled={hintPending}
+          onClick={onHint}
+        >
+          {hintPending ? 'Recherche…' : 'Conseil'}
+        </button>
+      )}
     </div>
   )
 }

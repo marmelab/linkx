@@ -59,12 +59,13 @@ src/
     evaluation.ts       getConnectionScore, heuristique de distance aux bords
     simulation.ts       position pure simulée pour la recherche
     minimax.ts          chooseMinimaxMove, niveaux de difficulté, alpha-bêta et table de transposition
+    hint.ts             chooseHint et canOfferHint, conseil au joueur au trait
     reducer.ts          état initial et transitions du jeu
     boardText.ts        parseur/sérialiseur du format B/W/.
     moveNotation.ts     grammaire, parse et sérialisation d'une notation de partie
     queryState.ts       construction d'un état depuis la query string
   components/           affichage React
-    Board.tsx           grille, ghost, surlignage du chemin gagnant
+    Board.tsx           grille, ghost, surlignage du chemin gagnant et du conseil
     DropZone.tsx        entrées de colonnes pour pointeur grossier et clavier
     PieceShape.tsx      rendu SVG d'une orientation
     PlexiDefs.tsx       `<defs>` partagés : biseau, reflet et ombre des pièces
@@ -104,6 +105,9 @@ Les tests vivent à côté de leur module, en `*.test.ts` / `*.test.tsx`.
 - `PlexiDefs.test.tsx` verrouille ces points : dégradés tous en `userSpaceOnUse`, aucun filtre d'éclairage, aucune longueur de filtre à l'échelle de la case, et huit orientations d'une forme asymétrique qui ne diffèrent que par leur tracé.
 - `simulation.ts` fournit la position pure utilisée par `minimax.ts` ; elle rejoue les mêmes fonctions de domaine que le reducer, sans les dupliquer.
 - `minimax.ts` traduit seul un niveau en profondeur : `DIFFICULTY_DEPTHS` donne la profondeur visée, `getAffordableDepth` l'abaisse tant que la position offre trop de coups légaux, et `chooseMoveForDifficulty` enchaîne les deux pour le joueur au trait. L'interface transmet un niveau, jamais une profondeur.
+- `hint.ts` conseille le joueur au trait en réutilisant la recherche existante : `chooseHint` délègue à `chooseMoveForDifficulty` et hérite donc du plafond adaptatif, sans second mécanisme de budget. Il ne réimplémente ni l'énumération des coups ni l'évaluation. `canOfferHint` dit à lui seul quand la commande a un sens — partie en cours et joueur au trait humain.
+- Le conseil est rattaché dans `App.tsx` à l'**état exact** pour lequel il a été demandé, jamais à un drapeau. Toute action produit un nouvel état, donc la demande en cours et le conseil affiché cessent d'y correspondre et disparaissent sans qu'aucun effet n'ait à les nettoyer, y compris si le joueur agit pendant la recherche. Une action refusée renvoie l'état inchangé et laisse le conseil en place, ce qui est le comportement voulu.
+- La mise en évidence du conseil est un mécanisme **distinct** du chemin gagnant : classes, calque et teinte propres. Le chemin gagnant reste un contour transparent sur des pièces posées ; le conseil désigne des cases vides et porte un fond. Ne pas fondre les deux rendus.
 - L'état de survol, les délais et les animations restent dans l'UI tant qu'ils n'affectent pas les règles.
 
 ### Ordre des réserves et mise en page

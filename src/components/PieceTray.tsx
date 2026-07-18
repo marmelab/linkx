@@ -9,6 +9,8 @@ type PieceTrayProps = {
   playedCopies: PlayedCopies
   active: boolean
   selection: Selection | null
+  /** Exemplaire conseillé, mis en évidence jusqu'à la prochaine action. */
+  hint?: { shapeId: ShapeId; copy: 0 | 1 } | null
   onSelect: (shapeId: ShapeId, copy: 0 | 1) => void
 }
 
@@ -23,6 +25,7 @@ export function PieceTray({
   playedCopies,
   active,
   selection,
+  hint = null,
   onSelect,
 }: PieceTrayProps) {
   return (
@@ -47,13 +50,18 @@ export function PieceTray({
                   available &&
                   selection?.shapeId === shapeId &&
                   selection.copy === copy
+                const hinted =
+                  active &&
+                  available &&
+                  hint?.shapeId === shapeId &&
+                  hint.copy === copy
                 return available ? (
                   <button
                     type="button"
-                    className={`piece-button${selected ? ' is-selected' : ''}`}
+                    className={`piece-button${selected ? ' is-selected' : ''}${hinted ? ' piece-button--hinted' : ''}`}
                     disabled={!active}
                     aria-pressed={selected}
-                    aria-label={`${SHAPE_LABELS[shapeId]}, exemplaire ${copy + 1}${selected ? '. Cliquer à nouveau pour tourner.' : ''}`}
+                    aria-label={`${SHAPE_LABELS[shapeId]}, exemplaire ${copy + 1}${hinted ? '. Pièce conseillée.' : ''}${selected ? '. Cliquer à nouveau pour tourner.' : ''}`}
                     onClick={() => onSelect(shapeId, copy)}
                     key={copy}
                   >

@@ -12,6 +12,12 @@ type BoardProps = {
   winningPath?: Point[]
   /** Lance le feu d'artifice de fin, une seule fois, à l'annonce du vainqueur. */
   celebrate?: boolean
+  /**
+   * Cases visées par le conseil, le temps que le joueur les repère. Calque et
+   * classes distincts du chemin gagnant : les deux n'ont ni le même sens ni le
+   * même moment, et ne doivent pas se partager un rendu.
+   */
+  hintCells?: Point[]
   /** Pièce à faire briller, le temps que le joueur repère le coup de l'ordi. */
   glowPieceId?: string | null
   /** Visée au pointeur : la colonne survolée porte la pièce, le clic la pose. */
@@ -54,6 +60,7 @@ export function Board({
   ghostPlayer,
   winningPath = [],
   celebrate = false,
+  hintCells = [],
   glowPieceId = null,
   aiming = false,
   onPointColumn,
@@ -104,6 +111,12 @@ export function Board({
               key={`sheen-${piece.id}`}
             />
           ))}
+          {/* Le conseil désigne des cases encore vides : il se pose au-dessus des
+              dalles, sans matière ni reflet, et disparaît dès que le joueur agit.
+              Il ne peut pas coexister avec le ghost, qui suppose une sélection. */}
+          {hintCells.length > 0 && (
+            <path className="board-hint" d={getCellsOutlinePath(hintCells)} />
+          )}
           {ghost && (
             <>
               <path

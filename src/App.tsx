@@ -11,13 +11,21 @@ import { SetupPanel } from './components/SetupPanel'
 import { FLIPPABLE_SHAPES } from './game/pieces'
 import { getWinningPath } from './game/connectivity'
 import { aimedColumn, calculateDrop } from './game/placement'
-import { createInitialState, gameReducer } from './game/reducer'
+import { createInitialState, firstAvailableCopy, gameReducer } from './game/reducer'
+import { canOfferHint, chooseHint } from './game/hint'
+import type { Hint } from './game/hint'
 import { getOrientation } from './game/transforms'
 import { createGameStateFromSearch } from './game/queryState'
 import { chooseMoveForDifficulty } from './game/minimax'
 import { usePointerHasHover } from './components/usePointerHasHover'
 import { BOARD_SIZE, PLAYER_IDS } from './game/types'
-import type { Difficulty, GameMode, InvalidDropReason, PlayerId } from './game/types'
+import type {
+  Difficulty,
+  GameMode,
+  GameState,
+  InvalidDropReason,
+  PlayerId,
+} from './game/types'
 
 const DROP_MESSAGES: Record<InvalidDropReason, string> = {
   'horizontal-bounds': 'Cette orientation dépasse du plateau.',
@@ -28,6 +36,12 @@ const DROP_MESSAGES: Record<InvalidDropReason, string> = {
 /** Laisse le temps d'afficher « réfléchit… » et de suivre le coup de l'ordi. */
 const AI_THINKING_DELAY = 500
 const AI_GLOW_DURATION = 2400
+/**
+ * La recherche du conseil est synchrone : ce délai n'existe que pour laisser le
+ * navigateur peindre l'état d'attente avant de lui rendre la main. Il reste bien
+ * plus court que celui de l'ordinateur, qui sert lui à cadencer la partie.
+ */
+const HINT_THINKING_DELAY = 90
 
 function App() {
   const [state, dispatch] = useReducer(gameReducer, undefined, () => {
@@ -41,7 +55,20 @@ function App() {
   const [pointedColumn, setPointedColumn] = useState<number | null>(null)
   const [rulesOpen, setRulesOpen] = useState(false)
   const [glowPieceId, setGlowPieceId] = useState<string | null>(null)
+  // Le conseil est rattaché à l'état exact pour lequel il a été demandé, jamais
+  // à un drapeau que le temps pourrait désynchroniser. Toute action produit un
+  // nouvel état : la demande en cours et le conseil affiché cessent alors de
+  // correspondre et disparaissent d'eux-mêmes, sans qu'aucun effet n'ait à
+  // courir après. Une action refusée, elle, renvoie l'état inchangé et laisse
+  // donc le conseil en place — c'est bien ce qu'on veut, rien ne s'est passé.
+  const [hintRequest, setHintRequest] = useState<GameState | null>(null)
+  const [hintResult, setHintResult] = useState<{
+    state: GameState
+    hint: Hint | null
+  } | null>(null)
   const pointerHasHover = usePointerHasHover()
+  const hintPending = hintRequest === state
+  const hint = hintResult?.state === state ? hintResult.hint : null
 
   const startGame = (mode: GameMode, difficulty: Difficulty) =>
     dispatch({
@@ -54,6 +81,7 @@ function App() {
 
   const aiTurn =
     state.phase === 'playing' && state.activePlayer === state.aiPlayer
+  const hintAvailable = canOfferHint(state)
 
   const orientation = state.selection
     ? getOrientation(
@@ -116,6 +144,28 @@ function App() {
     }, AI_THINKING_DELAY)
     return () => clearTimeout(timer)
   }, [aiTurn, state.activePlayer, state.board, state.difficulty, state.inventories])
+
+  // Même contrainte que le tour de l'ordinateur : la recherche est synchrone et
+  // bloque brièvement le rendu, d'où le délai qui laisse d'abord peindre l'état
+  // d'attente. Le plafond adaptatif de la recherche borne le pire cas.
+  //
+  // Si le joueur agit pendant la recherche, l'état change, la demande cesse de
+  // le désigner et le nettoyage annule le calcul avant qu'il ne parte.
+  useEffect(() => {
+    if (hintRequest !== state) return
+    const timer = setTimeout(() => {
+      setHintResult({
+        state,
+        hint: chooseHint({
+          board: state.board,
+          inventories: state.inventories,
+          activePlayer: state.activePlayer,
+        }),
+      })
+      setHintRequest(null)
+    }, HINT_THINKING_DELAY)
+    return () => clearTimeout(timer)
+  }, [hintRequest, state])
 
   // La pièce de l'ordinateur brille un moment : sans cela, le plateau change
   // tout seul et le joueur ne voit pas ce qui vient d'être posé.
@@ -190,6 +240,13 @@ function App() {
   // l'écran. Sur bureau, `grid-column` les repose à gauche et à droite.
   const trayOrder: PlayerId[] =
     state.activePlayer === 'white' ? ['white', 'blue'] : ['blue', 'white']
+  // La réserve met en évidence l'exemplaire qui sera effectivement consommé,
+  // celui-là même que la pose choisirait pour la forme conseillée.
+  const hintCopy = hint
+    ? firstAvailableCopy(state, state.activePlayer, hint.shapeId)
+    : null
+  const trayHint =
+    hint && hintCopy !== null ? { shapeId: hint.shapeId, copy: hintCopy } : null
 
   return (
     <main className="game-shell">
@@ -219,6 +276,9 @@ function App() {
                   event={state.lastEvent}
                   ghostMessage={ghostMessage}
                   thinking={aiTurn}
+                  canHint={hintAvailable}
+                  hintPending={hintPending}
+                  onHint={() => setHintRequest(state)}
                 />
               )}
             </div>
@@ -291,6 +351,7 @@ function App() {
             ghostPlayer={state.activePlayer}
             winningPath={winningPath}
             celebrate={state.phase === 'finished' && Boolean(state.result?.winner)}
+            hintCells={hint?.cells ?? []}
             glowPieceId={glowPieceId}
             aiming={aiming && pointerHasHover}
             onPointColumn={setPointedColumn}
@@ -311,6 +372,7 @@ function App() {
             playedCopies={state.playedCopies[player]}
             active={state.phase === 'playing' && state.activePlayer === player && !aiTurn}
             selection={state.activePlayer === player ? state.selection : null}
+            hint={state.activePlayer === player ? trayHint : null}
             onSelect={(shapeId, copy) => dispatch({ type: 'SELECT_SHAPE', player, shapeId, copy })}
           />
         ))}

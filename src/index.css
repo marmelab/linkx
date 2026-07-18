@@ -14,6 +14,12 @@
   --white-piece: #fffdfa;
   --line: #c9ced8;
   --red: #d9363e;
+  /* Teinte du conseil. Un violet franc ne se confond avec aucun camp — bleu ni
+     blanc —, ni avec l'or du chemin gagnant, ni avec le rouge d'une pose
+     refusée : la mise en évidence garde le même sens sur les deux couleurs de
+     pièces et sur les cases vides. */
+  --hint: #7c3aed;
+  --hint-dark: #5b21b6;
   /* Contour des silhouettes, en unités de case : réserve, ghost et grille
      partagent la même épaisseur, seule la teinte change avec le joueur. */
   --piece-outline: 0.06;

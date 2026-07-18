@@ -215,6 +215,15 @@
 .piece-tray--white .piece-button.is-selected { box-shadow: inset 0 0 0 3px #5c6575; }
 .piece-button:disabled { cursor: default; }
 .piece-button--unavailable { cursor: default; }
+/* Exemplaire conseillé. Le liseré violet se pose sur les deux réserves — fond
+   clair côté bleu, gris bleuté côté blanc — sans emprunter ni la teinte de la
+   sélection ni celle d'un camp. Comme la sélection efface le conseil, les deux
+   états ne peuvent pas se superposer ; la spécificité les départage malgré tout. */
+.piece-button.piece-button--hinted {
+  background: rgb(124 58 237 / 12%);
+  box-shadow: inset 0 0 0 3px var(--hint);
+  animation: hint-ring 1.1s ease-in-out infinite alternate;
+}
 
 /* Le jeu de `<defs>` partagé n'a rien à peindre : il n'existe que pour être
    référencé en `url(#…)` depuis les silhouettes du document. */
@@ -266,6 +275,26 @@
 .game-status--thinking p { color: var(--ink); font-weight: 700; animation: thinking-pulse 1s ease-in-out infinite alternate; }
 
 @keyframes thinking-pulse { from { opacity: 0.45; } to { opacity: 1; } }
+
+/* Commande de conseil, dans le bandeau de tour parce qu'elle ne vaut que pour le
+   joueur au trait : elle disparaît d'elle-même pendant le tour de l'ordinateur et
+   à la fin de la partie, quand le panneau final remplace le bandeau. `flex` fixe
+   l'empêche de se laisser comprimer par un message long. */
+.hint-button {
+  flex: 0 0 auto;
+  padding: 0.34rem 0.7rem;
+  border: 1px solid var(--hint);
+  border-radius: 999px;
+  background: rgb(124 58 237 / 8%);
+  color: var(--hint-dark);
+  font-size: 0.74rem;
+  font-weight: 800;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.hint-button:hover:not(:disabled) { background: rgb(124 58 237 / 18%); }
+.hint-button:disabled { cursor: progress; opacity: 0.55; }
 
 .selection-stage { position: relative; display: grid; width: min(100%, 520px); height: 150px; flex: 0 0 150px; place-items: center; }
 .selected-piece-preview { display: grid; width: 142px; height: 142px; place-items: center; cursor: pointer; }
@@ -385,6 +414,34 @@
   12% { opacity: 1; transform: translate(calc(var(--spark-dx) * var(--spark-reach) * 0.3), calc(var(--spark-dy) * var(--spark-reach) * 0.3)) scale(1); }
   70% { opacity: 0.8; }
   100% { opacity: 0; transform: translate(calc(var(--spark-dx) * var(--spark-reach)), calc(var(--spark-dy) * var(--spark-reach) + 26px)) scale(0.55); }
+}
+
+/* Conseil : les cases exactes où poser la pièce recommandée, orientation
+   comprise. Mécanisme distinct du chemin gagnant, et rendu distinct : celui-ci
+   n'est qu'un contour posé sur des pièces existantes, quand le conseil désigne
+   des cases vides et peut donc porter un fond. Les deux ne se confondent pas.
+
+   Toutes les longueurs sont en fractions de case : sur cette couche, une unité
+   utilisateur vaut une case, et un `px` déplacerait ou épaissirait la forme
+   d'une case entière. Elles restent au passage bien en deçà de l'échelle de la
+   case, pour ne pas s'aligner sur les divisions internes des polyominos. */
+.board-hint {
+  fill: var(--hint);
+  fill-opacity: 0.22;
+  stroke: var(--hint-dark);
+  stroke-width: 0.11;
+  stroke-linejoin: miter;
+  pointer-events: none;
+  animation: hint-pulse 1.1s ease-in-out infinite alternate;
+}
+
+/* Les deux respirations partent de l'état atténué et vont vers l'état franc :
+   sous `prefers-reduced-motion`, où la durée tombe à presque rien, c'est la mise
+   en évidence pleine qui reste affichée. */
+@keyframes hint-pulse { from { opacity: 0.55; } to { opacity: 1; } }
+@keyframes hint-ring {
+  from { box-shadow: inset 0 0 0 3px rgb(124 58 237 / 45%); }
+  to { box-shadow: inset 0 0 0 3px var(--hint); }
 }
 
 /* Dialogs */
@@ -539,6 +596,9 @@
      hauteur tombe alors d'elle-même à zéro. */
   .game-status { min-height: 0; gap: 0.5rem; padding: 0; background: transparent; }
   .game-status p { max-width: none; padding: 0.4rem 0.2rem; font-size: 0.68rem; text-align: left; }
+  /* Le bandeau n'a plus de fond ni de flèche : le bouton de conseil se resserre
+     pour tenir dans la rangée qui longe l'aperçu de sélection. */
+  .hint-button { padding: 0.3rem 0.58rem; font-size: 0.68rem; }
   .game-over-panel { height: auto; min-height: 84px; }
   /* Rien de sélectionné : l'aperçu ne prend aucune place. */
   .selection-stage:empty { display: none; }
