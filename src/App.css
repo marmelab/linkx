@@ -115,7 +115,7 @@
   margin: 0.25rem 0 0.75rem;
   color: var(--ink);
   font: 800 clamp(3.5rem, 10vw, 5.7rem)/0.95 'Avenir Next', 'Segoe UI', sans-serif;
-  letter-spacing: -0.09em;
+  letter-spacing: 0.02em;
 }
 
 .setup-intro { max-width: 440px; margin: 0 auto 2rem; color: #5e687a; line-height: 1.6; }
