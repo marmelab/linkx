@@ -5,7 +5,6 @@
 - Lire entièrement `plan.md` avant toute modification fonctionnelle ou visuelle importante.
 - `plan.md` est la spécification de référence : règles, topologies, algorithmes, UX, tests et critères d'acceptation doivent rester cohérents avec lui.
 - Lorsqu'une décision produit ou utilisateur modifie le comportement attendu, mettre à jour `plan.md` dans le même changement. Supprimer les anciennes recommandations contradictoires au lieu de simplement en ajouter une nouvelle.
-- Ne pas déduire les règles depuis des photos ou des souvenirs du jeu si `plan.md` les précise. Les matrices et arbitrages validés dans le plan priment.
 
 ## Stack et commandes
 
@@ -48,14 +47,9 @@ npm run build
 - L'interface doit rester dépouillée. Ne pas ajouter de texte visible lorsque la forme, la couleur ou l'interaction suffisent.
 - Mettre les libellés nécessaires aux lecteurs d'écran et aux tests dans `aria-label`, `aria-live` ou `data-testid`, sans encombrer l'écran.
 - Ne pas afficher les noms de formes, multiplicateurs, numéros de colonnes, angles de rotation ou légendes haut/bas/gauche/droite dans l'interface de jeu.
-- Les réserves conservent toujours deux silhouettes par forme : pleines si disponibles, pointillées si jouées. Ne pas entourer chaque paire d'un rectangle permanent.
-- Les silhouettes des réserves restent dans leur orientation canonique compacte. Une sélection ou rotation ne doit jamais modifier leur géométrie ni leur hauteur.
-- Afficher la pièce sélectionnée et ses transformations dans la zone fixe au-dessus de la grille. Cette zone garde la même hauteur avec ou sans sélection afin que la grille ne saute jamais.
-- Les cellules d'une même pièce doivent former une silhouette continue dans la réserve, le ghost et la grille. Utiliser les mêmes matrices et la même logique de voisinage orthogonal ; ne pas redessiner une topologie à la main.
-- Ne pas arrondir les angles rentrants des polyominos. Vérifier particulièrement le S/Z, qui ne doit présenter ni petit coin ni encoche parasite.
+- Le survol et la sélection d'une silhouette ne doivent changer ni marge, ni padding, ni position.
 - Les pièces blanches doivent rester lisibles : fond de réserve gris bleuté et contour externe sombre, sans lignes internes entre les cellules d'une même pièce.
 - Le panneau de fin est compact, non modal et placé au-dessus du plateau. Il ne doit jamais masquer la grille.
-- Après une victoire par connexion, surligner le chemin gagnant exact reconstruit par le moteur.
 - Respecter `prefers-reduced-motion` pour les animations.
 
 ## Responsive et accessibilité
@@ -74,8 +68,10 @@ npm run build
 - Pour une modification d'interface, vérifier dans un navigateur réel au minimum : état initial, sélection, rotation, pose valide, pose refusée et changement de joueur.
 - Pour les réserves, contrôler visuellement la séquence `deux pleines → une pleine + une pointillée → deux pointillées`.
 - Comparer la position document de la grille avant et après sélection/rotation pour détecter tout saut de mise en page.
-- Poser réellement un S/Z lors des contrôles visuels afin de repérer les artefacts de jonction.
+- Poser réellement un L/J, un S/Z et un T lors des contrôles visuels afin de repérer les artefacts de jonction.
 - Vérifier le panneau final et le chemin gagnant avec une vraie victoire jouée.
+- Pour reproduire rapidement une grille, utiliser `?board=<9 lignes B/W/. séparées par />&turn=blue|white`. Une connexion déjà gagnante ouvre directement le panneau final. Le parseur partagé se trouve dans `src/game/boardText.ts` ; ne pas recréer ce format dans un test.
+- Les fixtures URL regroupent les cases orthogonalement connexes d'une couleur sous un même `pieceId`. Elles ne restaurent ni l'inventaire consommé ni la frontière entre deux pièces adjacentes de même couleur.
 - Contrôler au moins un viewport bureau et un viewport mobile ; vérifier l'absence de débordement horizontal et d'erreur console.
 
 ## Discipline de modification

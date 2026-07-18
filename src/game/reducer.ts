@@ -1,6 +1,6 @@
 import { getLargestZone, hasWinningConnection } from './connectivity'
 import { hasLegalMove } from './legalMoves'
-import { createInitialInventory } from './pieces'
+import { createInitialInventory, INITIAL_ROTATIONS } from './pieces'
 import { calculateDrop, createEmptyBoard } from './placement'
 import { getOrientation } from './transforms'
 import type {
@@ -131,7 +131,12 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
       }
       return {
         ...state,
-        selection: { shapeId: action.shapeId, copy, rotation: 0, flipped: false },
+        selection: {
+          shapeId: action.shapeId,
+          copy,
+          rotation: INITIAL_ROTATIONS[action.shapeId],
+          flipped: false,
+        },
         lastEvent: null,
       }
     }

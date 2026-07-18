@@ -161,6 +161,42 @@ describe('coups et reducer', () => {
     expect(state.selection?.rotation).toBe(1)
   })
 
+  it('sélectionne chaque forme dans la même orientation que sa réserve', () => {
+    let state = gameReducer(createInitialState(), { type: 'START_GAME', firstPlayer: 'blue' })
+    state = gameReducer(state, { type: 'SELECT_SHAPE', player: 'blue', shapeId: 's' })
+    expect(state.selection?.rotation).toBe(1)
+  })
+
+  it('permet de choisir séparément les deux exemplaires d’une forme', () => {
+    let state = gameReducer(createInitialState(), { type: 'START_GAME', firstPlayer: 'blue' })
+    state = gameReducer(state, {
+      type: 'SELECT_SHAPE',
+      player: 'blue',
+      shapeId: 'domino',
+      copy: 0,
+    })
+    state = gameReducer(state, {
+      type: 'SELECT_SHAPE',
+      player: 'blue',
+      shapeId: 'domino',
+      copy: 1,
+    })
+    expect(state.selection).toMatchObject({ shapeId: 'domino', copy: 1, rotation: 0 })
+  })
+
+  it('marque comme joué l’exemplaire réellement sélectionné', () => {
+    let state = gameReducer(createInitialState(), { type: 'START_GAME', firstPlayer: 'blue' })
+    state = gameReducer(state, {
+      type: 'SELECT_SHAPE',
+      player: 'blue',
+      shapeId: 'mono',
+      copy: 1,
+    })
+    state = gameReducer(state, { type: 'DROP_SELECTED_SHAPE', column: 4 })
+    expect(state.playedCopies.blue.mono).toEqual([false, true])
+    expect(state.inventories.blue.mono).toBe(1)
+  })
+
   it('passe automatiquement un joueur sans coup', () => {
     let state = gameReducer(createInitialState(), { type: 'START_GAME', firstPlayer: 'blue' })
     for (const shapeId of SHAPE_IDS) state.inventories.white[shapeId] = 0

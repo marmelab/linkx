@@ -23,11 +23,14 @@ export function GameStatus({
   if (ghostMessage) message = ghostMessage
 
   return (
-    <div className={`game-status game-status--${activePlayer}`} aria-live="polite">
-      <div>
-        <span className="status-eyebrow">Tour en cours</span>
-        <h1>Aux {NAMES[activePlayer]}</h1>
-      </div>
+    <div
+      className={`game-status game-status--${activePlayer}`}
+      aria-label={`Tour des ${NAMES[activePlayer]}`}
+      aria-live="polite"
+    >
+      <span className="turn-arrow" aria-hidden="true">
+        {activePlayer === 'blue' ? '←' : '→'}
+      </span>
       {message && <p>{message}</p>}
     </div>
   )

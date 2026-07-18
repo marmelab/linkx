@@ -210,8 +210,8 @@ Sur écran de bureau :
 
 - Les deux réserves doivent rester visibles.
 - La zone centrale contient l'état du tour, les entrées de colonnes et la grille.
-- La réserve du joueur actif est mise en évidence.
 - La réserve adverse est visible mais non interactive.
+- Le bandeau placé au-dessus de la grille indique le joueur actif par une seule flèche : vers la réserve bleue à gauche ou vers la réserve blanche à droite. Il n'affiche pas de libellé de tour.
 - Utiliser un fond neutre suffisamment contrasté pour que les pièces blanches restent lisibles.
 - Sur bureau, utiliser trois colonnes d'environ `330 px / zone centrale / 330 px`. La grille centrale est limitée à environ `520 px` afin que les pièces de réserve puissent être représentées presque à la même échelle que les pièces jouées.
 
@@ -219,26 +219,28 @@ Sur petit écran, conserver la grille prioritaire et réorganiser les réserves 
 
 ### 5.2 Affichage de l'inventaire
 
-Afficher sept boutons de forme par joueur, sans nom visible et sans badge numérique.
+Afficher sept groupes de forme par joueur, sans nom visible et sans badge numérique.
 
-- Chaque bouton conserve toujours deux silhouettes identiques : un exemplaire disponible est plein, un exemplaire déjà joué reste visible sous forme de contour pointillé.
+- Chaque groupe conserve toujours deux silhouettes identiques : un exemplaire disponible est plein et constitue son propre bouton ; un exemplaire déjà joué reste visible sous forme de contour pointillé et n'est plus interactif.
 - La séquence visuelle est donc `deux pleines`, puis `une pleine + une pointillée`, puis `deux pointillées`.
 - Sur bureau, chaque forme occupe sa propre ligne. Sur tablette et mobile, ces lignes deviennent des cartes dans une rangée horizontale défilante.
-- Lorsque les deux exemplaires sont joués, le bouton devient indisponible mais ses deux silhouettes pointillées restent pleinement lisibles.
+- Lorsque les deux exemplaires sont joués, les deux silhouettes pointillées restent pleinement lisibles mais aucune zone interactive ne subsiste.
 - Une pose décrémente exactement une occurrence.
-- Le joueur ne choisit pas entre deux exemplaires identiques : il choisit une forme dont le compteur est positif.
-- Les noms de forme et les quantités restent disponibles uniquement dans le nom accessible du bouton (`aria-label`) pour les lecteurs d'écran et les tests.
+- Le joueur sélectionne directement une silhouette disponible, jamais la ligne ou le groupe entier. Les deux exemplaires d'une même forme ont le même comportement de jeu mais des boutons et états sélectionnés distincts.
+- Les noms de forme et les quantités restent disponibles uniquement dans les noms accessibles du groupe et des boutons (`aria-label`) pour les lecteurs d'écran et les tests.
 - Les cellules graphiques des pièces de réserve utilisent une taille d'environ `46 px`. La grille centrale est dimensionnée pour que la partie visible d'une case jouée soit de taille équivalente.
-- Choisir pour les aperçus non sélectionnés une orientation compacte et reconnaissable ; le `S` est affiché horizontalement pour limiter la hauteur de la réserve.
-- La réserve affiche les formes directement sur son fond, sans rectangle blanc ni bordure permanente autour de chaque paire. Un fond léger apparaît seulement au survol ou pour signaler la sélection.
+- Choisir une orientation initiale compacte et reconnaissable ; le `S` est affiché horizontalement pour limiter la hauteur de la réserve. Cette orientation est une donnée partagée par la réserve et le reducer : au premier clic, l'aperçu central doit être strictement orienté comme la silhouette cliquée, puis les rotations partent de cette orientation.
+- La réserve affiche les formes directement sur son fond, sans rectangle blanc ni bordure permanente autour de chaque paire. Un fond léger épouse uniquement la silhouette cliquée au survol ou pour signaler la sélection ; il ne doit modifier ni marge, ni padding, ni position afin d'éviter tout saut.
 - La réserve blanche utilise un fond gris bleuté plus soutenu. Les silhouettes blanches pleines ont un contour externe gris foncé, et leurs versions indisponibles un contour pointillé sombre.
+- Supprimer entièrement l'en-tête visible de chaque réserve : aucun texte « Réserve », nom de couleur, pastille ou badge de tour ne doit apparaître au-dessus des pièces.
 
 ### 5.3 Sélection, rotation et miroir
 
 Interaction demandée :
 
-- premier clic sur une pièce : sélection ;
-- nouveau clic sur la pièce déjà sélectionnée : rotation de 90° ;
+- premier clic sur un exemplaire disponible : sélection de cet exemplaire ;
+- clic sur l'autre exemplaire de la même forme : changement de sélection sans rotation ;
+- nouveau clic sur l'exemplaire déjà sélectionné : rotation de 90° ;
 - bouton visible « Retourner » pour `grand L` et `S` ;
 - raccourci clavier `F` pour retourner ;
 - raccourci clavier `R` ou flèches pour tourner, en complément du clic ;
@@ -249,7 +251,7 @@ Le bouton de retournement peut être masqué ou désactivé pour les formes dont
 
 Ne pas afficher de texte du type « nom de la pièce · 90° ». La zone centrale contient seulement la silhouette sélectionnée et les boutons `Tourner`/`Retourner`.
 
-La zone de sélection doit conserver une hauteur fixe d'environ `64 px`, qu'une pièce soit sélectionnée ou non. Les entrées de colonnes ont elles aussi un espace réservé de hauteur fixe. Le bord supérieur de la grille ne doit donc jamais changer de position lors d'une sélection, d'une rotation ou d'un retournement.
+La zone de sélection doit conserver une hauteur fixe d'environ `150 px`, qu'une pièce soit sélectionnée ou non, afin de contenir une orientation de trois cases à l'échelle de jeu. Les cellules de l'aperçu central utilisent exactement la même taille nominale que celles de la réserve (`46 px`) et une taille visuelle équivalente aux cases jouées. Les entrées de colonnes ont elles aussi un espace réservé de hauteur fixe. Le bord supérieur de la grille ne doit donc jamais changer de position lors d'une sélection, d'une rotation ou d'un retournement.
 
 ### 5.4 Ghost et dépôt
 
@@ -277,7 +279,7 @@ Prévoir :
 - bouton `Nouvelle partie` ;
 - aide/règles résumées sans quitter la partie.
 
-Le panneau final ne doit jamais être modal et ne doit jamais recouvrir la grille. Il remplace la barre d'état au-dessus du plateau afin que le dernier coup et le chemin gagnant restent immédiatement visibles. Il contient un bouton compact `Rejouer`.
+Le panneau final ne doit jamais être modal et ne doit jamais recouvrir la grille. Il remplace la barre d'état au-dessus du plateau afin que le dernier coup et le chemin gagnant restent immédiatement visibles. Le bandeau, la zone de sélection vide et l'espace des entrées de colonnes conservent exactement leurs hauteurs pendant ce remplacement : le bord supérieur de la grille ne doit pas remonter à la fin de la partie. Le panneau contient un bouton compact `Rejouer`.
 
 Ne pas afficher de texte d'instruction permanent lorsque le visuel suffit. Les informations nécessaires à l'accessibilité et aux tests doivent être placées dans des attributs `aria-*` ou `data-testid`, pas ajoutées comme libellés visibles.
 
@@ -285,13 +287,34 @@ Ne pas afficher de texte d'instruction permanent lorsque le visuel suffit. Les i
 
 - Les carrés qui composent une même pièce doivent former une silhouette continue, dans la réserve, dans le ghost et une fois posés sur la grille.
 - Dans la réserve, les cellules d'une matrice se touchent sans gouttière ni bordure interne.
-- La réserve et la grille partent des mêmes matrices et de la même logique de voisins orthogonaux. Ne pas recréer manuellement une géométrie différente pour le plateau.
-- Sur le plateau, utiliser le `pieceId` pour reconnaître les voisins orthogonaux appartenant à la même pièce. Étendre leur remplissage dans la gouttière de la grille et supprimer les bordures internes correspondantes.
+- La réserve et la grille partent des mêmes matrices et appellent la même fonction de calcul des voisins orthogonaux. Ne pas recréer manuellement une géométrie différente pour le plateau.
+- Sur le plateau, utiliser le `pieceId` pour regrouper les cases d'une même pièce et dessiner une silhouette SVG unique par pièce. Chaque case contribue un rectangle dont les côtés atteignent ou chevauchent très légèrement la limite commune avec ses voisins orthogonaux. Le chemin de remplissage ne possède aucun `stroke` : un trait appliqué aux sous-rectangles reste visible dans les angles concaves des L, T et S, même avec `paint-order`. Pour le contraste, produire uniquement un contour externe depuis l'alpha fusionné de la silhouette avec `feMorphology` (`dilate`), puis placer ce contour derrière `SourceGraphic`. Le filtre voit la forme pleine, jamais ses arêtes internes, et ne peut donc créer aucune encoche centrale. Ne jamais appliquer de `drop-shadow` CSS décalée aux chemins SVG du plateau : ses unités sont mises à l'échelle du `viewBox` et créent de grosses formes grises autour des pièces. La grille reste dessinée sous cette couche par les bordures fines des cases.
 - Les cellules des polyominos restent rectangulaires, sans arrondi aux angles rentrants. En particulier, le `S`/`Z` ne doit présenter aucun petit coin, encoche ou artefact à ses jonctions.
 - Deux pièces distinctes, même de même couleur et adjacentes, doivent rester visuellement séparables.
 - Les pièces blanches utilisent un contour externe gris sur fond gris bleuté pour rester lisibles, sans ajouter de lignes entre les cellules d'une même pièce.
-- Après une victoire par connexion, reconstruire un chemin précis reliant les deux bords opposés et surligner uniquement ses cellules avec un contour lumineux jaune/or animé.
+- Après une victoire par connexion, reconstruire un chemin précis reliant les deux bords opposés et surligner uniquement ses cellules avec un contour SVG lumineux jaune/or animé. Ce contour reste transparent : il ne pose aucun fond au-dessus des pièces et ne change jamais la couleur bleue ou blanche du chemin victorieux.
 - Le surlignage doit respecter `prefers-reduced-motion`.
+
+### 5.7 Chargement de positions pour les tests visuels
+
+L'application peut démarrer directement depuis une grille non vide fournie dans la query string. Cette entrée est réservée aux tests, démonstrations et reproductions visuelles ; elle n'ajoute aucun contrôle visible à l'interface.
+
+- Paramètre obligatoire : `board`, avec exactement 9 lignes de 9 caractères.
+- Symboles partagés avec `evaluation.test.ts` : `B` pour bleu, `W` pour blanc et `.` pour vide.
+- Dans une URL, séparer les lignes par `/`. Une chaîne compacte de 81 caractères et le format multiligne des tests sont aussi acceptés par le parseur commun.
+- Paramètre optionnel : `turn=blue` ou `turn=white`, bleu par défaut. Les alias `B` et `W` sont acceptés.
+- Une grille valide démarre directement en phase `playing`, sans écran de configuration.
+- Si la grille contient déjà une connexion gagnante pour une seule couleur, démarrer en phase `finished`, afficher le panneau final et reconstruire le chemin gagnant. Refuser une grille où les deux joueurs gagnent simultanément.
+- Les inventaires restent complets : la représentation `B/W/.` ne contient pas l'historique des pièces jouées. Cette entrée sert à tester le plateau et les interactions depuis la position chargée, pas à restaurer une sauvegarde exacte.
+- Pour le rendu SVG, regrouper en une même pièce de fixture les cases orthogonalement connexes d'une même couleur. Deux pièces réelles de même couleur qui se touchent orthogonalement ne peuvent pas être distinguées par ce format volontairement simple.
+
+Exemple avec un S bleu et une case blanche, au tour des blancs :
+
+```text
+?board=........./........./........./........./........./........./.B......./BB......./B.......W&turn=white
+```
+
+Le parsing et la sérialisation de cette représentation appartiennent à un module de domaine commun utilisé à la fois par les tests d'évaluation et le chargeur de query string. Ne pas maintenir deux parseurs divergents.
 
 ## 6. Architecture recommandée
 
@@ -305,7 +328,12 @@ src/
     transforms.ts
     placement.ts
     connectivity.ts
+    boardText.ts
+    queryState.ts
     legalMoves.ts
+    evaluation.ts
+    simulation.ts
+    minimax.ts
     reducer.ts
     selectors.ts
     game.test.ts
@@ -360,8 +388,11 @@ type Board = BoardCell[][] // toujours 9 lignes de 9 colonnes
 
 type Inventory = Record<ShapeId, 0 | 1 | 2>
 
+type PlayedCopies = Record<ShapeId, [boolean, boolean]>
+
 type Selection = {
   shapeId: ShapeId
+  copy: 0 | 1
   rotation: 0 | 1 | 2 | 3
   flipped: boolean
 }
@@ -382,6 +413,7 @@ L'état minimal doit contenir :
 - phase : configuration, partie ou fin ;
 - grille ;
 - inventaire bleu et blanc ;
+- état joué/disponible de chacun des deux exemplaires de chaque forme, afin que la silhouette cliquée soit exactement celle qui devient pointillée ;
 - joueur actif ;
 - sélection courante ;
 - nombre de passes consécutives ;
@@ -562,7 +594,27 @@ Exposer `getConnectionScore(board, player)`, une fonction pure qui estime, pour 
 
 Une grille vide a donc un score de `9`, une grille déjà gagnante un score de `0`, et une grille dont les deux axes sont rendus impossibles par l'adversaire un score infini. Un score plus petit est meilleur.
 
-Cette première heuristique mesure des cases à conquérir et non des pièces ou des tours. Elle ignore volontairement les formes restantes, la gravité et les supports légaux. Un futur Minimax pourra notamment comparer les joueurs avec `score adverse - score du joueur` et compléter cette valeur par des critères de jouabilité.
+Cette première heuristique mesure des cases à conquérir et non des pièces ou des tours. Elle ignore volontairement les formes restantes, la gravité et les supports légaux. Le Minimax compare les joueurs avec `score adverse - score du joueur` et complète cette valeur par la différence entre leurs plus grandes zones.
+
+### 7.9 Minimax
+
+Le moteur expose une sélection de coup pure, indépendante de React :
+
+```ts
+chooseMinimaxMove(position, { depth: 2 })
+```
+
+- la profondeur compte les poses futures, et vaut `2` par défaut afin d'examiner le coup de l'ordinateur puis la meilleure réponse adverse ;
+- chaque nœud énumère uniquement les coups légaux depuis `legalMoves.ts` ;
+- la simulation recalcule la chute, décrémente l'inventaire, détecte la victoire immédiate, les passes forcées et le blocage total ;
+- les nœuds de l'ordinateur maximisent le score et ceux de l'adversaire le minimisent ;
+- les résultats terminaux dominent toujours l'heuristique, avec une préférence pour une victoire plus rapide et une défaite plus tardive ;
+- les positions non terminales utilisent `100 × (distance adverse - distance ordinateur)`, puis la différence de taille des plus grandes zones comme départage ;
+- une distance infinie est remplacée par une valeur finie supérieure à toute distance possible avant la soustraction ;
+- appliquer l'élagage alpha-bêta, ordonner les coups racine par l'heuristique et utiliser une table de transposition qui distingue valeurs exactes, bornes basses et bornes hautes ;
+- retourner le coup, sa valeur et le nombre de nœuds explorés, ou `null` si aucun coup n'est disponible.
+
+Cette étape fournit le moteur et son banc de validation. Le choix d'un adversaire ordinateur dans l'interface reste une évolution distincte.
 
 ## 8. Plan de tests
 
@@ -631,26 +683,41 @@ Scripts cibles :
 
 ### 8.6 Tests d'évaluation de grille
 
+Isoler ces scénarios dans `evaluation.test.ts` et décrire les grilles sous forme textuelle avec `B` pour une case bleue, `W` pour une case blanche et `.` pour une case vide.
+
 - grille vide : score `9` pour les deux joueurs ;
 - liaison gagnante horizontale, verticale ou diagonale : score `0` ;
 - plusieurs zones séparées : somme minimale des cases vides nécessaires pour les raccorder aux bords ;
 - choix du meilleur axe lorsque les distances horizontale et verticale diffèrent ;
-- cases adverses infranchissables et score infini si aucun axe ne reste accessible.
+- cases adverses infranchissables et score infini si aucun axe ne reste accessible ;
+- au moins deux positions mixtes issues de parties rejouées avec de vraies pièces et uniquement des poses légales, puis comparées à leur représentation textuelle avant l'évaluation.
 
-### 8.7 Tests d'interface
+### 8.7 Tests du Minimax
+
+- refuser une profondeur inférieure à `1` ;
+- choisir immédiatement une pose gagnante depuis une position construite avec des coups légaux ;
+- simuler correctement une passe forcée et une fin par blocage total ;
+- jouer au moins 20 parties déterministes contre un adversaire aléatoire, en étant premier joueur dans la moitié des parties et second dans l'autre moitié ;
+- à profondeur `2`, gagner au moins 80 % de cet échantillon et obtenir strictement plus de victoires que de défaites.
+
+### 8.8 Tests d'interface
 
 - seule la réserve active est interactive ;
-- un premier clic sélectionne ;
-- un second clic sur la même forme tourne ;
+- un premier clic sur une silhouette disponible sélectionne cet exemplaire ;
+- un clic sur l'autre exemplaire identique change la sélection sans tourner ;
+- un second clic sur le même exemplaire tourne ;
 - `Retourner` transforme le grand L en J et S en Z ;
-- chaque ligne de réserve conserve deux silhouettes : deux pleines, puis une pleine et une pointillée, puis deux pointillées ;
+- chaque groupe de réserve conserve deux silhouettes individuellement cliquables tant qu'elles sont disponibles : deux pleines, puis une pleine et une pointillée, puis deux pointillées ;
 - aucun nom de forme ni badge `×1`/`×2` n'est visible ; les informations restent présentes dans les attributs ARIA ;
 - aucun rectangle ou séparateur permanent n'entoure les paires dans la réserve ;
+- aucun en-tête visible ne précède les réserves et le bandeau central indique le tour uniquement par une flèche gauche/droite ;
+- le survol ou la sélection d'une silhouette de réserve ne déplace aucun élément ;
 - la réserve blanche et ses silhouettes pleines ou pointillées restent nettement lisibles ;
 - sélectionner ou tourner une pièce ne modifie ni la géométrie de la réserve ni la position de la grille ;
 - la pièce sélectionnée et sa rotation apparaissent uniquement dans la zone fixe au-dessus de la grille ;
+- au premier clic, la pièce centrale possède exactement la même orientation que la silhouette choisie dans la réserve ;
 - les cellules d'une même pièce forment une silhouette continue dans la réserve, le ghost et la grille ;
-- le `S`/`Z` posé ne présente aucun artefact dans ses angles rentrants ;
+- les `L`/`J`, `S`/`Z` et `T` posés sont rendus comme une silhouette SVG sans trait sur les sous-rectangles ; leur contour externe dérive de l'alpha fusionné et ne présente aucun artefact, bordure interne ou encoche dans les angles rentrants ;
 - les pièces de réserve et les pièces jouées ont une taille visuelle équivalente ;
 - le ghost change avec la colonne et l'orientation ;
 - un ghost invalide explique le refus ;
@@ -659,8 +726,19 @@ Scripts cibles :
 - une passe forcée est annoncée ;
 - le panneau final distingue connexion, blocage et égalité ;
 - le panneau final ne recouvre jamais le plateau ;
-- une victoire par connexion surligne le chemin gagnant exact ;
+- le passage à l'état final ne change pas la position verticale de la grille ;
+- une victoire par connexion surligne le chemin gagnant exact avec un contour transparent sans masquer ni éclaircir jusqu'au blanc la couleur des pièces ;
 - `Nouvelle partie` restaure exactement les inventaires et une grille vide.
+
+### 8.9 Tests du chargement par URL
+
+- accepter le format multiligne `B/W/.` des tests d'évaluation ;
+- accepter neuf lignes séparées par `/` et une chaîne compacte de 81 caractères ;
+- refuser toute autre dimension ou tout symbole inconnu ;
+- charger le joueur actif demandé et démarrer directement la partie ;
+- regrouper les composantes orthogonales monochromes pour obtenir des silhouettes SVG continues ;
+- détecter une position déjà gagnante et afficher immédiatement le résultat et son chemin ;
+- refuser deux vainqueurs simultanés ou un joueur actif inconnu.
 
 ## 9. Ordre d'implémentation recommandé
 
@@ -698,23 +776,30 @@ Scripts cibles :
 - Ajouter rotation et retournement.
 - Ajouter les neuf entrées et le ghost.
 - Ajouter messages de tour, passe et victoire.
-- Afficher toujours deux silhouettes dans chaque ligne de réserve : pleines si disponibles, pointillées si jouées, sans compteur textuel.
-- Afficher la sélection et ses transformations dans une zone centrale de hauteur fixe.
+- Afficher toujours deux silhouettes dans chaque groupe de réserve : chaque exemplaire disponible est un bouton propre, chaque exemplaire joué est pointillé, sans compteur textuel.
+- Afficher la sélection et ses transformations à l'échelle des réserves dans une zone centrale de hauteur fixe.
 
 ### Étape 6 — Finition visuelle et accessibilité
 
 - Travailler la hiérarchie visuelle bleu/blanc.
 - Unifier visuellement les cellules d'une même pièce à partir du `pieceId`.
-- Supprimer les arrondis et artefacts aux jonctions, notamment sur le `S`/`Z`.
+- Supprimer les gouttières et artefacts aux jonctions, notamment dans les creux des `S`/`Z` et `T`.
 - Dimensionner les silhouettes de réserve comme les pièces jouées.
 - Alléger les réserves en retirant les rectangles permanents et renforcer le contraste de la réserve blanche.
-- Supprimer les libellés visuels non indispensables et conserver leurs équivalents ARIA.
+- Supprimer les en-têtes de réserve et les libellés visuels non indispensables ; indiquer le tour par une flèche gauche/droite et conserver les équivalents ARIA.
 - Garder le panneau final hors de la grille et surligner le chemin gagnant.
 - Ajouter focus clavier, libellés ARIA et contrastes.
 - Ajouter animation de chute avec respect de `prefers-reduced-motion`.
 - Vérifier les écrans de bureau, tablette et mobile.
 
-### Étape 7 — Vérification finale
+### Étape 7 — Moteur Minimax
+
+- Créer une représentation pure de position simulée avec plateau, inventaires et joueur actif.
+- Simuler les poses et les passes avec les mêmes fonctions de domaine que le jeu local.
+- Implémenter Minimax à profondeur limitée avec élagage alpha-bêta et cache de positions exactes.
+- Valider les décisions terminales et mesurer le taux de victoire contre un joueur aléatoire déterministe.
+
+### Étape 8 — Vérification finale
 
 Exécuter :
 
@@ -733,14 +818,16 @@ Puis tester dans un navigateur au minimum :
 - refus d'un dépassement ;
 - victoire horizontale ;
 - victoire verticale ou diagonale ;
+- position verticale identique de la grille juste avant et juste après la victoire ;
 - passage visuel d'une réserve de deux silhouettes pleines à une pleine et une pointillée, puis deux pointillées ;
 - stabilité de la grille et de la réserve pendant sélection, rotation et retournement ;
-- rendu propre d'un `S`/`Z` posé ;
+- rendu propre d'un `L`/`J`, d'un `S`/`Z` et d'un `T` posés ;
 - continuité des silhouettes dans la réserve, le ghost et la grille ;
 - panneau final non modal et surlignage du chemin gagnant ;
 - absence de débordement horizontal sur tablette et mobile ;
 - passe forcée ;
 - nouvelle partie.
+- chargement direct d'une position non vide et d'une position gagnante avec `?board=...&turn=...`.
 
 ## 10. Critères d'acceptation
 
@@ -755,15 +842,16 @@ Le développement est terminé lorsque :
 - les connexions par côtés et angles sont reconnues ;
 - les victoires gauche-droite et haut-bas sont détectées immédiatement ;
 - les passes et le blocage total suivent les règles ;
+- le Minimax choisit uniquement des coups légaux, reconnaît les résultats terminaux et dépasse le seuil statistique défini contre le joueur aléatoire ;
 - les deux réserves et le joueur actif sont clairement visibles ;
-- chaque réserve conserve deux silhouettes par forme, pleines si disponibles et pointillées si jouées, sans nom ni badge numérique visible ;
+- chaque réserve conserve deux silhouettes par forme, individuellement sélectionnables lorsqu'elles sont disponibles et pointillées lorsqu'elles sont jouées, sans nom ni badge numérique visible ;
 - les réserves n'utilisent pas de rectangles permanents autour des paires, et les pièces blanches restent contrastées ;
-- la pièce sélectionnée et ses rotations sont affichées dans une zone fixe au-dessus de la grille sans déplacer le plateau ni transformer les silhouettes de réserve ;
+- la pièce sélectionnée et ses rotations sont affichées à la même échelle que dans la réserve dans une zone fixe au-dessus de la grille sans déplacer le plateau ni transformer les silhouettes de réserve ;
 - les pièces ont une silhouette continue et une taille visuelle cohérente entre réserve, ghost et plateau ;
-- le `S`/`Z` ne présente aucun artefact d'angle ou de jonction ;
+- les `L`/`J`, `S`/`Z` et `T` ne présentent aucune encoche dans leurs angles rentrants ni aucun artefact de jonction ;
 - les entrées de colonnes ne montrent que les flèches ;
 - aucun nom de pièce, angle de rotation ou aperçu redondant n'encombre la zone centrale ;
-- le panneau de fin ne recouvre pas la grille et le chemin gagnant exact est surligné ;
+- le panneau de fin ne recouvre pas la grille et le chemin gagnant exact est surligné sans altérer la couleur du joueur ;
 - la partie est jouable intégralement à la souris et raisonnablement au clavier ;
 - tests, lint et build passent ;
 - la SPA ne dépend d'aucun serveur.
@@ -774,11 +862,14 @@ Le développement est terminé lorsque :
 2. **Premier joueur** : écran de configuration bleu/blanc avec rappel « le plus jeune commence » ; bleu sélectionné par défaut.
 3. **Convention de colonne** : la colonne cliquée est l'ancre de la case la plus à gauche de la pièce normalisée.
 4. **Contrôle du miroir** : bouton `Retourner` et touche `F`, en plus du clic répété qui reste réservé à la rotation.
-5. **Inventaire** : toujours deux silhouettes par forme, pleines si disponibles et pointillées si jouées, sans nom ni multiplicateur visible et sans rectangle permanent autour des paires.
+5. **Inventaire** : toujours deux silhouettes par forme, chacune sélectionnable séparément lorsqu'elle est disponible et exactement la silhouette jouée devient pointillée, sans nom ni multiplicateur visible et sans rectangle permanent autour des paires.
 6. **Fin de partie** : panneau compact non modal au-dessus de la grille et chemin gagnant surligné.
 7. **Densité visuelle** : supprimer les numéros de colonnes, le nom et l'angle de la sélection, les légendes de bords et les textes permanents redondants.
-8. **Sélection** : aperçu et rotations dans une zone centrale fixe ; la grille et les réserves ne bougent pas et la géométrie canonique de la réserve ne tourne jamais.
+8. **Sélection** : aperçu à l'échelle des réserves et rotations dans une zone centrale fixe ; la grille et les réserves ne bougent pas et la géométrie canonique de la réserve ne tourne jamais.
 9. **Contraste** : fond gris bleuté pour la réserve blanche et contour externe sombre pour ses pièces.
+10. **Tour actif** : aucune en-tête de réserve ; une flèche gauche/droite dans le bandeau central pointe vers la réserve du joueur actif.
+11. **Rendu du plateau** : une silhouette SVG globale par pièce, sans trait sur ses sous-rectangles et avec un contour externe calculé par morphologie sur l'alpha fusionné, élimine les encoches des L, S et T ; le chemin victorieux reçoit seulement un contour transparent qui préserve la couleur du joueur.
+12. **Fixtures visuelles** : une query string `board` au format commun `B/W/.`, complétée éventuellement par `turn`, charge directement une position ; une victoire préexistante ouvre son état final.
 
 Ces décisions font partie de la spécification et doivent être reproduites telles quelles.
 
@@ -787,7 +878,7 @@ Ces décisions font partie de la spécification et doivent être reproduites tel
 Ne pas ajouter sans demande explicite :
 
 - jeu en réseau ;
-- adversaire IA ;
+- intégration de l'adversaire IA dans l'interface (le moteur Minimax seul est disponible) ;
 - comptes utilisateurs ;
 - backend ou base de données ;
 - matchmaking ;

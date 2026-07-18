@@ -1,4 +1,4 @@
-import type { Inventory, Point, ShapeId } from './types'
+import type { Inventory, Point, Rotation, ShapeId } from './types'
 
 export const BASE_SHAPES: Record<ShapeId, readonly (readonly number[])[]> = {
   mono: [[1]],
@@ -35,6 +35,16 @@ export const SHAPE_LABELS: Record<ShapeId, string> = {
 
 export const FLIPPABLE_SHAPES: readonly ShapeId[] = ['s', 'largeL']
 
+export const INITIAL_ROTATIONS: Record<ShapeId, Rotation> = {
+  mono: 0,
+  domino: 0,
+  bar3: 0,
+  smallL: 0,
+  s: 1,
+  t: 0,
+  largeL: 0,
+}
+
 export function matrixToPoints(
   matrix: readonly (readonly number[])[],
 ): Point[] {
@@ -54,4 +64,3 @@ export function createInitialInventory(): Inventory {
     largeL: 2,
   }
 }
-

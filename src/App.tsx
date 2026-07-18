@@ -13,6 +13,7 @@ import { getWinningPath } from './game/connectivity'
 import { calculateDrop } from './game/placement'
 import { createInitialState, gameReducer } from './game/reducer'
 import { getOrientation } from './game/transforms'
+import { createGameStateFromSearch } from './game/queryState'
 import type { InvalidDropReason, PlayerId } from './game/types'
 
 const DROP_MESSAGES: Record<InvalidDropReason, string> = {
@@ -22,7 +23,14 @@ const DROP_MESSAGES: Record<InvalidDropReason, string> = {
 }
 
 function App() {
-  const [state, dispatch] = useReducer(gameReducer, undefined, createInitialState)
+  const [state, dispatch] = useReducer(gameReducer, undefined, () => {
+    try {
+      return createGameStateFromSearch(window.location.search) ?? createInitialState()
+    } catch (error) {
+      console.error('Impossible de charger la grille depuis l’URL.', error)
+      return createInitialState()
+    }
+  })
   const [firstPlayer, setFirstPlayer] = useState<PlayerId>('blue')
   const [hoveredColumn, setHoveredColumn] = useState<number | null>(null)
   const [rulesOpen, setRulesOpen] = useState(false)
@@ -115,66 +123,67 @@ function App() {
         <PieceTray
           player="blue"
           inventory={state.inventories.blue}
+          playedCopies={state.playedCopies.blue}
           active={state.phase === 'playing' && state.activePlayer === 'blue'}
           selection={state.activePlayer === 'blue' ? state.selection : null}
-          onSelect={(shapeId) => dispatch({ type: 'SELECT_SHAPE', player: 'blue', shapeId })}
+          onSelect={(shapeId, copy) => dispatch({ type: 'SELECT_SHAPE', player: 'blue', shapeId, copy })}
         />
 
         <section className="play-area">
-          {state.phase === 'finished' && state.result ? (
-            <GameOverPanel result={state.result} onReset={() => dispatch({ type: 'RESET_GAME' })} />
-          ) : (
-            <GameStatus
-              activePlayer={state.activePlayer}
-              event={state.lastEvent}
-              ghostMessage={ghostMessage}
+          <div className="play-banner">
+            {state.phase === 'finished' && state.result ? (
+              <GameOverPanel result={state.result} onReset={() => dispatch({ type: 'RESET_GAME' })} />
+            ) : (
+              <GameStatus
+                activePlayer={state.activePlayer}
+                event={state.lastEvent}
+                ghostMessage={ghostMessage}
+              />
+            )}
+          </div>
+
+          <div className="selection-stage">
+            {state.phase === 'playing' && state.selection && (
+              <>
+                <div className="selected-piece-preview" aria-hidden="true">
+                  <PieceShape
+                    orientation={orientation!}
+                    player={state.activePlayer}
+                  />
+                </div>
+                <div className="selection-controls">
+                  <button
+                    type="button"
+                    className="control-button"
+                    aria-label="Tourner la pièce"
+                    onClick={() => dispatch({ type: 'ROTATE_SELECTION' })}
+                  >
+                    <span aria-hidden="true">↻</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="control-button"
+                    aria-label="Retourner la pièce"
+                    disabled={!canFlip}
+                    onClick={() => dispatch({ type: 'FLIP_SELECTION' })}
+                  >
+                    <span aria-hidden="true">⇄</span>
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+
+          {state.phase === 'playing' && state.selection ? (
+            <DropZone
+              enabled
+              hoveredColumn={hoveredColumn}
+              invalid={Boolean(ghost && !ghost.valid)}
+              onHover={setHoveredColumn}
+              onDrop={(column) => dispatch({ type: 'DROP_SELECTED_SHAPE', column })}
             />
-          )}
-
-          {state.phase === 'playing' && (
-            <>
-              <div className="selection-stage">
-                {state.selection && (
-                  <>
-                    <div className="selected-piece-preview" aria-hidden="true">
-                      <PieceShape
-                        orientation={orientation!}
-                        player={state.activePlayer}
-                      />
-                    </div>
-                    <div className="selection-controls">
-                      <button
-                        type="button"
-                        className="control-button"
-                        onClick={() => dispatch({ type: 'ROTATE_SELECTION' })}
-                      >
-                        <span aria-hidden="true">↻</span> Tourner <kbd>R</kbd>
-                      </button>
-                      <button
-                        type="button"
-                        className="control-button"
-                        disabled={!canFlip}
-                        onClick={() => dispatch({ type: 'FLIP_SELECTION' })}
-                      >
-                        <span aria-hidden="true">⇄</span> Retourner <kbd>F</kbd>
-                      </button>
-                    </div>
-                  </>
-                )}
-              </div>
-
-              {state.selection ? (
-                <DropZone
-                  enabled
-                  hoveredColumn={hoveredColumn}
-                  invalid={Boolean(ghost && !ghost.valid)}
-                  onHover={setHoveredColumn}
-                  onDrop={(column) => dispatch({ type: 'DROP_SELECTED_SHAPE', column })}
-                />
-              ) : (
-                <div className="drop-zones-spacer" aria-hidden="true" />
-              )}
-            </>
+          ) : (
+            <div className="drop-zones-spacer" aria-hidden="true" />
           )}
           <Board
             board={state.board}
@@ -187,9 +196,10 @@ function App() {
         <PieceTray
           player="white"
           inventory={state.inventories.white}
+          playedCopies={state.playedCopies.white}
           active={state.phase === 'playing' && state.activePlayer === 'white'}
           selection={state.activePlayer === 'white' ? state.selection : null}
-          onSelect={(shapeId) => dispatch({ type: 'SELECT_SHAPE', player: 'white', shapeId })}
+          onSelect={(shapeId, copy) => dispatch({ type: 'SELECT_SHAPE', player: 'white', shapeId, copy })}
         />
       </div>
 

@@ -1,48 +1,11 @@
 import { describe, expect, it } from 'vitest'
+import { boardFromText, boardToText, rowsFromBoardText } from './boardText'
 import { hasWinningConnection } from './connectivity'
 import { getConnectionScore } from './evaluation'
 import { enumerateLegalMoves } from './legalMoves'
 import { createInitialInventory } from './pieces'
 import { createEmptyBoard } from './placement'
-import { BOARD_SIZE } from './types'
-import type { Board, PlayerId, Rotation, ShapeId } from './types'
-
-const PLAYER_BY_SYMBOL: Partial<Record<string, PlayerId>> = {
-  B: 'blue',
-  W: 'white',
-}
-
-function rowsFromText(source: string): string[] {
-  const rows = source.trim().split('\n').map((row) => row.trim())
-  if (rows.length !== BOARD_SIZE || rows.some((row) => row.length !== BOARD_SIZE)) {
-    throw new Error(`Une grille de test doit mesurer ${BOARD_SIZE} × ${BOARD_SIZE}.`)
-  }
-  return rows
-}
-
-function boardFromText(source: string): Board {
-  const rows = rowsFromText(source)
-  const board = createEmptyBoard()
-  rows.forEach((row, y) => {
-    Array.from(row).forEach((symbol, x) => {
-      if (symbol === '.') return
-      const player = PLAYER_BY_SYMBOL[symbol]
-      if (!player) throw new Error(`Symbole de grille inconnu : ${symbol}`)
-      board[y][x] = { player, pieceId: `fixture-${x}-${y}`, shapeId: 'mono' }
-    })
-  })
-  return board
-}
-
-function boardToText(board: Board): string {
-  return board
-    .map((row) =>
-      row
-        .map((cell) => (cell ? (cell.player === 'blue' ? 'B' : 'W') : '.'))
-        .join(''),
-    )
-    .join('\n')
-}
+import type { Board, Rotation, ShapeId } from './types'
 
 type PlayedMove = readonly [
   shapeId: ShapeId,
@@ -265,7 +228,9 @@ describe('évaluation d’une grille', () => {
   }) => {
     const board = boardFromText(source)
 
-    expect(boardToText(playLegalMoves(moves))).toBe(rowsFromText(source).join('\n'))
+    expect(boardToText(playLegalMoves(moves))).toBe(
+      rowsFromBoardText(source).join('\n'),
+    )
     expect(getConnectionScore(board, 'blue')).toBe(scores.blue)
     expect(getConnectionScore(board, 'white')).toBe(scores.white)
   })

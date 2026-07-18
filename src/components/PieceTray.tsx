@@ -1,14 +1,15 @@
-import { SHAPE_LABELS } from '../game/pieces'
+import { INITIAL_ROTATIONS, SHAPE_LABELS } from '../game/pieces'
 import { PieceShape } from './PieceShape'
 import { SHAPE_IDS } from '../game/types'
-import type { Inventory, PlayerId, Selection, ShapeId } from '../game/types'
+import type { Inventory, PlayedCopies, PlayerId, Selection, ShapeId } from '../game/types'
 
 type PieceTrayProps = {
   player: PlayerId
   inventory: Inventory
+  playedCopies: PlayedCopies
   active: boolean
   selection: Selection | null
-  onSelect: (shapeId: ShapeId) => void
+  onSelect: (shapeId: ShapeId, copy: 0 | 1) => void
 }
 
 const PLAYER_NAMES: Record<PlayerId, string> = {
@@ -16,65 +17,70 @@ const PLAYER_NAMES: Record<PlayerId, string> = {
   white: 'Blancs',
 }
 
-const PREVIEW_ROTATIONS = {
-  mono: 0,
-  domino: 0,
-  bar3: 0,
-  smallL: 0,
-  s: 1,
-  t: 0,
-  largeL: 0,
-} as const
-
 export function PieceTray({
   player,
   inventory,
+  playedCopies,
   active,
   selection,
   onSelect,
 }: PieceTrayProps) {
   return (
     <aside
-      className={`piece-tray piece-tray--${player}${active ? ' is-active' : ''}`}
+      className={`piece-tray piece-tray--${player}`}
       aria-label={`Réserve des ${PLAYER_NAMES[player].toLowerCase()}`}
     >
-      <div className="tray-heading">
-        <span className="player-dot" aria-hidden="true" />
-        <div>
-          <span className="tray-kicker">Réserve</span>
-          <h2>{PLAYER_NAMES[player]}</h2>
-        </div>
-        {active && <span className="turn-chip">À vous</span>}
-      </div>
-
       <div className="piece-list">
         {SHAPE_IDS.map((shapeId) => {
-          const selected = active && selection?.shapeId === shapeId
           const count = inventory[shapeId]
           return (
-            <button
-              type="button"
-              className={`piece-button${selected ? ' is-selected' : ''}${count === 0 ? ' is-empty' : ''}`}
+            <div
+              className="piece-row"
               key={shapeId}
-              disabled={!active || count === 0}
-              aria-pressed={selected}
-              aria-label={`${SHAPE_LABELS[shapeId]}, ${count} restante${count > 1 ? 's' : ''}${selected ? '. Cliquer à nouveau pour tourner.' : ''}`}
-              onClick={() => onSelect(shapeId)}
+              role="group"
+              aria-label={`${SHAPE_LABELS[shapeId]}, ${count} restante${count > 1 ? 's' : ''}`}
             >
-              <span className="piece-button__visual">
-                {Array.from({ length: 2 }, (_, copy) => (
-                  <PieceShape
-                    shapeId={shapeId}
-                    player={player}
-                    rotation={PREVIEW_ROTATIONS[shapeId]}
-                    flipped={false}
-                    compact
-                    unavailable={copy >= count}
+              {([0, 1] as const).map((copy) => {
+                const available = !playedCopies[shapeId][copy]
+                const selected =
+                  active &&
+                  available &&
+                  selection?.shapeId === shapeId &&
+                  selection.copy === copy
+                return available ? (
+                  <button
+                    type="button"
+                    className={`piece-button${selected ? ' is-selected' : ''}`}
+                    disabled={!active}
+                    aria-pressed={selected}
+                    aria-label={`${SHAPE_LABELS[shapeId]}, exemplaire ${copy + 1}${selected ? '. Cliquer à nouveau pour tourner.' : ''}`}
+                    onClick={() => onSelect(shapeId, copy)}
                     key={copy}
-                  />
-                ))}
-              </span>
-            </button>
+                  >
+                    <PieceShape
+                      shapeId={shapeId}
+                      player={player}
+                      rotation={INITIAL_ROTATIONS[shapeId]}
+                      compact
+                    />
+                  </button>
+                ) : (
+                  <span
+                    className="piece-button piece-button--unavailable"
+                    aria-hidden="true"
+                    key={copy}
+                  >
+                    <PieceShape
+                      shapeId={shapeId}
+                      player={player}
+                      rotation={INITIAL_ROTATIONS[shapeId]}
+                      compact
+                      unavailable
+                    />
+                  </span>
+                )
+              })}
+            </div>
           )
         })}
       </div>

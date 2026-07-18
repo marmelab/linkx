@@ -1,5 +1,6 @@
 import { getOrientation } from '../game/transforms'
 import type { Orientation, PlayerId, Rotation, ShapeId } from '../game/types'
+import { getOrthogonalJoinClasses } from './pieceGeometry'
 
 type PieceShapeProps = {
   shapeId?: ShapeId
@@ -36,16 +37,18 @@ export function PieceShape({
         const x = index % shown.width
         const y = Math.floor(index / shown.width)
         const filled = occupied.has(`${x},${y}`)
-        const joins = (otherX: number, otherY: number) =>
+        const isOccupied = (otherX: number, otherY: number) =>
           occupied.has(`${otherX},${otherY}`)
         const classNames = filled
           ? [
               'piece-shape__cell',
               unavailable ? 'piece-shape__cell--unavailable' : '',
-              joins(x - 1, y) ? 'piece-shape__cell--join-left' : '',
-              joins(x + 1, y) ? 'piece-shape__cell--join-right' : '',
-              joins(x, y - 1) ? 'piece-shape__cell--join-up' : '',
-              joins(x, y + 1) ? 'piece-shape__cell--join-down' : '',
+              ...getOrthogonalJoinClasses(
+                'piece-shape__cell',
+                x,
+                y,
+                isOccupied,
+              ),
             ]
               .filter(Boolean)
               .join(' ')
