@@ -111,16 +111,9 @@ Les tests vivent à côté de leur module, en `*.test.ts` / `*.test.tsx`.
 - Actions du reducer : `START_GAME`, `SELECT_SHAPE`, `ROTATE_SELECTION`, `FLIP_SELECTION`, `DROP_SELECTED_SHAPE`, `PLAY_AI_MOVE`, `RESET_GAME`.
 - En mode `ai`, `aiPlayer` vaut `'white'` et l'ordinateur pose uniquement via `PLAY_AI_MOVE` ; ses cases ne passent jamais par le chemin de sélection humain.
 
-## Fixtures de position par URL
-
-`?board=<9 lignes B/W/. séparées par />&turn=blue|white` démarre directement sur une grille non vide. Une connexion déjà gagnante ouvre le panneau final.
-
-- Le parseur partagé est `src/game/boardText.ts`, utilisé à la fois par `queryState.ts` et par les tests d'évaluation. Ne pas recréer ce format dans un test.
-- Les fixtures regroupent les cases orthogonalement connexes d'une couleur sous un même `pieceId`. Elles ne restaurent ni l'inventaire consommé, ni la frontière entre deux pièces adjacentes de même couleur.
-
 ### Notation de partie par URL
 
-`?moves=<notation>` rejoue une partie coup par coup et restaure donc la position complète : plateau, réserves, exemplaires pointillés, joueur actif et issue éventuelle. `?moves=` a la priorité sur `?board=` ; `turn` ne s'applique qu'à `board`, une notation portant elle-même son premier joueur.
+`?moves=<notation>` rejoue une partie coup par coup et restaure donc la position complète : plateau, réserves, exemplaires pointillés, joueur actif et issue éventuelle.
 
 - La grammaire, la règle de canonicité et le jeton de passe sont documentés en tête de `src/game/moveNotation.ts` : `<forme>[s][r|l N]<colonne>`, formes `1`, `2`, `3I`, `3L`, `4S`, `4T`, `4L`, colonne d'ancrage de 1 à 9 toujours en dernier, `--` pour un tour passé.
 - `parseGameRecord` rejoue les coups en dispatchant les actions du reducer : légalité, victoire, passes et blocage restent calculés par le moteur, jamais recopiés. Il renvoie un résultat discriminé et, en cas de refus, l'index du jeton fautif avec une raison structurée.
@@ -151,7 +144,7 @@ npm run build
 - Job `deploy` : dépend de `quality` et ne s'exécute que sur un `push` vers `main`, jamais sur une PR. Il publie `dist/` sur la branche `gh-pages` via `peaceiris/actions-gh-pages@v4`.
 - Le workflow est en `contents: read` ; seul le job `deploy` élève ses droits à `contents: write`.
 
-Le site est servi par GitHub Pages sous un sous-chemin (`https://fzaninotto.github.io/linkx/`). Les liens vers les assets doivent donc rester **relatifs** :
+Le site est servi par GitHub Pages sous un sous-chemin. Les liens vers les assets doivent donc rester **relatifs** :
 
 - `vite.config.ts` fixe `base: './'`. Ne pas repasser à une base absolue : les balises générées deviendraient `/assets/...` et la page serait blanche sous le sous-chemin.
 - Toute référence à un fichier de `public/` s'écrit en relatif (`./favicon.svg`), jamais `/favicon.svg`.
