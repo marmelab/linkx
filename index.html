@@ -1,11 +1,29 @@
 <!doctype html>
-<html lang="en">
+<html lang="fr">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>linkx</title>
-    <script type="module" crossorigin src="./assets/index-D44zpoNs.js"></script>
+    <title>Linkx</title>
+    <meta
+      name="description"
+      content="Le jeu de plateau Linkx : posez vos pièces et reliez deux bords opposés, à deux sur le même écran ou contre l'ordinateur."
+    />
+
+    <!-- Application installable. Tous les chemins restent relatifs au document :
+         le site est publié sous un sous-chemin (/linkx/). -->
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="theme-color" content="#f3f2ee" />
+
+    <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
+    <link rel="apple-touch-icon" href="./apple-touch-icon.png" />
+
+    <!-- iOS n'implémente pas le manifeste : le plein écran, le titre et la
+         barre d'état de l'icône d'accueil se déclarent par ces balises. -->
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="Linkx" />
+    <script type="module" crossorigin src="./assets/index--Kj3CC9u.js"></script>
     <link rel="stylesheet" crossorigin href="./assets/index-C68973bN.css">
   </head>
   <body>
