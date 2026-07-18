@@ -4,6 +4,7 @@ import { Board } from './components/Board'
 import { DropZone } from './components/DropZone'
 import { GameOverPanel } from './components/GameOverPanel'
 import { GameStatus } from './components/GameStatus'
+import { PieceShape } from './components/PieceShape'
 import { PieceTray } from './components/PieceTray'
 import { RulesPanel } from './components/RulesPanel'
 import { SetupPanel } from './components/SetupPanel'
@@ -132,24 +133,32 @@ function App() {
 
           {state.phase === 'playing' && (
             <>
-              <div className={`selection-controls${state.selection ? '' : ' is-empty'}`}>
+              <div className="selection-stage">
                 {state.selection && (
                   <>
-                    <button
-                      type="button"
-                      className="control-button"
-                      onClick={() => dispatch({ type: 'ROTATE_SELECTION' })}
-                    >
-                      <span aria-hidden="true">↻</span> Tourner <kbd>R</kbd>
-                    </button>
-                    <button
-                      type="button"
-                      className="control-button"
-                      disabled={!canFlip}
-                      onClick={() => dispatch({ type: 'FLIP_SELECTION' })}
-                    >
-                      <span aria-hidden="true">⇄</span> Retourner <kbd>F</kbd>
-                    </button>
+                    <div className="selected-piece-preview" aria-hidden="true">
+                      <PieceShape
+                        orientation={orientation!}
+                        player={state.activePlayer}
+                      />
+                    </div>
+                    <div className="selection-controls">
+                      <button
+                        type="button"
+                        className="control-button"
+                        onClick={() => dispatch({ type: 'ROTATE_SELECTION' })}
+                      >
+                        <span aria-hidden="true">↻</span> Tourner <kbd>R</kbd>
+                      </button>
+                      <button
+                        type="button"
+                        className="control-button"
+                        disabled={!canFlip}
+                        onClick={() => dispatch({ type: 'FLIP_SELECTION' })}
+                      >
+                        <span aria-hidden="true">⇄</span> Retourner <kbd>F</kbd>
+                      </button>
+                    </div>
                   </>
                 )}
               </div>

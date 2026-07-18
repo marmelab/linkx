@@ -62,13 +62,14 @@ export function PieceTray({
               onClick={() => onSelect(shapeId)}
             >
               <span className="piece-button__visual">
-                {Array.from({ length: count }, (_, copy) => (
+                {Array.from({ length: 2 }, (_, copy) => (
                   <PieceShape
                     shapeId={shapeId}
                     player={player}
-                    rotation={selected ? selection.rotation : PREVIEW_ROTATIONS[shapeId]}
-                    flipped={selected ? selection.flipped : false}
+                    rotation={PREVIEW_ROTATIONS[shapeId]}
+                    flipped={false}
                     compact
+                    unavailable={copy >= count}
                     key={copy}
                   />
                 ))}

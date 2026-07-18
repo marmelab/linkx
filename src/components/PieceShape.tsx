@@ -8,6 +8,7 @@ type PieceShapeProps = {
   rotation?: Rotation
   flipped?: boolean
   compact?: boolean
+  unavailable?: boolean
 }
 
 export function PieceShape({
@@ -17,6 +18,7 @@ export function PieceShape({
   rotation = 0,
   flipped = false,
   compact = false,
+  unavailable = false,
 }: PieceShapeProps) {
   const shown = orientation ?? getOrientation(shapeId!, rotation, flipped)
   const occupied = new Set(shown.cells.map(({ x, y }) => `${x},${y}`))
@@ -33,9 +35,24 @@ export function PieceShape({
       {Array.from({ length: shown.width * shown.height }, (_, index) => {
         const x = index % shown.width
         const y = Math.floor(index / shown.width)
+        const filled = occupied.has(`${x},${y}`)
+        const joins = (otherX: number, otherY: number) =>
+          occupied.has(`${otherX},${otherY}`)
+        const classNames = filled
+          ? [
+              'piece-shape__cell',
+              unavailable ? 'piece-shape__cell--unavailable' : '',
+              joins(x - 1, y) ? 'piece-shape__cell--join-left' : '',
+              joins(x + 1, y) ? 'piece-shape__cell--join-right' : '',
+              joins(x, y - 1) ? 'piece-shape__cell--join-up' : '',
+              joins(x, y + 1) ? 'piece-shape__cell--join-down' : '',
+            ]
+              .filter(Boolean)
+              .join(' ')
+          : ''
         return (
           <span
-            className={occupied.has(`${x},${y}`) ? 'piece-shape__cell' : ''}
+            className={classNames}
             key={`${x}-${y}`}
           />
         )
@@ -43,4 +60,3 @@ export function PieceShape({
     </span>
   )
 }
-

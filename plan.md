@@ -221,14 +221,17 @@ Sur petit écran, conserver la grille prioritaire et réorganiser les réserves 
 
 Afficher sept boutons de forme par joueur, sans nom visible et sans badge numérique.
 
-- Chaque bouton affiche directement les exemplaires restants : deux silhouettes identiques au départ, une silhouette après la première utilisation, puis une ligne vide après la seconde.
+- Chaque bouton conserve toujours deux silhouettes identiques : un exemplaire disponible est plein, un exemplaire déjà joué reste visible sous forme de contour pointillé.
+- La séquence visuelle est donc `deux pleines`, puis `une pleine + une pointillée`, puis `deux pointillées`.
 - Sur bureau, chaque forme occupe sa propre ligne. Sur tablette et mobile, ces lignes deviennent des cartes dans une rangée horizontale défilante.
-- Le bouton vide reste présent pour conserver la position des sept formes, mais devient indisponible et très atténué.
+- Lorsque les deux exemplaires sont joués, le bouton devient indisponible mais ses deux silhouettes pointillées restent pleinement lisibles.
 - Une pose décrémente exactement une occurrence.
 - Le joueur ne choisit pas entre deux exemplaires identiques : il choisit une forme dont le compteur est positif.
 - Les noms de forme et les quantités restent disponibles uniquement dans le nom accessible du bouton (`aria-label`) pour les lecteurs d'écran et les tests.
 - Les cellules graphiques des pièces de réserve utilisent une taille d'environ `46 px`. La grille centrale est dimensionnée pour que la partie visible d'une case jouée soit de taille équivalente.
 - Choisir pour les aperçus non sélectionnés une orientation compacte et reconnaissable ; le `S` est affiché horizontalement pour limiter la hauteur de la réserve.
+- La réserve affiche les formes directement sur son fond, sans rectangle blanc ni bordure permanente autour de chaque paire. Un fond léger apparaît seulement au survol ou pour signaler la sélection.
+- La réserve blanche utilise un fond gris bleuté plus soutenu. Les silhouettes blanches pleines ont un contour externe gris foncé, et leurs versions indisponibles un contour pointillé sombre.
 
 ### 5.3 Sélection, rotation et miroir
 
@@ -239,11 +242,14 @@ Interaction demandée :
 - bouton visible « Retourner » pour `grand L` et `S` ;
 - raccourci clavier `F` pour retourner ;
 - raccourci clavier `R` ou flèches pour tourner, en complément du clic ;
-- montrer l'orientation directement sur les silhouettes de la réserve sélectionnée.
+- afficher la pièce sélectionnée dans une zone dédiée au-dessus des flèches d'entrée et de la grille ;
+- appliquer les rotations et retournements uniquement à cet aperçu central et au ghost ; les silhouettes de réserve restent dans leur orientation canonique compacte.
 
 Le bouton de retournement peut être masqué ou désactivé pour les formes dont le miroir est redondant.
 
-Ne pas afficher de texte du type « nom de la pièce · 90° » ni un second aperçu de la pièce dans la zone centrale : la réserve sélectionnée est la source visuelle de vérité.
+Ne pas afficher de texte du type « nom de la pièce · 90° ». La zone centrale contient seulement la silhouette sélectionnée et les boutons `Tourner`/`Retourner`.
+
+La zone de sélection doit conserver une hauteur fixe d'environ `64 px`, qu'une pièce soit sélectionnée ou non. Les entrées de colonnes ont elles aussi un espace réservé de hauteur fixe. Le bord supérieur de la grille ne doit donc jamais changer de position lors d'une sélection, d'une rotation ou d'un retournement.
 
 ### 5.4 Ghost et dépôt
 
@@ -279,9 +285,11 @@ Ne pas afficher de texte d'instruction permanent lorsque le visuel suffit. Les i
 
 - Les carrés qui composent une même pièce doivent former une silhouette continue, dans la réserve, dans le ghost et une fois posés sur la grille.
 - Dans la réserve, les cellules d'une matrice se touchent sans gouttière ni bordure interne.
+- La réserve et la grille partent des mêmes matrices et de la même logique de voisins orthogonaux. Ne pas recréer manuellement une géométrie différente pour le plateau.
 - Sur le plateau, utiliser le `pieceId` pour reconnaître les voisins orthogonaux appartenant à la même pièce. Étendre leur remplissage dans la gouttière de la grille et supprimer les bordures internes correspondantes.
+- Les cellules des polyominos restent rectangulaires, sans arrondi aux angles rentrants. En particulier, le `S`/`Z` ne doit présenter aucun petit coin, encoche ou artefact à ses jonctions.
 - Deux pièces distinctes, même de même couleur et adjacentes, doivent rester visuellement séparables.
-- Les pièces blanches utilisent un léger contour ou une ombre externe pour rester lisibles sur le fond neutre.
+- Les pièces blanches utilisent un contour externe gris sur fond gris bleuté pour rester lisibles, sans ajouter de lignes entre les cellules d'une même pièce.
 - Après une victoire par connexion, reconstruire un chemin précis reliant les deux bords opposés et surligner uniquement ses cellules avec un contour lumineux jaune/or animé.
 - Le surlignage doit respecter `prefers-reduced-motion`.
 
@@ -613,9 +621,14 @@ Scripts cibles :
 - un premier clic sélectionne ;
 - un second clic sur la même forme tourne ;
 - `Retourner` transforme le grand L en J et S en Z ;
-- chaque ligne de réserve affiche deux silhouettes, puis une, puis aucune ;
+- chaque ligne de réserve conserve deux silhouettes : deux pleines, puis une pleine et une pointillée, puis deux pointillées ;
 - aucun nom de forme ni badge `×1`/`×2` n'est visible ; les informations restent présentes dans les attributs ARIA ;
+- aucun rectangle ou séparateur permanent n'entoure les paires dans la réserve ;
+- la réserve blanche et ses silhouettes pleines ou pointillées restent nettement lisibles ;
+- sélectionner ou tourner une pièce ne modifie ni la géométrie de la réserve ni la position de la grille ;
+- la pièce sélectionnée et sa rotation apparaissent uniquement dans la zone fixe au-dessus de la grille ;
 - les cellules d'une même pièce forment une silhouette continue dans la réserve, le ghost et la grille ;
+- le `S`/`Z` posé ne présente aucun artefact dans ses angles rentrants ;
 - les pièces de réserve et les pièces jouées ont une taille visuelle équivalente ;
 - le ghost change avec la colonne et l'orientation ;
 - un ghost invalide explique le refus ;
@@ -663,13 +676,16 @@ Scripts cibles :
 - Ajouter rotation et retournement.
 - Ajouter les neuf entrées et le ghost.
 - Ajouter messages de tour, passe et victoire.
-- Afficher directement zéro, une ou deux silhouettes dans chaque ligne de réserve, sans compteur textuel.
+- Afficher toujours deux silhouettes dans chaque ligne de réserve : pleines si disponibles, pointillées si jouées, sans compteur textuel.
+- Afficher la sélection et ses transformations dans une zone centrale de hauteur fixe.
 
 ### Étape 6 — Finition visuelle et accessibilité
 
 - Travailler la hiérarchie visuelle bleu/blanc.
 - Unifier visuellement les cellules d'une même pièce à partir du `pieceId`.
+- Supprimer les arrondis et artefacts aux jonctions, notamment sur le `S`/`Z`.
 - Dimensionner les silhouettes de réserve comme les pièces jouées.
+- Alléger les réserves en retirant les rectangles permanents et renforcer le contraste de la réserve blanche.
 - Supprimer les libellés visuels non indispensables et conserver leurs équivalents ARIA.
 - Garder le panneau final hors de la grille et surligner le chemin gagnant.
 - Ajouter focus clavier, libellés ARIA et contrastes.
@@ -695,7 +711,9 @@ Puis tester dans un navigateur au minimum :
 - refus d'un dépassement ;
 - victoire horizontale ;
 - victoire verticale ou diagonale ;
-- passage visuel d'une réserve de deux silhouettes à une puis à une ligne vide ;
+- passage visuel d'une réserve de deux silhouettes pleines à une pleine et une pointillée, puis deux pointillées ;
+- stabilité de la grille et de la réserve pendant sélection, rotation et retournement ;
+- rendu propre d'un `S`/`Z` posé ;
 - continuité des silhouettes dans la réserve, le ghost et la grille ;
 - panneau final non modal et surlignage du chemin gagnant ;
 - absence de débordement horizontal sur tablette et mobile ;
@@ -716,8 +734,11 @@ Le développement est terminé lorsque :
 - les victoires gauche-droite et haut-bas sont détectées immédiatement ;
 - les passes et le blocage total suivent les règles ;
 - les deux réserves et le joueur actif sont clairement visibles ;
-- chaque réserve montre directement deux, une ou zéro silhouette par forme, sans nom ni badge numérique visible ;
+- chaque réserve conserve deux silhouettes par forme, pleines si disponibles et pointillées si jouées, sans nom ni badge numérique visible ;
+- les réserves n'utilisent pas de rectangles permanents autour des paires, et les pièces blanches restent contrastées ;
+- la pièce sélectionnée et ses rotations sont affichées dans une zone fixe au-dessus de la grille sans déplacer le plateau ni transformer les silhouettes de réserve ;
 - les pièces ont une silhouette continue et une taille visuelle cohérente entre réserve, ghost et plateau ;
+- le `S`/`Z` ne présente aucun artefact d'angle ou de jonction ;
 - les entrées de colonnes ne montrent que les flèches ;
 - aucun nom de pièce, angle de rotation ou aperçu redondant n'encombre la zone centrale ;
 - le panneau de fin ne recouvre pas la grille et le chemin gagnant exact est surligné ;
@@ -731,9 +752,11 @@ Le développement est terminé lorsque :
 2. **Premier joueur** : écran de configuration bleu/blanc avec rappel « le plus jeune commence » ; bleu sélectionné par défaut.
 3. **Convention de colonne** : la colonne cliquée est l'ancre de la case la plus à gauche de la pièce normalisée.
 4. **Contrôle du miroir** : bouton `Retourner` et touche `F`, en plus du clic répété qui reste réservé à la rotation.
-5. **Inventaire** : silhouettes réelles restantes, sans nom ni multiplicateur visible.
+5. **Inventaire** : toujours deux silhouettes par forme, pleines si disponibles et pointillées si jouées, sans nom ni multiplicateur visible et sans rectangle permanent autour des paires.
 6. **Fin de partie** : panneau compact non modal au-dessus de la grille et chemin gagnant surligné.
 7. **Densité visuelle** : supprimer les numéros de colonnes, le nom et l'angle de la sélection, les légendes de bords et les textes permanents redondants.
+8. **Sélection** : aperçu et rotations dans une zone centrale fixe ; la grille et les réserves ne bougent pas et la géométrie canonique de la réserve ne tourne jamais.
+9. **Contraste** : fond gris bleuté pour la réserve blanche et contour externe sombre pour ses pièces.
 
 Ces décisions font partie de la spécification et doivent être reproduites telles quelles.
 
