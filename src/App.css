@@ -285,6 +285,22 @@
 .selection-stage { position: relative; display: grid; width: min(100%, 520px); height: 150px; flex: 0 0 150px; place-items: center; }
 .selected-piece-preview { display: grid; width: 142px; height: 142px; place-items: center; cursor: pointer; }
 .selected-piece-preview .piece-shape { --piece-cell: 46px; }
+/* Tourner ou retourner **manipule** la pièce au lieu de la remplacer. Le tracé
+   rendu est déjà celui de l'orientation d'arrivée ; l'animation part de
+   l'orientation qu'on quitte pour l'y amener. Les deux coïncident exactement, à
+   la case près : un quart de tour horaire envoie `(x, y)` sur `(-y, x)` et le
+   miroir sur `(-x, y)`, et l'aperçu centre les deux boîtes au même point. La
+   première image redonne donc la pièce qu'on vient de quitter, sans saut.
+   Un mouvement interrompu par le suivant ne revient jamais en arrière : le
+   nouveau part de l'orientation d'arrivée du précédent, donc en avant de là où
+   le mouvement en cours était rendu. Le tout tombe de lui-même sous
+   `prefers-reduced-motion`, qui rétablit le remplacement instantané. */
+.piece-turn { display: grid; place-items: center; }
+.piece-turn--rotate { animation: piece-turns 220ms cubic-bezier(.2,.75,.25,1); }
+.piece-turn--flip { animation: piece-flips 260ms cubic-bezier(.35,0,.25,1); }
+
+@keyframes piece-turns { from { transform: rotate(-90deg); } }
+@keyframes piece-flips { from { transform: perspective(30rem) rotateY(180deg); } }
 .selection-controls { position: absolute; right: 0; display: grid; gap: 0.45rem; }
 .control-button { display: grid; width: 40px; height: 40px; place-items: center; padding: 0; border: 1px solid #c8cdd5; border-radius: 5px; background: #fff; color: #394458; font-size: 1.15rem; font-weight: 700; }
 .control-button:hover:not(:disabled) { border-color: #7e899c; }

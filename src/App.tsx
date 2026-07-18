@@ -4,9 +4,9 @@ import { Board } from './components/Board'
 import { DropZone } from './components/DropZone'
 import { GameOverPanel } from './components/GameOverPanel'
 import { GameStatus } from './components/GameStatus'
-import { PieceShape } from './components/PieceShape'
 import { PieceTray } from './components/PieceTray'
 import { RulesPanel } from './components/RulesPanel'
+import { SelectedPiecePreview } from './components/SelectedPiecePreview'
 import { SetupPanel } from './components/SetupPanel'
 import { FLIPPABLE_SHAPES } from './game/pieces'
 import { getWinningPath } from './game/connectivity'
@@ -303,22 +303,16 @@ function App() {
                 <>
                   {/* Raccourci de proximité : la pièce elle-même tourne au clic
                       et se retourne au clic droit, sans aller jusqu'aux boutons.
-                      Ceux-ci restent la commande découvrable, et cet aperçu reste
-                      masqué aux lecteurs d'écran pour ne pas les dupliquer. */}
-                  <div
-                    className="selected-piece-preview"
-                    aria-hidden="true"
-                    onClick={() => dispatch({ type: 'ROTATE_SELECTION' })}
-                    onContextMenu={(event) => {
-                      event.preventDefault()
+                      Ceux-ci restent la commande découvrable. */}
+                  <SelectedPiecePreview
+                    selection={state.selection}
+                    orientation={orientation!}
+                    player={state.activePlayer}
+                    onRotate={() => dispatch({ type: 'ROTATE_SELECTION' })}
+                    onFlip={() => {
                       if (canFlip) dispatch({ type: 'FLIP_SELECTION' })
                     }}
-                  >
-                    <PieceShape
-                      orientation={orientation!}
-                      player={state.activePlayer}
-                    />
-                  </div>
+                  />
                   <div className="selection-controls">
                     <button
                       type="button"
