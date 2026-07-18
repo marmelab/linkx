@@ -27,7 +27,11 @@ describe('surlignage du chemin gagnant', () => {
     expect(markup).toContain('board-piece--blue')
     expect(markup).toContain('board-winning-path')
     expect(markup).not.toContain('board-cell--winning')
-    // Le contour vient du stroke de la silhouette fusionnée, plus d'un filtre.
-    expect(markup).not.toContain('<filter')
+    // Le surlignage reste le stroke de la silhouette fusionnée. La matière
+    // plexiglas des pièces passe bien par un filtre, mais le chemin gagnant ne
+    // doit en porter aucun : il ne peindrait plus par-dessus sans les teinter.
+    const highlight = markup.match(/<path[^>]*board-winning-path[^>]*>/)?.[0]
+    expect(highlight).toBeDefined()
+    expect(highlight).not.toContain('filter')
   })
 })

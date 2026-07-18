@@ -18,7 +18,14 @@
      partagent la même épaisseur, seule la teinte change avec le joueur. */
   --piece-outline: 0.06;
   --blue-outline: #0a479f;
-  --white-outline: #747d8b;
+  --white-outline: #626b7b;
+  /* Matière plexiglas : les pièces laissent transparaître le fond, donc la
+     teinte se densifie sur le plateau sombre et s'allège sur la réserve pâle.
+     Le blanc reste plus couvrant que le bleu, faute de quoi il disparaîtrait
+     sur un fond clair. La distinction des camps tient d'abord à la clarté,
+     pas à la saturation : elle survit à une vision daltonienne. */
+  --blue-fill-opacity: 0.82;
+  --white-fill-opacity: 0.88;
 }
 
 * { box-sizing: border-box; }

@@ -1,6 +1,7 @@
 import { BOARD_SIZE } from '../game/types'
 import type { Board as BoardType, DropResult, PlayerId, Point } from '../game/types'
 import { getCellsOutlinePath } from './pieceGeometry'
+import { PlexiDefs } from './PlexiDefs'
 
 type BoardProps = {
   board: BoardType
@@ -58,6 +59,9 @@ export function Board({
 
   return (
     <div className="board-frame">
+      {/* Les `url(#…)` de matière portent sur tout le document : ce jeu unique
+          sert aussi la réserve et l'aperçu central, qui ont leur propre `<svg>`. */}
+      <PlexiDefs />
       <div
         className={`board${aiming ? ' board--aiming' : ''}`}
         role="grid"

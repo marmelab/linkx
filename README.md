@@ -67,6 +67,7 @@ src/
     Board.tsx           grille, ghost, surlignage du chemin gagnant
     DropZone.tsx        entrées de colonnes pour pointeur grossier et clavier
     PieceShape.tsx      rendu SVG d'une orientation
+    PlexiDefs.tsx       `<defs>` partagés : biseau, reflets et ombre des pièces
     PieceTray.tsx       réserve d'un joueur
     GameStatus.tsx      bandeau de tour et aperçu de la sélection
     SetupPanel.tsx      choix du mode et du premier joueur
@@ -95,6 +96,9 @@ Les tests vivent à côté de leur module, en `*.test.ts` / `*.test.tsx`.
 - Une action de dépôt transmet seulement la colonne. Le reducer recalcule toujours l'atterrissage ; ne jamais accepter des cellules finales calculées par un composant.
 - `connectivity.ts` détecte les connexions sur la **couleur** des cases. Le `pieceId` identifie une pièce physique pour le rendu et l'animation, jamais pour relier les zones gagnantes.
 - `pieceGeometry.ts` est la source unique des silhouettes : réserve, aperçu central, ghost et plateau appellent `getCellsOutlinePath` et partagent `OUTLINE_INSET`. Ne pas recréer une géométrie parallèle.
+- `PlexiDefs.tsx` est la source unique de la **matière** des pièces, comme `pieceGeometry.ts` l'est de leur forme. Il rend une fois par document un jeu de `<defs>` que toutes les silhouettes référencent en `filter: url(#…)` depuis le CSS. Ne pas ajouter de fichier SVG par pièce ni par orientation : la géométrie y serait dupliquée et l'éclairage deviendrait solidaire de la pièce.
+- L'éclairage doit rester **invariant par rotation et par miroir** : la lumière vient toujours du haut à gauche de l'écran. Il n'est donc exprimé qu'avec des primitives d'espace utilisateur — `feDistantLight`, `feOffset`, `feDropShadow`. Proscrire les dégradés en `objectBoundingBox`, qui s'étirent avec la boîte de la forme, et les `transform` SVG sur une silhouette : `getOrientation` cuit déjà l'orientation dans les coordonnées du chemin. `PlexiDefs.test.tsx` verrouille ces deux points.
+- Les longueurs du filtre sont en **unités de case**, jamais en pixels : le plateau et la réserve dessinent une case par unité utilisateur, donc le relief garde la même épaisseur relative à toutes les échelles.
 - `simulation.ts` fournit la position pure utilisée par `minimax.ts` ; elle rejoue les mêmes fonctions de domaine que le reducer, sans les dupliquer.
 - L'état de survol, les délais et les animations restent dans l'UI tant qu'ils n'affectent pas les règles.
 

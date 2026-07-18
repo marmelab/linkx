@@ -182,13 +182,28 @@
 .piece-button:disabled { cursor: default; }
 .piece-button--unavailable { cursor: default; }
 
+/* Le jeu de `<defs>` partagé n'a rien à peindre : il n'existe que pour être
+   référencé en `url(#…)` depuis les silhouettes du document. */
+.plexi-defs { position: absolute; width: 0; height: 0; overflow: hidden; }
+
 .piece-shape { --piece-cell: 46px; display: inline-block; overflow: visible; }
 .piece-shape--compact { --piece-cell: 46px; }
-.piece-shape__silhouette { fill: var(--blue); stroke: var(--blue-outline); stroke-width: var(--piece-outline); stroke-linejoin: miter; }
-.piece-shape--white .piece-shape__silhouette { fill: var(--white-piece); stroke: var(--white-outline); }
+.piece-shape__silhouette {
+  fill: var(--blue);
+  fill-opacity: var(--blue-fill-opacity);
+  stroke: var(--blue-outline);
+  stroke-width: var(--piece-outline);
+  stroke-linejoin: miter;
+  filter: url(#plexi-relief);
+}
+.piece-shape--white .piece-shape__silhouette { fill: var(--white-piece); fill-opacity: var(--white-fill-opacity); stroke: var(--white-outline); }
+/* La réserve dessine petit : même lumière, relief et ombre atténués pour que
+   les silhouettes voisines ne se marchent pas dessus. */
+.piece-shape--compact .piece-shape__silhouette { filter: url(#plexi-relief-soft); }
 /* Un exemplaire joué n'est qu'un contour pointillé : le remplissage doit tomber
-   pour les deux joueurs, y compris derrière la règle plus spécifique du blanc. */
-.piece-shape .piece-shape__silhouette--unavailable { fill: none; stroke-dasharray: 0.22 0.16; }
+   pour les deux joueurs, y compris derrière la règle plus spécifique du blanc.
+   Sans matière non plus : une empreinte vide ne réfléchit pas la lumière. */
+.piece-shape .piece-shape__silhouette--unavailable { fill: none; stroke-dasharray: 0.22 0.16; filter: none; }
 
 /* Central play area */
 .play-area { display: flex; min-width: 0; flex-direction: column; align-items: center; padding: 1.1rem 1.4rem 2rem; background: #f8f7f3; }
@@ -227,25 +242,37 @@
 .drop-zone.is-invalid .drop-arrow { color: var(--red); }
 .drop-zone:disabled { cursor: default; opacity: 0.2; }
 
-.board-frame { position: relative; width: min(100%, 520px); padding: 10px; border: 1px solid #aeb5c0; background: #d6d9de; box-shadow: 0 12px 30px rgb(27 37 55 / 14%); }
+.board-frame { position: relative; width: min(100%, 520px); padding: 10px; border: 1px solid #a7aeb9; background: linear-gradient(#dfe1e6, #cdd1d8); box-shadow: 0 16px 34px rgb(27 37 55 / 18%), inset 0 1px 0 rgb(255 255 255 / 65%); }
 .board { --board-padding: 4px; position: relative; display: grid; width: 100%; aspect-ratio: 1; grid-template-columns: repeat(var(--board-size), 1fr); grid-template-rows: repeat(var(--board-size), 1fr); padding: var(--board-padding); border: 4px solid #2f394b; background: #aeb5c0; }
-.board-cell { position: relative; min-width: 0; border: 0.5px solid #c7ccd3; background: #f2f1ed; }
+/* Le plateau est un logement creux : les pièces posées doivent avoir l'air d'y
+   reposer. Placé entre les cases et la couche des pièces, ce voile assombrit le
+   pourtour sans jamais intercepter le pointeur. */
+.board::after { position: absolute; z-index: 1; inset: var(--board-padding); box-shadow: inset 0 3px 9px rgb(18 26 43 / 22%), inset 0 -2px 6px rgb(18 26 43 / 10%); content: ''; pointer-events: none; }
+/* Le quadrillage reste assez marqué pour se deviner à travers une dalle : c'est
+   ce qui prouve à l'œil que les pièces sont translucides. */
+.board-cell { position: relative; min-width: 0; border: 0.5px solid #b8bcbf; background: #eae8e1; }
 .board--aiming { cursor: pointer; }
 .board-piece-layer { position: absolute; z-index: 2; inset: var(--board-padding); width: auto; height: auto; overflow: visible; pointer-events: none; }
-.board-piece { fill: var(--blue); stroke: var(--blue-outline); stroke-width: var(--piece-outline); stroke-linejoin: miter; animation: piece-arrive 240ms cubic-bezier(.2,.8,.2,1); }
-.board-piece--white { fill: var(--white-piece); stroke: var(--white-outline); }
-.board-piece--ghost-blue { fill: #5d9df1; stroke: #125cbf; opacity: 0.58; }
-.board-piece--ghost-white { fill: #fff; stroke: #5f6877; opacity: 0.68; }
-.board-piece--ghost-invalid { fill: #ef9297; stroke: var(--red); opacity: 0.72; }
+/* Dalles de plexiglas : teinte translucide, tranche biseautée et ombre portée
+   viennent du filtre partagé, la géométrie reste celle de `getCellsOutlinePath`. */
+.board-piece { fill: var(--blue); fill-opacity: var(--blue-fill-opacity); stroke: var(--blue-outline); stroke-width: var(--piece-outline); stroke-linejoin: miter; filter: url(#plexi-relief); animation: piece-arrive 240ms cubic-bezier(.2,.8,.2,1); }
+.board-piece--white { fill: var(--white-piece); fill-opacity: var(--white-fill-opacity); stroke: var(--white-outline); }
+/* Le ghost plane : plus transparent, sans tranche à l'ombre, et son ombre
+   portée est lointaine et diffuse. Il se lit « pas encore posé ». */
+.board-piece--ghost-blue { fill: #4b93ef; fill-opacity: 0.5; stroke: #125cbf; filter: url(#plexi-float); }
+.board-piece--ghost-white { fill: #fff; fill-opacity: 0.62; stroke: #5f6877; filter: url(#plexi-float); }
+.board-piece--ghost-invalid { fill: #ef9297; fill-opacity: 0.6; stroke: var(--red); filter: url(#plexi-float); }
 .board-winning-path { fill: none; stroke: #ffc400; stroke-linejoin: miter; stroke-width: 0.105; pointer-events: none; animation: winning-path 900ms ease-in-out infinite alternate; }
 
-/* Le coup de l'ordinateur pulse quelques secondes pour être repérable. */
-.board-piece--glowing { filter: drop-shadow(0 0 0.09px #ffc400); animation: piece-arrive 240ms cubic-bezier(.2,.8,.2,1), piece-glow 900ms ease-in-out 240ms infinite alternate; }
+/* Le coup de l'ordinateur pulse quelques secondes pour être repérable. Le
+   pulse porte sur le contour seul : une liste de filtres contenant un `url()`
+   s'anime par pas, la matière clignoterait au lieu de respirer. */
+.board-piece--glowing { animation: piece-arrive 240ms cubic-bezier(.2,.8,.2,1), piece-glow 900ms ease-in-out 240ms infinite alternate; }
 
 @keyframes piece-arrive { from { opacity: 0; transform: translateY(-3px); } }
 @keyframes piece-glow {
-  from { filter: drop-shadow(0 0 0.05px #ffc400); stroke: #d59b00; }
-  to { filter: drop-shadow(0 0 0.22px #ffd54a) drop-shadow(0 0 0.4px #ffc400); stroke: #ffc400; }
+  from { stroke: #d59b00; stroke-width: var(--piece-outline); }
+  to { stroke: #ffd54a; stroke-width: 0.13; }
 }
 @keyframes winning-path { to { stroke: #ffe07a; stroke-width: 0.14; } }
 
@@ -300,6 +327,16 @@
   .drop-zone { height: 34px; }
   .board-frame { padding: 8px; }
   .board { --board-padding: 3px; border-width: 3px; }
+  /* Cases d'environ trente pixels : le voile brillant et le filet spéculaire
+     ne se lisent plus et coûtent cher à rastériser. Tranche et ombre suffisent
+     à faire tenir la matière. */
+  .board-piece,
+  .piece-shape--compact .piece-shape__silhouette,
+  .piece-shape__silhouette { filter: url(#plexi-relief-lite); }
+  .board-piece--ghost-blue,
+  .board-piece--ghost-white,
+  .board-piece--ghost-invalid { filter: url(#plexi-float); }
+  .piece-shape .piece-shape__silhouette--unavailable { filter: none; }
   .setup-screen { padding: 0.8rem; }
   .setup-card { padding: 2rem 1.1rem 1.5rem; }
   .setup-intro { font-size: 0.88rem; }
