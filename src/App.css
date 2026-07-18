@@ -563,63 +563,96 @@
   /* Bande de visée au doigt, et cadre de plateau resserré : les flèches se
      réalignent d'elles-mêmes sur les colonnes du damier. */
   .play-area { --drop-zone-height: 44px; --board-inset: 14px; padding: 0.7rem 0.55rem 0.6rem; }
-  /* Le plateau passe en tête de la colonne et n'en bouge plus : l'en-tête, dont
-     le contenu apparaît et disparaît, est renvoyé sous lui. Ce sont les réserves
-     qui absorbent sa hauteur, jamais le bord haut du plateau. L'ordre du DOM
-     reste inchangé, donc « Tourner » et « Retourner » précèdent toujours les
-     flèches de colonne à la tabulation, ce qui est l'ordre du geste. */
+  /* Le plateau passe en tête de la colonne et n'en bouge plus : l'en-tête est
+     renvoyé sous lui. L'ordre du DOM reste inchangé, donc « Tourner » et
+     « Retourner » précèdent toujours les flèches de colonne à la tabulation, ce
+     qui est l'ordre du geste. */
   .board-frame { order: 2; }
   .drop-zones,
   .drop-zones-spacer { order: 1; }
   .play-head { order: 3; }
 
   /* Plus de bandeau de tour : en une colonne, c'est la réserve du joueur actif
-     qui passe en premier, et ce déplacement dit déjà à qui de jouer. Le répéter
-     coûtait 88px de haut sur l'écran où la hauteur est la plus rare. Restent le
+     qui passe en premier, et ce déplacement dit déjà à qui de jouer. Restent le
      message d'erreur, l'aperçu et le panneau de fin — et surtout l'annonce
      `aria-live`, qui ne coûte aucun pixel : la permutation est un signal muet,
-     elle ne peut pas être le seul. */
-  .play-head {
-    --head-height: 88px;
+     elle ne peut pas être le seul.
 
-    height: auto;
-    flex-direction: row;
+     La hauteur de la rangée est réservée en permanence, pièce sélectionnée ou
+     non : choisir une pièce ne doit rien déplacer, et surtout pas la réserve que
+     le doigt vient de toucher. Elle est calée sur le contenu réel — trois cases
+     d'aperçu — et non sur les 150px du bureau.
+     Trois colonnes symétriques : le message à gauche, l'aperçu centré sur la
+     largeur du plateau, les commandes contre le bord droit. */
+  .play-head {
+    --head-height: 84px;
+    --preview-cell: calc((var(--head-height) - 6px) / 3);
+
+    display: grid;
+    min-height: var(--head-height);
     align-items: center;
     gap: 6px;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   }
   .turn-arrow { display: none; }
-  /* L'aperçu passe à gauche, sous le plateau : le bandeau ne porte plus qu'un
-     message occasionnel et, vide, il repousserait tout vers le bord droit. */
-  .selection-stage { order: 1; }
-  .play-banner { order: 2; width: auto; height: auto; min-width: 0; flex: 1 1 auto; }
-  /* Sans message, il ne reste que du texte en lecture d'écran, hors flux : la
-     hauteur tombe alors d'elle-même à zéro. */
-  .game-status { min-height: 0; gap: 0.5rem; padding: 0; background: transparent; }
-  .game-status p { max-width: none; padding: 0.4rem 0.2rem; font-size: 0.68rem; text-align: left; }
-  /* Le bandeau n'a plus de fond ni de flèche : le bouton de conseil se resserre
-     pour tenir dans la rangée qui longe l'aperçu de sélection. */
-  .hint-button { padding: 0.3rem 0.58rem; font-size: 0.68rem; }
-  .game-over-panel { height: auto; min-height: 84px; }
-  /* Rien de sélectionné : l'aperçu ne prend aucune place. */
-  .selection-stage:empty { display: none; }
-  /* Trois cases de haut au maximum, donc la case de l'aperçu se déduit de la
-     hauteur réservée à la rangée. */
-  .selection-stage {
-    --preview-cell: calc((var(--head-height) - 4px) / 3);
-
-    position: static;
-    display: flex;
-    width: auto;
-    height: var(--head-height);
-    flex: 0 0 auto;
-    align-items: center;
-    gap: 4px;
+  .selection-stage { display: contents; }
+  /* Colonne 1 : le message d'erreur et le bouton de conseil. C'est la seule
+     colonne au contenu variable, donc c'est elle qui accueille le quatrième
+     venu. Les deux autres gardent une géométrie fixe : l'aperçu ne se décentre
+     pas et les commandes de rotation ne bougent pas quand le conseil apparaît
+     ou disparaît en cours de partie. */
+  .play-banner { grid-column: 1; width: auto; height: auto; min-width: 0; align-self: stretch; }
+  .selected-piece-preview {
+    width: calc(var(--preview-cell) * 3);
+    height: calc(var(--preview-cell) * 3);
+    grid-column: 2;
+    justify-self: center;
     animation: selection-opens 160ms ease-out;
   }
-  .selected-piece-preview { width: calc(var(--preview-cell) * 3); height: calc(var(--preview-cell) * 3); }
   .selected-piece-preview .piece-shape { --piece-cell: var(--preview-cell); }
-  .selection-controls { position: static; gap: 2px; }
-  .control-button { width: 44px; height: calc((var(--head-height) - 2px) / 2); }
+  /* Côte à côte plutôt qu'empilées : deux cibles de 44px tiennent alors dans une
+     rangée de 84px, là où les empiler en aurait exigé 90. */
+  .selection-controls { position: static; grid-column: 3; align-self: end; justify-self: end; grid-auto-flow: column; gap: 6px; }
+  .control-button { width: 44px; height: 44px; }
+  /* Aucune pièce sélectionnée — et c'est aussi le cas à la fin de la partie : le
+     bandeau reprend toute la rangée. Le panneau de victoire s'affiche donc sur
+     toute la largeur, dans l'espace déjà réservé, sans rien déplacer. */
+  .play-head:has(.selection-stage:empty) .play-banner { grid-column: 1 / -1; }
+  /* Empilés et calés en bas : le bouton de conseil garde ainsi la même place,
+     qu'un message l'accompagne ou non. C'est le message qui s'étend vers le
+     haut, pas la commande qui glisse sous le doigt. */
+  .game-status {
+    min-height: 0;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: flex-end;
+    gap: 3px;
+    padding: 0;
+    background: transparent;
+  }
+  /* Deux lignes au plus : dans une colonne de cent pixels, un message long
+     pousserait la rangée — et donc les réserves — vers le bas. Le texte complet
+     reste annoncé, la région `aria-live` ne dépend pas de ce qui est peint. */
+  .game-status p:not(.visually-hidden) {
+    display: -webkit-box;
+    overflow: hidden;
+    max-width: none;
+    margin: 0;
+    padding: 0;
+    font-size: 0.66rem;
+    line-height: 1.25;
+    text-align: left;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+  }
+  /* Le bandeau n'a plus de fond ni de flèche : le bouton de conseil se resserre
+     pour tenir dans la colonne qui longe l'aperçu de sélection, tout en gardant
+     une hauteur tactile. */
+  .hint-button { min-height: 44px; padding: 0.3rem 0.58rem; font-size: 0.68rem; }
+  /* Le panneau remplit la hauteur réservée et peut la dépasser si son texte le
+     force, sur les écrans les plus étroits : la partie est finie, plus rien
+     n'est à cliquer dans les réserves. */
+  .game-over-panel { height: auto; min-height: 100%; }
   /* La rangée de flèches ne réserve plus de hauteur : elle se pose sur le haut
      du plateau, alignée sur ses colonnes par `--board-inset`. Le vide qu'elle
      laissait hors sélection disparaît, et comme elle ne pousse plus rien, le
