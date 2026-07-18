@@ -149,6 +149,7 @@
 /* Game chrome */
 .game-shell {
   --topbar-height: calc(58px + env(safe-area-inset-top, 0px));
+  --content-width: 1410px;
   min-height: 100vh;
   min-height: 100dvh;
   background: var(--paper);
@@ -156,15 +157,20 @@
 
 /* En plein écran iOS la page passe sous la barre d'état : c'est le bandeau qui
    doit couvrir l'encoche, donc son retrait est un padding et non une marge, et
-   sa hauteur minimale l'englobe pour ne pas écraser son contenu. */
+   sa hauteur minimale l'englobe pour ne pas écraser son contenu.
+
+   Le fond et la bordure traversent toute la largeur, mais logo et boutons se
+   posent sur les bords de la colonne de contenu : passé `--content-width` le
+   retrait suit la gouttière que laisse `.game-layout` centrée, sinon il garde
+   sa valeur de confort. */
 .topbar {
   display: flex;
   min-height: calc(58px + env(safe-area-inset-top, 0px));
   align-items: center;
   justify-content: space-between;
-  padding:
-    env(safe-area-inset-top, 0px) max(2.5rem, env(safe-area-inset-right, 0px)) 0
-    max(2.5rem, env(safe-area-inset-left, 0px));
+  padding-block: env(safe-area-inset-top, 0px) 0;
+  padding-left: max(2.5rem, env(safe-area-inset-left, 0px), calc((100% - var(--content-width)) / 2));
+  padding-right: max(2.5rem, env(safe-area-inset-right, 0px), calc((100% - var(--content-width)) / 2));
   border-bottom: 1px solid #cfd3da;
   background: #f3f2ee;
 }
@@ -175,7 +181,7 @@
 
 .game-layout {
   display: grid;
-  width: min(100%, 1410px);
+  width: min(100%, var(--content-width));
   min-height: calc(100vh - var(--topbar-height));
   min-height: calc(100dvh - var(--topbar-height));
   margin: 0 auto;
@@ -276,26 +282,6 @@
 
 @keyframes thinking-pulse { from { opacity: 0.45; } to { opacity: 1; } }
 
-/* Commande de conseil, dans le bandeau de tour parce qu'elle ne vaut que pour le
-   joueur au trait : elle disparaît d'elle-même pendant le tour de l'ordinateur et
-   à la fin de la partie, quand le panneau final remplace le bandeau. `flex` fixe
-   l'empêche de se laisser comprimer par un message long. */
-.hint-button {
-  flex: 0 0 auto;
-  padding: 0.34rem 0.7rem;
-  border: 1px solid var(--hint);
-  border-radius: 999px;
-  background: rgb(124 58 237 / 8%);
-  color: var(--hint-dark);
-  font-size: 0.74rem;
-  font-weight: 800;
-  cursor: pointer;
-  white-space: nowrap;
-}
-
-.hint-button:hover:not(:disabled) { background: rgb(124 58 237 / 18%); }
-.hint-button:disabled { cursor: progress; opacity: 0.55; }
-
 .selection-stage { position: relative; display: grid; width: min(100%, 520px); height: 150px; flex: 0 0 150px; place-items: center; }
 .selected-piece-preview { display: grid; width: 142px; height: 142px; place-items: center; cursor: pointer; }
 .selected-piece-preview .piece-shape { --piece-cell: 46px; }
@@ -303,6 +289,17 @@
 .control-button { display: grid; width: 40px; height: 40px; place-items: center; padding: 0; border: 1px solid #c8cdd5; border-radius: 5px; background: #fff; color: #394458; font-size: 1.15rem; font-weight: 700; }
 .control-button:hover:not(:disabled) { border-color: #7e899c; }
 .control-button:disabled { cursor: not-allowed; opacity: 0.38; }
+
+/* Commande de conseil : une commande de coup comme les deux autres, donc le même
+   bouton-icône, posé face à elles de l'autre côté de l'aperçu. Elle ne vaut que
+   pour un humain au trait, et disparaît donc d'elle-même pendant le tour de
+   l'ordinateur et à la fin de la partie. La rangée réserve sa hauteur en
+   permanence : son apparition et sa disparition ne déplacent rien.
+   Ces règles suivent celles de `.control-button`, qu'elles surchargent à
+   spécificité égale. */
+.control-button--hint { position: absolute; left: 0; border-color: var(--hint); background: rgb(124 58 237 / 8%); color: var(--hint-dark); }
+.control-button--hint:hover:not(:disabled) { border-color: var(--hint-dark); background: rgb(124 58 237 / 18%); }
+.control-button--hint:disabled { cursor: progress; opacity: 0.55; }
 
 .drop-zones { display: grid; width: min(100%, 520px); grid-template-columns: repeat(9, 1fr); gap: 3px; padding: 0 12px 6px; }
 .drop-zones-spacer { width: min(100%, 520px); height: calc(var(--drop-zone-height) + 6px); }
@@ -596,15 +593,15 @@
   }
   .turn-arrow { display: none; }
   .selection-stage { display: contents; }
-  /* Colonne 1 : le message d'erreur et le bouton de conseil. C'est la seule
-     colonne au contenu variable, donc c'est elle qui accueille le quatrième
-     venu. Les deux autres gardent une géométrie fixe : l'aperçu ne se décentre
-     pas et les commandes de rotation ne bougent pas quand le conseil apparaît
-     ou disparaît en cours de partie. */
-  .play-banner { grid-column: 1; width: auto; height: auto; min-width: 0; align-self: stretch; }
+  /* Les quatre éléments partagent l'unique rangée, colonne par colonne. Chacun
+     est placé de façon définie : sans cela, le bouton de conseil et le bandeau
+     se disputeraient la colonne 1 et le second serait renvoyé sur une seconde
+     rangée, qui doublerait la hauteur de l'en-tête. */
+  .play-banner { grid-row: 1; grid-column: 1; width: auto; height: auto; min-width: 0; align-self: stretch; }
   .selected-piece-preview {
     width: calc(var(--preview-cell) * 3);
     height: calc(var(--preview-cell) * 3);
+    grid-row: 1;
     grid-column: 2;
     justify-self: center;
     animation: selection-opens 160ms ease-out;
@@ -612,20 +609,28 @@
   .selected-piece-preview .piece-shape { --piece-cell: var(--preview-cell); }
   /* Côte à côte plutôt qu'empilées : deux cibles de 44px tiennent alors dans une
      rangée de 84px, là où les empiler en aurait exigé 90. */
-  .selection-controls { position: static; grid-column: 3; align-self: end; justify-self: end; grid-auto-flow: column; gap: 6px; }
+  .selection-controls { position: static; grid-row: 1; grid-column: 3; align-self: end; justify-self: end; grid-auto-flow: column; gap: 6px; }
   .control-button { width: 44px; height: 44px; }
+  /* Le conseil reste dans la colonne 1, avec le message : les trois boutons côte
+     à côte demanderaient 144px là où la colonne 3 n'en offre que 134 sur un
+     téléphone de 375px, et l'aperçu se décentrerait. Il occupe la même cellule
+     que le bandeau, calé en bas à gauche ; le message, lui, est calé en haut, si
+     bien qu'aucun des deux ne recouvre l'autre. */
+  .control-button--hint { position: static; grid-row: 1; grid-column: 1; align-self: end; justify-self: start; }
   /* Aucune pièce sélectionnée — et c'est aussi le cas à la fin de la partie : le
      bandeau reprend toute la rangée. Le panneau de victoire s'affiche donc sur
-     toute la largeur, dans l'espace déjà réservé, sans rien déplacer. */
-  .play-head:has(.selection-stage:empty) .play-banner { grid-column: 1 / -1; }
-  /* Empilés et calés en bas : le bouton de conseil garde ainsi la même place,
-     qu'un message l'accompagne ou non. C'est le message qui s'étend vers le
-     haut, pas la commande qui glisse sous le doigt. */
+     toute la largeur, dans l'espace déjà réservé, sans rien déplacer. Le test
+     porte sur l'aperçu et non sur une réserve vide : le bouton de conseil vit
+     désormais dans cette même réserve sans occuper la colonne centrale. */
+  .play-head:not(:has(.selected-piece-preview)) .play-banner { grid-column: 1 / -1; }
+  /* Le message est calé en haut de la cellule : il s'étend vers le bas sans
+     jamais atteindre le bouton de conseil, qui garde sa place en bas quel que
+     soit le texte affiché. Aucun des deux ne glisse sous le doigt. */
   .game-status {
     min-height: 0;
     flex-direction: column;
     align-items: flex-start;
-    justify-content: flex-end;
+    justify-content: flex-start;
     gap: 3px;
     padding: 0;
     background: transparent;
@@ -645,10 +650,6 @@
     -webkit-box-orient: vertical;
     -webkit-line-clamp: 2;
   }
-  /* Le bandeau n'a plus de fond ni de flèche : le bouton de conseil se resserre
-     pour tenir dans la colonne qui longe l'aperçu de sélection, tout en gardant
-     une hauteur tactile. */
-  .hint-button { min-height: 44px; padding: 0.3rem 0.58rem; font-size: 0.68rem; }
   /* Le panneau remplit la hauteur réservée et peut la dépasser si son texte le
      force, sur les écrans les plus étroits : la partie est finie, plus rien
      n'est à cliquer dans les réserves. */

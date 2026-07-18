@@ -524,6 +524,8 @@ Cette évaluation est **indicative** : c'est une heuristique qui fonctionne, pas
 
 **Ce que ça recouvre** — une commande « Conseil » disponible quand c'est à vous de jouer, et l'affichage éphémère du coup recommandé.
 
+La commande se tient avec les autres commandes de coup, autour de la pièce sélectionnée, et non dans le bandeau d'état : c'est une action du joueur, pas une information sur la partie. Elle s'efface tant que son conseil est affiché — le surlignage tient lieu de réponse, et la redemander ne servirait à rien.
+
 Le jeu montre **d'un même geste** la pièce à prendre dans votre réserve et l'emplacement précis où la poser, déjà tournée dans le bon sens. Les deux ensemble : l'une sans l'autre ne servirait à rien. L'exemplaire mis en évidence dans la réserve est celui que la pose consommerait réellement.
 
 La suggestion s'efface **dès que vous touchez à quoi que ce soit** ou que la main passe à l'adversaire. Rien ne reste affiché en permanence : une partie à deux n'est donc jamais éventée. Une action refusée, elle, ne change rien et laisse donc le conseil en place — c'est cohérent, rien ne s'est passé.
@@ -534,6 +536,9 @@ Le conseil vise toujours la force la plus haute, indépendamment du niveau chois
 
 - La commande n'est proposée que pendant qu'un humain a la main dans une partie en cours.
 - Elle n'est proposée ni pendant que l'ordinateur réfléchit, ni une fois la partie terminée, ni avant qu'elle commence.
+- Elle est proposée qu'une pièce soit sélectionnée ou non : c'est sans pièce en main qu'on ignore laquelle prendre.
+- Elle disparaît tant que son conseil est affiché, et revient dès que celui-ci s'efface.
+- Son apparition et sa disparition ne déplacent ni l'aperçu de la pièce, ni les commandes de rotation, ni le plateau.
 - Le conseil désigne simultanément une pièce de la réserve et les cases exactes où elle atterrirait.
 - L'orientation montrée est celle qu'il faut jouer, sans que le joueur ait à la retrouver.
 - L'exemplaire mis en évidence est celui que la pose consommerait effectivement.

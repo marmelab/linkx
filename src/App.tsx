@@ -276,14 +276,29 @@ function App() {
                   event={state.lastEvent}
                   ghostMessage={ghostMessage}
                   thinking={aiTurn}
-                  canHint={hintAvailable}
                   hintPending={hintPending}
-                  onHint={() => setHintRequest(state)}
                 />
               )}
             </div>
 
             <div className="selection-stage">
+              {/* La commande s'efface tant que son conseil est peint : le
+                  surlignage tient alors lieu de réponse, et le bouton revient de
+                  lui-même à l'action suivante, qui efface ce surlignage. Elle ne
+                  dépend pas de la sélection : c'est justement sans pièce en main
+                  qu'on ne sait pas laquelle prendre. */}
+              {hintAvailable && !hint && (
+                <button
+                  type="button"
+                  className="control-button control-button--hint"
+                  aria-label="Conseil"
+                  title="Conseil"
+                  disabled={hintPending}
+                  onClick={() => setHintRequest(state)}
+                >
+                  <span aria-hidden="true">💡</span>
+                </button>
+              )}
               {state.phase === 'playing' && state.selection && (
                 <>
                   {/* Raccourci de proximité : la pièce elle-même tourne au clic
