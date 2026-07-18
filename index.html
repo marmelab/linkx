@@ -2,7 +2,13 @@
 <html lang="fr">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- `viewport-fit=cover` étend la page sous l'encoche et la barre de gestes ;
+         les retraits sont repris en CSS par `env(safe-area-inset-*)`. Sans lui,
+         la barre d'état translucide déclarée plus bas masquerait le bandeau. -->
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, viewport-fit=cover"
+    />
     <title>Linkx</title>
     <meta
       name="description"
@@ -21,10 +27,16 @@
          barre d'état de l'icône d'accueil se déclarent par ces balises. -->
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <!-- `black-translucent` fait passer la page sous la barre d'état : le bandeau
+         garde donc sa propre couleur jusqu'en haut de l'écran. Cette valeur n'est
+         tenable qu'avec les retraits de zone sûre appliqués dans `App.css`. -->
+    <meta
+      name="apple-mobile-web-app-status-bar-style"
+      content="black-translucent"
+    />
     <meta name="apple-mobile-web-app-title" content="Linkx" />
-    <script type="module" crossorigin src="./assets/index--Kj3CC9u.js"></script>
-    <link rel="stylesheet" crossorigin href="./assets/index-C68973bN.css">
+    <script type="module" crossorigin src="./assets/index-CajF84vI.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-CW-MKZ4H.css">
   </head>
   <body>
     <div id="root"></div>
