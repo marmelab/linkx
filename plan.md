@@ -2,47 +2,22 @@
 
 ## 1. Objet du document
 
-Ce document doit permettre à un agent reprenant le projet sans historique de conversation d'implémenter une SPA React permettant à deux joueurs de jouer à Linkx sur le même écran.
+Ce document doit permettre à un agent reprenant le projet sans historique de conversation de retrouver le comportement attendu d'une SPA React où deux joueurs jouent à Linkx sur le même écran, ou où un joueur affronte l'ordinateur.
 
 Il contient :
 
 - les règles validées avec le propriétaire du projet ;
 - la topologie exacte des pièces ;
 - les décisions d'UX déjà demandées ;
-- l'architecture recommandée ;
 - les algorithmes de pose, de passe et de victoire ;
 - le plan de tests et les critères d'acceptation ;
 - les décisions UX définitivement appliquées.
 
-Ce fichier est la spécification de référence du jeu actuel. Un agent doit pouvoir repartir du starter décrit ci-dessous et recréer le même moteur, les mêmes interactions et la même présentation sans avoir besoin de l'historique de conversation. Les comportements formulés comme obligations dans ce document priment sur les anciennes recommandations.
+Il ne contient **pas** la spécification technique : stack, commandes, arborescence, modèle de domaine et conventions de code vivent dans `README.md`, qui sert aussi de `CLAUDE.md`. Ne pas dupliquer l'un dans l'autre.
 
-## 2. État initial du dépôt
+Ce fichier est la spécification de référence du comportement du jeu actuel. Les obligations formulées ici priment sur les anciennes recommandations.
 
-Le dépôt est une SPA Vite standard, encore proche du starter :
-
-- React `19.2.x` ;
-- TypeScript `~6.0.x` ;
-- Vite `8.1.x` ;
-- styles CSS classiques dans `src/App.css` et `src/index.css` ;
-- `oxlint` pour le lint ;
-- `package-lock.json`, donc utiliser `npm` par défaut ;
-- aucun framework de test installé ;
-- aucune dépendance de gestion d'état ou de rendu graphique.
-
-Fichiers principaux existants :
-
-```text
-src/App.tsx
-src/App.css
-src/index.css
-src/main.tsx
-package.json
-vite.config.ts
-```
-
-Le starter peut être remplacé. Éviter d'ajouter une bibliothèque d'état : le jeu tient dans un reducer React et des fonctions TypeScript pures.
-
-## 3. Sources et arbitrage des règles
+## 2. Sources et arbitrage des règles
 
 Règle française fournie par l'utilisateur :
 
@@ -54,9 +29,9 @@ Fiche officielle :
 
 Les dimensions et l'inventaire ci-dessous ont été corrigés et explicitement confirmés par l'utilisateur. Ils priment sur toute déduction faite à partir des photos ou des fiches commerciales.
 
-## 4. Règles validées
+## 3. Règles validées
 
-### 4.1 Plateau et joueurs
+### 3.1 Plateau et joueurs
 
 - Deux joueurs : bleu et blanc.
 - Une grille verticale de **9 colonnes par 9 lignes**, soit 81 cases.
@@ -64,7 +39,7 @@ Les dimensions et l'inventaire ci-dessous ont été corrigés et explicitement c
 - Le jeu est local : les deux joueurs utilisent le même écran et jouent à tour de rôle.
 - La règle physique fait commencer le plus jeune joueur. Pour l'application, prévoir un choix du premier joueur à l'écran de démarrage, avec bleu sélectionné par défaut si aucun choix n'est fait.
 
-### 4.2 Inventaire exact
+### 3.2 Inventaire exact
 
 Il existe sept formes. Chaque joueur possède **deux exemplaires de chaque forme**.
 
@@ -115,7 +90,7 @@ Contrôles de cohérence à tester :
 
 Il n'y a pas de pièce carrée `O` ni de barre de quatre cases.
 
-### 4.3 Orientations et retournements
+### 3.3 Orientations et retournements
 
 - Toutes les pièces peuvent tourner par quarts de tour.
 - Le grand `L` peut être retourné pour devenir un `J`.
@@ -136,7 +111,7 @@ Nombre attendu d'orientations géométriques uniques en autorisant les miroirs :
 - T : 4 ;
 - grand L/J : 8.
 
-### 4.4 Déroulement d'un tour
+### 3.4 Déroulement d'un tour
 
 À son tour, un joueur :
 
@@ -148,7 +123,7 @@ Nombre attendu d'orientations géométriques uniques en autorisant les miroirs :
 
 Une pose illégale ne consomme ni la pièce ni le tour.
 
-### 4.5 Contraintes de placement
+### 3.5 Contraintes de placement
 
 Une pose est légale seulement si toutes les conditions suivantes sont remplies :
 
@@ -165,7 +140,7 @@ Formalisation de la règle « aucun trou sous une pièce » : pour chaque case d
 
 Une pièce retenue par un seul point de collision mais dont une autre partie surplombe une case vide est donc interdite. Une pièce ne peut pas être placée volontairement plus haut que sa position naturelle de chute.
 
-### 4.6 Connexions et victoire immédiate
+### 3.6 Connexions et victoire immédiate
 
 Deux cases de même couleur sont connectées si elles se touchent :
 
@@ -181,7 +156,7 @@ La connectivité utilise donc les huit voisins d'une case.
 
 Une connexion diagonale est suffisante. Il n'est pas nécessaire de relier une paire de bords choisie à l'avance.
 
-### 4.7 Absence de coup, passes et fin par blocage
+### 3.7 Absence de coup, passes et fin par blocage
 
 - Un joueur doit jouer s'il possède au moins un coup légal.
 - S'il n'en possède aucun, son tour est automatiquement passé.
@@ -198,9 +173,9 @@ En cas de blocage total :
 
 La règle imprimée ne précise pas le cas d'une égalité parfaite. Décision appliquée dans l'application : déclarer un match nul.
 
-## 5. Expérience utilisateur demandée
+## 4. Expérience utilisateur demandée
 
-### 5.1 Disposition générale
+### 4.1 Disposition générale
 
 Sur écran de bureau :
 
@@ -217,7 +192,7 @@ Sur écran de bureau :
 
 Sur petit écran, conserver la grille prioritaire et réorganiser les réserves au-dessus et au-dessous. Les sept formes d'une réserve sont alors placées dans une rangée horizontale défilante, sans provoquer de débordement de page. La partie doit rester jouable en mode paysage sur tablette et sur mobile.
 
-### 5.2 Affichage de l'inventaire
+### 4.2 Affichage de l'inventaire
 
 Afficher sept groupes de forme par joueur, sans nom visible et sans badge numérique.
 
@@ -234,7 +209,7 @@ Afficher sept groupes de forme par joueur, sans nom visible et sans badge numér
 - La réserve blanche utilise un fond gris bleuté plus soutenu. Les silhouettes blanches pleines ont un contour externe gris foncé, et leurs versions indisponibles un contour pointillé sombre.
 - Supprimer entièrement l'en-tête visible de chaque réserve : aucun texte « Réserve », nom de couleur, pastille ou badge de tour ne doit apparaître au-dessus des pièces.
 
-### 5.3 Sélection, rotation et miroir
+### 4.3 Sélection, rotation et miroir
 
 Interaction demandée :
 
@@ -254,7 +229,7 @@ Ne pas afficher de texte du type « nom de la pièce · 90° ». La zone central
 
 La zone de sélection doit conserver une hauteur fixe d'environ `150 px`, qu'une pièce soit sélectionnée ou non, afin de contenir une orientation de trois cases à l'échelle de jeu. Les cellules de l'aperçu central utilisent exactement la même taille nominale que celles de la réserve (`46 px`) et une taille visuelle équivalente aux cases jouées. Les entrées de colonnes ont elles aussi un espace réservé de hauteur fixe. Le bord supérieur de la grille ne doit donc jamais changer de position lors d'une sélection, d'une rotation ou d'un retournement.
 
-### 5.4 Ghost et dépôt
+### 4.4 Ghost et dépôt
 
 La visée se fait directement sur la grille quand le pointeur sait survoler, et par la rangée de flèches sinon. Les deux chemins partagent la même règle de position.
 
@@ -269,7 +244,7 @@ La visée se fait directement sur la grille quand le pointeur sait survoler, et 
 
 Convention de visée, portée par `aimedColumn` et partagée par le survol, les flèches et le clavier : la colonne visée porte le **centre** de la matrice normalisée, jamais son bord gauche, et la pièce est retenue contre les bords du plateau au lieu de dépasser. Viser le bord droit avec une barre 3 la pose donc sur les colonnes 7, 8 et 9. Une largeur paire penche à gauche. Le moteur continue de refuser un ancrage hors plateau, mais l'interface ne peut plus en produire.
 
-### 5.5 Retours d'état
+### 4.5 Retours d'état
 
 Prévoir :
 
@@ -285,11 +260,10 @@ Le panneau final ne doit jamais être modal et ne doit jamais recouvrir la grill
 
 Ne pas afficher de texte d'instruction permanent lorsque le visuel suffit. Les informations nécessaires à l'accessibilité et aux tests doivent être placées dans des attributs `aria-*` ou `data-testid`, pas ajoutées comme libellés visibles.
 
-### 5.6 Continuité visuelle des pièces et chemin gagnant
+### 4.6 Continuité visuelle des pièces et chemin gagnant
 
 - Les carrés qui composent une même pièce doivent former une silhouette continue, dans la réserve, dans le ghost et une fois posés sur la grille.
 - Dans la réserve, les cellules d'une matrice se touchent sans gouttière ni bordure interne.
-- La réserve, l'aperçu central, le ghost et la grille partent des mêmes matrices et appellent la même fonction `getCellsOutlinePath`. Ne pas recréer manuellement une géométrie différente pour le plateau ni pour la réserve.
 - Une silhouette est un chemin SVG unique par pièce, tracé dans un `viewBox` exprimé en cases. Le contour est celui de l'union des cases, pas la juxtaposition de rectangles par case : parcourir les arêtes de bord de l'union, fusionner les segments colinéaires, puis décaler chaque arête vers l'intérieur du retrait. Deux cases qui ne se touchent que par un coin donnent deux boucles distinctes. Ne jamais empiler un rectangle par case : dans un angle rentrant de `L`, `T` ou `S`, la case du coin dépasse alors de la largeur du retrait et laisse une encoche visible dans le creux.
 - Le chemin porte directement `fill` et `stroke`. Comme il ne contient aucune arête interne, un trait ne peut plus apparaître dans les angles rentrants ; aucun filtre `feMorphology` n'est nécessaire. Ne jamais appliquer de `drop-shadow` CSS décalée aux chemins SVG du plateau : ses unités sont mises à l'échelle du `viewBox` et créent de grosses formes grises autour des pièces. La grille reste dessinée sous cette couche par les bordures fines des cases.
 - Le contour est un réglage partagé : `--piece-outline` fixe la même épaisseur, en unités de case, pour la réserve, l'aperçu, le ghost et la grille. Seule la teinte change avec le joueur, `--blue-outline` et `--white-outline`. Un exemplaire déjà joué reprend ce même contour en pointillé, sans remplissage.
@@ -300,7 +274,7 @@ Ne pas afficher de texte d'instruction permanent lorsque le visuel suffit. Les i
 - Après une victoire par connexion, reconstruire un chemin précis reliant les deux bords opposés et surligner uniquement ses cellules avec un contour SVG lumineux jaune/or animé. Ce contour reste transparent : il ne pose aucun fond au-dessus des pièces et ne change jamais la couleur bleue ou blanche du chemin victorieux.
 - Le surlignage doit respecter `prefers-reduced-motion`.
 
-### 5.7 Chargement de positions pour les tests visuels
+### 4.7 Chargement de positions pour les tests visuels
 
 L'application peut démarrer directement depuis une grille non vide fournie dans la query string. Cette entrée est réservée aux tests, démonstrations et reproductions visuelles ; elle n'ajoute aucun contrôle visible à l'interface.
 
@@ -319,130 +293,9 @@ Exemple avec un S bleu et une case blanche, au tour des blancs :
 ?board=........./........./........./........./........./........./.B......./BB......./B.......W&turn=white
 ```
 
-Le parsing et la sérialisation de cette représentation appartiennent à un module de domaine commun utilisé à la fois par les tests d'évaluation et le chargeur de query string. Ne pas maintenir deux parseurs divergents.
+## 5. Algorithmes de domaine
 
-## 6. Architecture recommandée
-
-### 6.1 Arborescence cible
-
-```text
-src/
-  game/
-    types.ts
-    pieces.ts
-    transforms.ts
-    placement.ts
-    connectivity.ts
-    boardText.ts
-    queryState.ts
-    legalMoves.ts
-    evaluation.ts
-    simulation.ts
-    minimax.ts
-    reducer.ts
-    selectors.ts
-    game.test.ts
-  components/
-    Board.tsx
-    DropZone.tsx
-    PieceShape.tsx
-    PieceTray.tsx
-    GameStatus.tsx
-    SetupPanel.tsx
-    GameOverPanel.tsx
-    RulesPanel.tsx
-  App.tsx
-  App.css
-  index.css
-  main.tsx
-```
-
-Les noms peuvent évoluer, mais les règles doivent rester séparées des composants React.
-
-### 6.2 Types principaux
-
-```ts
-type PlayerId = 'blue' | 'white'
-
-type ShapeId =
-  | 'mono'
-  | 'domino'
-  | 'bar3'
-  | 'smallL'
-  | 's'
-  | 't'
-  | 'largeL'
-
-type Point = { x: number; y: number }
-
-type Orientation = {
-  cells: Point[]
-  width: number
-  height: number
-  rotation: 0 | 1 | 2 | 3
-  flipped: boolean
-}
-
-type BoardCell = null | {
-  player: PlayerId
-  pieceId: string
-  shapeId: ShapeId
-}
-
-type Board = BoardCell[][] // toujours 9 lignes de 9 colonnes
-
-type Inventory = Record<ShapeId, 0 | 1 | 2>
-
-type PlayedCopies = Record<ShapeId, [boolean, boolean]>
-
-type Selection = {
-  shapeId: ShapeId
-  copy: 0 | 1
-  rotation: 0 | 1 | 2 | 3
-  flipped: boolean
-}
-
-type GameResult = {
-  winner: PlayerId | null
-  reason: 'connection' | 'stalemate' | 'draw'
-  largestZones?: Record<PlayerId, number>
-}
-```
-
-L'ID de pièce posée permet le débogage et l'animation, mais la détection de connexion doit travailler sur les couleurs des cases, pas sur les IDs de pièces.
-
-### 6.3 État du reducer
-
-L'état minimal doit contenir :
-
-- phase : configuration, partie ou fin ;
-- grille ;
-- inventaire bleu et blanc ;
-- état joué/disponible de chacun des deux exemplaires de chaque forme, afin que la silhouette cliquée soit exactement celle qui devient pointillée ;
-- joueur actif ;
-- sélection courante ;
-- nombre de passes consécutives ;
-- résultat éventuel ;
-- éventuellement le dernier événement pour les messages (`placed`, `forced-pass`, `invalid`).
-
-Le survol de colonne et les animations peuvent rester dans un état UI local, à condition que le ghost appelle exactement la même fonction de placement que le reducer.
-
-Actions possibles :
-
-```text
-START_GAME
-SELECT_SHAPE
-ROTATE_SELECTION
-FLIP_SELECTION
-DROP_SELECTED_SHAPE
-RESET_GAME
-```
-
-Ne jamais accepter une position finale calculée par le composant. `DROP_SELECTED_SHAPE` doit transmettre seulement la colonne ; le reducer ou une fonction de domaine recalcule l'atterrissage et la validité.
-
-## 7. Algorithmes de domaine
-
-### 7.1 Normalisation d'une forme
+### 5.1 Normalisation d'une forme
 
 Pour toute liste de coordonnées :
 
@@ -453,7 +306,7 @@ Pour toute liste de coordonnées :
 
 Cette clé sert à dédupliquer les symétries.
 
-### 7.2 Transformations
+### 5.2 Transformations
 
 Rotation horaire autour de l'origine, suivie d'une normalisation :
 
@@ -471,7 +324,7 @@ Pour énumérer les coups, générer les quatre rotations de la base puis les qu
 
 Pour l'UI, garder `rotation` et `flipped` explicites afin que `Tourner` et `Retourner` aient un comportement prévisible.
 
-### 7.3 Calcul de la chute
+### 5.3 Calcul de la chute
 
 Convention de coordonnées :
 
@@ -492,21 +345,11 @@ Pour une orientation et une colonne d'ancrage :
 
 Pendant la simulation, les cases dont `y < 0` sont hors de la grille et ne collisionnent pas encore. Une case dont `y >= 9`, dont `x` sort de la grille ou qui chevauche une case occupée collisionne.
 
-Résultat recommandé :
-
-```ts
-type DropResult =
-  | { valid: true; cells: Point[]; anchorY: number }
-  | {
-      valid: false
-      reason: 'horizontal-bounds' | 'overflow' | 'unsupported'
-      previewCells: Point[]
-    }
-```
+Le résultat distingue une pose valide, qui porte ses cases finales, d'un refus qui porte une raison structurée `horizontal-bounds`, `overflow` ou `unsupported` ainsi que les cases d'aperçu nécessaires au ghost invalide.
 
 La collision pendant la chute sert à déterminer l'arrêt ; elle n'a normalement pas besoin d'être présentée comme une erreur finale distincte.
 
-### 7.4 Validation du support
+### 5.4 Validation du support
 
 Créer un `Set` des coordonnées finales de la nouvelle pièce.
 
@@ -521,7 +364,7 @@ sinon : pose interdite
 
 Cette vérification doit être partagée entre le ghost, l'énumération des coups et la pose définitive.
 
-### 7.5 Énumération des coups légaux
+### 5.5 Énumération des coups légaux
 
 Pour le joueur demandé :
 
@@ -533,7 +376,7 @@ Pour le joueur demandé :
 
 La grille est petite : aucune optimisation complexe n'est nécessaire. Cette fonction est la source de vérité pour les passes forcées.
 
-### 7.6 Détection des composantes
+### 5.6 Détection des composantes
 
 Utiliser un BFS ou DFS sur les 81 cases avec les huit directions :
 
@@ -570,7 +413,7 @@ Pour le surlignage final, conserver ou reconstruire les prédécesseurs d'un BFS
 
 Le moteur de victoire et le calcul du chemin doivent utiliser la même connectivité à huit voisins. Le chemin peut donc contenir des pas diagonaux.
 
-### 7.7 Avancement du tour
+### 5.7 Avancement du tour
 
 Après une pose valide :
 
@@ -587,7 +430,7 @@ Après une pose valide :
 
 Éviter une boucle infinie dans la résolution automatique. Au maximum deux joueurs sont examinés avant de conclure au blocage.
 
-### 7.8 Évaluation d'une grille pour une future IA
+### 5.8 Évaluation d'une grille
 
 Exposer `getConnectionScore(board, player)`, une fonction pure qui estime, pour un joueur, le nombre minimal de cases vides encore nécessaires pour relier une paire de bords opposés :
 
@@ -601,7 +444,7 @@ Une grille vide a donc un score de `9`, une grille déjà gagnante un score de `
 
 Cette première heuristique mesure des cases à conquérir et non des pièces ou des tours. Elle ignore volontairement les formes restantes, la gravité et les supports légaux. Le Minimax compare les joueurs avec `score adverse - score du joueur` et complète cette valeur par la différence entre leurs plus grandes zones.
 
-### 7.9 Minimax
+### 5.9 Minimax
 
 Le moteur expose une sélection de coup pure, indépendante de React :
 
@@ -619,26 +462,11 @@ chooseMinimaxMove(position, { depth: 2 })
 - appliquer l'élagage alpha-bêta, ordonner les coups racine par l'heuristique et utiliser une table de transposition qui distingue valeurs exactes, bornes basses et bornes hautes ;
 - retourner le coup, sa valeur et le nombre de nœuds explorés, ou `null` si aucun coup n'est disponible.
 
-Cette étape fournit le moteur et son banc de validation. Le choix d'un adversaire ordinateur dans l'interface reste une évolution distincte.
+Le moteur est branché dans l'interface : l'écran de configuration propose une partie contre l'ordinateur, qui tient alors les blancs et joue à la profondeur par défaut.
 
-## 8. Plan de tests
+## 6. Plan de tests
 
-### 8.1 Outils
-
-Ajouter au minimum Vitest et un script `test`. Pour les interactions React, ajouter React Testing Library et `user-event` si nécessaire.
-
-Scripts cibles :
-
-```json
-{
-  "scripts": {
-    "test": "vitest run",
-    "test:watch": "vitest"
-  }
-}
-```
-
-### 8.2 Tests des pièces
+### 6.1 Tests des pièces
 
 - les matrices correspondent exactement aux ASCII validés ;
 - chaque forme possède quatre, trois, deux ou une case selon le cas ;
@@ -648,7 +476,7 @@ Scripts cibles :
 - aucune orientation n'a de coordonnées négatives après normalisation ;
 - aucune orientation dupliquée.
 
-### 8.3 Tests de chute et de support
+### 6.2 Tests de chute et de support
 
 - monomino sur grille vide : tombe au fond ;
 - domino horizontal sur grille vide : valide au fond ;
@@ -664,7 +492,7 @@ Scripts cibles :
 - ghost et validation définitive retournent les mêmes cases ;
 - une pose invalide ne modifie ni la grille, ni l'inventaire, ni le joueur actif.
 
-### 8.4 Tests de coups disponibles et de passes
+### 6.3 Tests de coups disponibles et de passes
 
 - une grille vide offre des coups aux deux joueurs ;
 - une forme à compteur zéro n'est jamais énumérée ;
@@ -674,7 +502,7 @@ Scripts cibles :
 - deux passes consécutives terminent la partie ;
 - une absence de coup suivie d'une pose ne termine pas la partie.
 
-### 8.5 Tests de connexion
+### 6.4 Tests de connexion
 
 - connexion gauche-droite orthogonale ;
 - connexion haut-bas orthogonale ;
@@ -686,7 +514,7 @@ Scripts cibles :
 - victoire immédiate après le coup qui complète le chemin ;
 - reconstruction d'un chemin gagnant ordonné entre les deux bords, y compris pour un chemin uniquement diagonal.
 
-### 8.6 Tests d'évaluation de grille
+### 6.5 Tests d'évaluation de grille
 
 Isoler ces scénarios dans `evaluation.test.ts` et décrire les grilles sous forme textuelle avec `B` pour une case bleue, `W` pour une case blanche et `.` pour une case vide.
 
@@ -697,7 +525,7 @@ Isoler ces scénarios dans `evaluation.test.ts` et décrire les grilles sous for
 - cases adverses infranchissables et score infini si aucun axe ne reste accessible ;
 - au moins deux positions mixtes issues de parties rejouées avec de vraies pièces et uniquement des poses légales, puis comparées à leur représentation textuelle avant l'évaluation.
 
-### 8.7 Tests du Minimax
+### 6.6 Tests du Minimax
 
 - refuser une profondeur inférieure à `1` ;
 - choisir immédiatement une pose gagnante depuis une position construite avec des coups légaux ;
@@ -705,7 +533,7 @@ Isoler ces scénarios dans `evaluation.test.ts` et décrire les grilles sous for
 - jouer au moins 20 parties déterministes contre un adversaire aléatoire, en étant premier joueur dans la moitié des parties et second dans l'autre moitié ;
 - à profondeur `2`, gagner au moins 80 % de cet échantillon et obtenir strictement plus de victoires que de défaites.
 
-### 8.8 Tests d'interface
+### 6.7 Tests d'interface
 
 - seule la réserve active est interactive ;
 - un premier clic sur une silhouette disponible sélectionne cet exemplaire ;
@@ -736,7 +564,7 @@ Isoler ces scénarios dans `evaluation.test.ts` et décrire les grilles sous for
 - une victoire par connexion surligne le chemin gagnant exact avec un contour transparent sans masquer ni éclaircir jusqu'au blanc la couleur des pièces ;
 - `Nouvelle partie` restaure exactement les inventaires et une grille vide.
 
-### 8.9 Tests du chargement par URL
+### 6.8 Tests du chargement par URL
 
 - accepter le format multiligne `B/W/.` des tests d'évaluation ;
 - accepter neuf lignes séparées par `/` et une chaîne compacte de 81 caractères ;
@@ -746,76 +574,9 @@ Isoler ces scénarios dans `evaluation.test.ts` et décrire les grilles sous for
 - détecter une position déjà gagnante et afficher immédiatement le résultat et son chemin ;
 - refuser deux vainqueurs simultanés ou un joueur actif inconnu.
 
-## 9. Ordre d'implémentation recommandé
+### 6.9 Vérification navigateur
 
-### Étape 1 — Modèle des pièces
-
-- Créer les types.
-- Encoder les sept matrices.
-- Implémenter rotation, miroir, normalisation et déduplication.
-- Ajouter les premiers tests de cohérence.
-
-### Étape 2 — Moteur de pose
-
-- Créer la grille 9×9.
-- Implémenter chute, collision, dépassement et support.
-- Implémenter l'énumération des coups.
-- Couvrir les cas de trou et de surplomb avant de poursuivre.
-
-### Étape 3 — Connexions et fin de partie
-
-- Implémenter BFS/DFS à huit voisins.
-- Détecter les deux axes de victoire.
-- Calculer la plus grande zone.
-- Reconstruire un chemin gagnant avec les prédécesseurs du BFS.
-- Implémenter les passes consécutives et le blocage.
-
-### Étape 4 — Reducer
-
-- Relier inventaires, sélection, pose et alternance.
-- Garder toutes les transitions déterministes.
-- Tester le reducer sans React.
-
-### Étape 5 — Interface fonctionnelle
-
-- Construire grille, réserves et sélection.
-- Ajouter rotation et retournement.
-- Ajouter les neuf entrées et le ghost.
-- Ajouter messages de tour, passe et victoire.
-- Afficher toujours deux silhouettes dans chaque groupe de réserve : chaque exemplaire disponible est un bouton propre, chaque exemplaire joué est pointillé, sans compteur textuel.
-- Afficher la sélection et ses transformations à l'échelle des réserves dans une zone centrale de hauteur fixe.
-
-### Étape 6 — Finition visuelle et accessibilité
-
-- Travailler la hiérarchie visuelle bleu/blanc.
-- Unifier visuellement les cellules d'une même pièce à partir du `pieceId`.
-- Supprimer les gouttières et artefacts aux jonctions, notamment dans les creux des `S`/`Z` et `T`.
-- Dimensionner les silhouettes de réserve comme les pièces jouées.
-- Alléger les réserves en retirant les rectangles permanents et renforcer le contraste de la réserve blanche.
-- Supprimer les en-têtes de réserve et les libellés visuels non indispensables ; indiquer le tour par une flèche gauche/droite et conserver les équivalents ARIA.
-- Garder le panneau final hors de la grille et surligner le chemin gagnant.
-- Ajouter focus clavier, libellés ARIA et contrastes.
-- Ajouter animation de chute avec respect de `prefers-reduced-motion`.
-- Vérifier les écrans de bureau, tablette et mobile.
-
-### Étape 7 — Moteur Minimax
-
-- Créer une représentation pure de position simulée avec plateau, inventaires et joueur actif.
-- Simuler les poses et les passes avec les mêmes fonctions de domaine que le jeu local.
-- Implémenter Minimax à profondeur limitée avec élagage alpha-bêta et cache de positions exactes.
-- Valider les décisions terminales et mesurer le taux de victoire contre un joueur aléatoire déterministe.
-
-### Étape 8 — Vérification finale
-
-Exécuter :
-
-```bash
-npm test
-npm run lint
-npm run build
-```
-
-Puis tester dans un navigateur au minimum :
+Après `npm test`, `npm run lint` et `npm run build`, contrôler dans un vrai navigateur, sur un viewport bureau et un viewport mobile :
 
 - sélection et rotations de chaque forme ;
 - miroir L/J et S/Z ;
@@ -832,10 +593,10 @@ Puis tester dans un navigateur au minimum :
 - panneau final non modal et surlignage du chemin gagnant ;
 - absence de débordement horizontal sur tablette et mobile ;
 - passe forcée ;
+- chargement direct d'une position non vide et d'une position gagnante avec `?board=...&turn=...` ;
 - nouvelle partie.
-- chargement direct d'une position non vide et d'une position gagnante avec `?board=...&turn=...`.
 
-## 10. Critères d'acceptation
+## 7. Critères d'acceptation
 
 Le développement est terminé lorsque :
 
@@ -862,11 +623,11 @@ Le développement est terminé lorsque :
 - tests, lint et build passent ;
 - la SPA ne dépend d'aucun serveur.
 
-## 11. Décisions UX appliquées
+## 8. Décisions UX appliquées
 
 1. **Égalité après blocage total** : déclarer un match nul.
 2. **Premier joueur** : écran de configuration bleu/blanc avec rappel « le plus jeune commence » ; bleu sélectionné par défaut.
-3. **Convention de colonne** : la colonne cliquée est l'ancre de la case la plus à gauche de la pièce normalisée.
+3. **Convention de colonne** : la colonne visée porte le centre de la matrice normalisée, jamais l'ancre de sa case la plus à gauche, et la pièce est retenue contre les bords du plateau.
 4. **Contrôle du miroir** : bouton `Retourner` et touche `F`, en plus du clic répété qui reste réservé à la rotation.
 5. **Inventaire** : toujours deux silhouettes par forme, chacune sélectionnable séparément lorsqu'elle est disponible et exactement la silhouette jouée devient pointillée, sans nom ni multiplicateur visible et sans rectangle permanent autour des paires.
 6. **Fin de partie** : panneau compact non modal au-dessus de la grille et chemin gagnant surligné.
@@ -879,12 +640,11 @@ Le développement est terminé lorsque :
 
 Ces décisions font partie de la spécification et doivent être reproduites telles quelles.
 
-## 12. Hors périmètre initial
+## 9. Hors périmètre initial
 
 Ne pas ajouter sans demande explicite :
 
 - jeu en réseau ;
-- intégration de l'adversaire IA dans l'interface (le moteur Minimax seul est disponible) ;
 - comptes utilisateurs ;
 - backend ou base de données ;
 - matchmaking ;
