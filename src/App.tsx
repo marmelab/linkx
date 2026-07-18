@@ -14,10 +14,10 @@ import { aimedColumn, calculateDrop } from './game/placement'
 import { createInitialState, gameReducer } from './game/reducer'
 import { getOrientation } from './game/transforms'
 import { createGameStateFromSearch } from './game/queryState'
-import { chooseMinimaxMove } from './game/minimax'
+import { chooseMoveForDifficulty } from './game/minimax'
 import { usePointerHasHover } from './components/usePointerHasHover'
 import { BOARD_SIZE, PLAYER_IDS } from './game/types'
-import type { GameMode, InvalidDropReason, PlayerId } from './game/types'
+import type { Difficulty, GameMode, InvalidDropReason, PlayerId } from './game/types'
 
 const DROP_MESSAGES: Record<InvalidDropReason, string> = {
   'horizontal-bounds': 'Cette orientation dépasse du plateau.',
@@ -43,12 +43,13 @@ function App() {
   const [glowPieceId, setGlowPieceId] = useState<string | null>(null)
   const pointerHasHover = usePointerHasHover()
 
-  const startGame = (mode: GameMode) =>
+  const startGame = (mode: GameMode, difficulty: Difficulty) =>
     dispatch({
       type: 'START_GAME',
       // Le tirage au sort remplace le choix manuel du premier joueur.
       firstPlayer: PLAYER_IDS[Math.floor(Math.random() * PLAYER_IDS.length)],
       mode,
+      difficulty,
     })
 
   const aiTurn =
@@ -95,11 +96,14 @@ function App() {
   useEffect(() => {
     if (!aiTurn) return
     const timer = setTimeout(() => {
-      const decision = chooseMinimaxMove({
-        board: state.board,
-        inventories: state.inventories,
-        activePlayer: state.activePlayer,
-      })
+      const decision = chooseMoveForDifficulty(
+        {
+          board: state.board,
+          inventories: state.inventories,
+          activePlayer: state.activePlayer,
+        },
+        state.difficulty,
+      )
       if (!decision) return
       const { shapeId, orientation, column } = decision.move
       dispatch({
@@ -111,7 +115,7 @@ function App() {
       })
     }, AI_THINKING_DELAY)
     return () => clearTimeout(timer)
-  }, [aiTurn, state.activePlayer, state.board, state.inventories])
+  }, [aiTurn, state.activePlayer, state.board, state.difficulty, state.inventories])
 
   // La pièce de l'ordinateur brille un moment : sans cela, le plateau change
   // tout seul et le joueur ne voit pas ce qui vient d'être posé.

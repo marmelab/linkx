@@ -10,7 +10,7 @@ import { BASE_SHAPES, createInitialInventory, matrixToPoints } from './pieces'
 import { aimedColumn, calculateDrop, createEmptyBoard } from './placement'
 import { createInitialState, gameReducer } from './reducer'
 import { getOrientation, getUniqueOrientations, pointsKey } from './transforms'
-import { SHAPE_IDS } from './types'
+import { DEFAULT_DIFFICULTY, SHAPE_IDS } from './types'
 import type { Board, PlayerId, ShapeId } from './types'
 
 function occupy(
@@ -360,6 +360,21 @@ describe('partie contre l’ordinateur', () => {
     })
     expect(state.mode).toBe('human')
     expect(state.aiPlayer).toBeNull()
+  })
+
+  it('retient le niveau choisi au lancement de la partie', () => {
+    const state = gameReducer(createInitialState(), {
+      type: 'START_GAME',
+      firstPlayer: 'white',
+      mode: 'ai',
+      difficulty: 'hard',
+    })
+    expect(state.difficulty).toBe('hard')
+
+    // Sans choix explicite, la partie démarre au niveau par défaut, et une
+    // nouvelle partie repart de ce même niveau.
+    expect(startAi().difficulty).toBe(DEFAULT_DIFFICULTY)
+    expect(gameReducer(state, { type: 'RESET_GAME' }).difficulty).toBe(DEFAULT_DIFFICULTY)
   })
 
   it('pose la pièce de l’ordinateur, consomme un exemplaire et rend la main', () => {

@@ -58,7 +58,7 @@ src/
     legalMoves.ts       énumération des coups légaux, test d'existence d'un coup
     evaluation.ts       getConnectionScore, heuristique de distance aux bords
     simulation.ts       position pure simulée pour la recherche
-    minimax.ts          chooseMinimaxMove, alpha-bêta et table de transposition
+    minimax.ts          chooseMinimaxMove, niveaux de difficulté, alpha-bêta et table de transposition
     reducer.ts          état initial et transitions du jeu
     boardText.ts        parseur/sérialiseur du format B/W/.
     moveNotation.ts     grammaire, parse et sérialisation d'une notation de partie
@@ -70,7 +70,7 @@ src/
     PlexiDefs.tsx       `<defs>` partagés : biseau, reflets et ombre des pièces
     PieceTray.tsx       réserve d'un joueur
     GameStatus.tsx      bandeau de tour et aperçu de la sélection
-    SetupPanel.tsx      choix du mode et du premier joueur
+    SetupPanel.tsx      choix du mode et du niveau de l'ordinateur
     GameOverPanel.tsx   panneau de fin non modal
     RulesPanel.tsx      règles résumées
     pieceGeometry.ts    getCellsOutlinePath, contour de l'union des cases
@@ -100,6 +100,7 @@ Les tests vivent à côté de leur module, en `*.test.ts` / `*.test.tsx`.
 - L'éclairage doit rester **invariant par rotation et par miroir** : la lumière vient toujours du haut à gauche de l'écran. Il n'est donc exprimé qu'avec des primitives d'espace utilisateur — `feDistantLight`, `feOffset`, `feDropShadow`. Proscrire les dégradés en `objectBoundingBox`, qui s'étirent avec la boîte de la forme, et les `transform` SVG sur une silhouette : `getOrientation` cuit déjà l'orientation dans les coordonnées du chemin. `PlexiDefs.test.tsx` verrouille ces deux points.
 - Les longueurs du filtre sont en **unités de case**, jamais en pixels : le plateau et la réserve dessinent une case par unité utilisateur, donc le relief garde la même épaisseur relative à toutes les échelles.
 - `simulation.ts` fournit la position pure utilisée par `minimax.ts` ; elle rejoue les mêmes fonctions de domaine que le reducer, sans les dupliquer.
+- `minimax.ts` traduit seul un niveau en profondeur : `DIFFICULTY_DEPTHS` donne la profondeur visée, `getAffordableDepth` l'abaisse tant que la position offre trop de coups légaux, et `chooseMoveForDifficulty` enchaîne les deux pour le joueur au trait. L'interface transmet un niveau, jamais une profondeur.
 - L'état de survol, les délais et les animations restent dans l'UI tant qu'ils n'affectent pas les règles.
 
 ### Ordre des réserves et mise en page
@@ -123,10 +124,11 @@ Les tests vivent à côté de leur module, en `*.test.ts` / `*.test.tsx`.
 - `Board` est un tableau de 9 lignes de 9 `BoardCell`, chaque case occupée portant `player`, `pieceId` et `shapeId`.
 - `Inventory` compte les exemplaires restants ; `PlayedCopies` mémorise lequel des deux exemplaires a été joué, afin que la silhouette cliquée soit exactement celle qui devient pointillée.
 - `DropResult` est un résultat discriminé : soit `{ valid: true, cells, anchorY }`, soit une raison structurée `horizontal-bounds`, `overflow` ou `unsupported`.
-- `GameState` porte `phase`, `mode`, `aiPlayer`, `firstPlayer`, `history`, `board`, `inventories`, `playedCopies`, `activePlayer`, `selection`, `consecutivePasses`, `result`, `lastEvent`, `nextPieceId` et `lastPlacedPieceId`.
+- `GameState` porte `phase`, `mode`, `aiPlayer`, `difficulty`, `firstPlayer`, `history`, `board`, `inventories`, `playedCopies`, `activePlayer`, `selection`, `consecutivePasses`, `result`, `lastEvent`, `nextPieceId` et `lastPlacedPieceId`.
 - `history` est la suite des `HistoryEntry` : une pose (`RecordedMove`) ou une passe forcée, dans l'ordre. Les joueurs alternent d'une entrée à l'autre, ce qui suffit à re-sérialiser la partie depuis `firstPlayer`.
 - Actions du reducer : `START_GAME`, `SELECT_SHAPE`, `ROTATE_SELECTION`, `FLIP_SELECTION`, `DROP_SELECTED_SHAPE`, `PLAY_AI_MOVE`, `RESET_GAME`.
 - En mode `ai`, `aiPlayer` vaut `'white'` et l'ordinateur pose uniquement via `PLAY_AI_MOVE` ; ses cases ne passent jamais par le chemin de sélection humain.
+- `Difficulty` énumère les niveaux de l'ordinateur (`DIFFICULTY_IDS`, défaut `DEFAULT_DIFFICULTY`). `START_GAME` transporte le niveau choisi, que `GameState.difficulty` conserve jusqu'à la fin de la partie.
 
 ### Notation de partie par URL
 
@@ -144,6 +146,7 @@ Les tests vivent à côté de leur module, en `*.test.ts` / `*.test.tsx`.
 - Toujours couvrir le cas négatif : une action refusée ne doit modifier ni la grille, ni l'inventaire, ni le joueur actif.
 - Les scénarios de plateau s'écrivent au format textuel `B/W/.` via `boardText.ts`, pas en construisant un `Board` à la main.
 - Pour toute modification d'interface, faire aussi le passage navigateur décrit dans `plan.md` (étape de vérification finale) sur un viewport bureau et un viewport mobile, et vérifier l'absence de débordement horizontal et d'erreur console.
+- Le duel entre profondeurs de recherche (`src/game/depthDuel.test.ts`) dure une trentaine de secondes et reste donc hors de `npm test`. Le lancer après toute modification de l'évaluation ou de la recherche : `LINKX_DEPTH_DUEL=1 npx vitest run src/game/depthDuel.test.ts`.
 
 Vérification finale obligatoire :
 

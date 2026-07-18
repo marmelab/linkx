@@ -3,6 +3,7 @@ import { hasLegalMove } from './legalMoves'
 import { createInitialInventory, INITIAL_ROTATIONS } from './pieces'
 import { calculateDrop, createEmptyBoard } from './placement'
 import { getOrientation } from './transforms'
+import { DEFAULT_DIFFICULTY } from './types'
 import type {
   GameAction,
   GameResult,
@@ -41,6 +42,7 @@ export function createInitialState(): GameState {
     phase: 'setup',
     mode: 'human',
     aiPlayer: null,
+    difficulty: DEFAULT_DIFFICULTY,
     firstPlayer: 'blue',
     history: [],
     board: createEmptyBoard(),
@@ -202,6 +204,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         mode,
         // Le joueur humain garde toujours les bleus, à gauche de l'écran.
         aiPlayer: mode === 'ai' ? 'white' : null,
+        difficulty: action.difficulty ?? DEFAULT_DIFFICULTY,
         firstPlayer: action.firstPlayer,
         activePlayer: action.firstPlayer,
       }

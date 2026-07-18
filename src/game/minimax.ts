@@ -4,10 +4,35 @@ import { enumerateLegalMoves } from './legalMoves'
 import type { LegalMove } from './legalMoves'
 import { getOtherPlayer, simulateLegalMove } from './simulation'
 import type { GamePosition, SimulationTransition } from './simulation'
-import { BOARD_SIZE, SHAPE_IDS } from './types'
-import type { GameResult, PlayerId } from './types'
+import { BOARD_SIZE, DEFAULT_DIFFICULTY, SHAPE_IDS } from './types'
+import type { Difficulty, GameResult, PlayerId } from './types'
 
-const DEFAULT_DEPTH = 2
+/**
+ * Profondeur visée par chaque niveau, en nombre de poses examinées.
+ *
+ * Le plafond vient du temps de réflexion : la recherche est synchrone dans le
+ * navigateur, y compris sur mobile. Chaque profondeur supplémentaire multiplie
+ * le temps par le facteur de branchement, qui atteint 95 coups légaux sur une
+ * grille vide et retombe sous 20 en fin de partie.
+ */
+export const DIFFICULTY_DEPTHS: Record<Difficulty, number> = {
+  easy: 1,
+  standard: 2,
+  hard: 3,
+}
+
+/**
+ * Nombre de coups légaux au-delà duquel la profondeur 3 dépasse le budget de
+ * réflexion. Temps mesurés à cette profondeur sur un portable de développement,
+ * un mobile étant plusieurs fois plus lent : 0,3 s en moyenne et 1 s au pire
+ * jusqu'à 27 coups, 1,4 s vers 30 coups, 2 s à 48 coups, 15 s sur une grille
+ * vide, qui en offre 95.
+ */
+export const WIDE_POSITION_MOVES = 24
+/** Profondeur retenue tant que la position reste trop large. */
+const WIDE_POSITION_DEPTH = 2
+
+const DEFAULT_DEPTH = DIFFICULTY_DEPTHS[DEFAULT_DIFFICULTY]
 /** Valeur d'une partie terminée : elle domine toujours l'heuristique. */
 export const TERMINAL_SCORE = 1_000_000
 const CONNECTION_WEIGHT = 100
@@ -216,4 +241,37 @@ export function chooseMinimaxMove(
   }
 
   return { move: bestMove, score: bestScore, exploredNodes: context.exploredNodes }
+}
+
+/**
+ * Profondeur réellement explorée pour un niveau donné dans une position dont on
+ * connaît le nombre de coups légaux.
+ *
+ * Le niveau fixe une profondeur visée, pas une promesse d'attente : tant que la
+ * position reste large, la recherche s'arrête plus tôt pour ne pas figer
+ * l'écran. Elle va au bout dès que le plateau se resserre, c'est-à-dire là où
+ * la profondeur décide de la partie.
+ */
+export function getAffordableDepth(
+  difficulty: Difficulty,
+  legalMoveCount: number,
+): number {
+  const depth = DIFFICULTY_DEPTHS[difficulty]
+  if (legalMoveCount <= WIDE_POSITION_MOVES) return depth
+  return Math.min(depth, WIDE_POSITION_DEPTH)
+}
+
+/** Coup choisi pour le joueur au trait, à la force demandée. */
+export function chooseMoveForDifficulty(
+  position: GamePosition,
+  difficulty: Difficulty,
+): MinimaxDecision | null {
+  const legalMoveCount = enumerateLegalMoves(
+    position.board,
+    position.inventories[position.activePlayer],
+  ).length
+  if (legalMoveCount === 0) return null
+  return chooseMinimaxMove(position, {
+    depth: getAffordableDepth(difficulty, legalMoveCount),
+  })
 }

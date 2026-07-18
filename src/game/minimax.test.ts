@@ -2,15 +2,19 @@ import { describe, expect, it } from 'vitest'
 import { boardFromText } from './boardText'
 import { enumerateLegalMoves } from './legalMoves'
 import {
+  DIFFICULTY_DEPTHS,
   TERMINAL_SCORE,
+  WIDE_POSITION_MOVES,
   chooseMinimaxMove,
+  chooseMoveForDifficulty,
   classifyTranspositionBound,
+  getAffordableDepth,
   positionKey,
 } from './minimax'
 import { createInitialInventory } from './pieces'
 import { createGamePosition, simulateLegalMove } from './simulation'
 import type { GamePosition } from './simulation'
-import { SHAPE_IDS } from './types'
+import { DIFFICULTY_IDS, SHAPE_IDS } from './types'
 import type {
   GameResult,
   Inventory,
@@ -355,6 +359,43 @@ describe('Minimax', () => {
 
     // Une valeur strictement à l'intérieur de la fenêtre resserrée reste exacte.
     expect(classifyTranspositionBound(55, 50, 60)).toBe('exact')
+  })
+
+  it('associe à chaque niveau une profondeur strictement croissante', () => {
+    const depths = DIFFICULTY_IDS.map((difficulty) => DIFFICULTY_DEPTHS[difficulty])
+    expect(depths.every((depth) => Number.isInteger(depth) && depth >= 1)).toBe(true)
+    expect(depths).toEqual([...depths].sort((left, right) => left - right))
+    expect(new Set(depths).size).toBe(depths.length)
+  })
+
+  it('abaisse la profondeur du niveau expert sur une position trop large', () => {
+    // Une grille vide offre 95 coups légaux : à profondeur 3, la recherche
+    // demande une quinzaine de secondes et figerait l'écran.
+    expect(getAffordableDepth('hard', WIDE_POSITION_MOVES + 1)).toBe(2)
+    expect(getAffordableDepth('hard', WIDE_POSITION_MOVES)).toBe(DIFFICULTY_DEPTHS.hard)
+    // Les niveaux plus tendres tiennent déjà le budget : ils ne sont jamais
+    // relevés ni abaissés.
+    expect(getAffordableDepth('easy', WIDE_POSITION_MOVES + 50)).toBe(1)
+    expect(getAffordableDepth('standard', WIDE_POSITION_MOVES + 50)).toBe(2)
+    expect(getAffordableDepth('standard', 1)).toBe(2)
+  })
+
+  it('joue le coup du niveau demandé pour le joueur au trait', () => {
+    const position = positionWithBlueMonos(2)
+    const decision = chooseMoveForDifficulty(position, 'standard')
+    const moveCount = enumerateLegalMoves(
+      position.board,
+      position.inventories[position.activePlayer],
+    ).length
+
+    expect(decision?.move).toEqual(
+      chooseMinimaxMove(position, {
+        depth: getAffordableDepth('standard', moveCount),
+      })?.move,
+    )
+    // Le niveau débutant n'examine que sa propre pose : il voit la victoire
+    // immédiate, mais rien au-delà.
+    expect(chooseMoveForDifficulty(position, 'easy')?.move).toBeDefined()
   })
 
   it(

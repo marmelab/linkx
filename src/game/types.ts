@@ -69,6 +69,14 @@ export type GameEvent =
 
 export type GameMode = 'human' | 'ai'
 
+/**
+ * Force de l'ordinateur, de la plus tendre à la plus coriace. Chaque niveau
+ * fixe la profondeur de recherche : voir `DIFFICULTY_DEPTHS` dans `minimax.ts`.
+ */
+export const DIFFICULTY_IDS = ['easy', 'standard', 'hard'] as const
+export type Difficulty = (typeof DIFFICULTY_IDS)[number]
+export const DEFAULT_DIFFICULTY: Difficulty = 'standard'
+
 /** Coup joué, tel qu'il est rejouable depuis une partie vierge. */
 export type RecordedMove = {
   shapeId: ShapeId
@@ -89,6 +97,8 @@ export type GameState = {
   mode: GameMode
   /** Couleur tenue par l'ordinateur, `null` en partie à deux joueurs. */
   aiPlayer: PlayerId | null
+  /** Force de l'ordinateur ; sans effet en partie à deux joueurs. */
+  difficulty: Difficulty
   /** Joueur ayant ouvert la partie : point de départ de l'alternance. */
   firstPlayer: PlayerId
   /** Coups et passes déjà joués, dans l'ordre, pour re-sérialiser la partie. */
@@ -107,7 +117,12 @@ export type GameState = {
 }
 
 export type GameAction =
-  | { type: 'START_GAME'; firstPlayer: PlayerId; mode?: GameMode }
+  | {
+      type: 'START_GAME'
+      firstPlayer: PlayerId
+      mode?: GameMode
+      difficulty?: Difficulty
+    }
   | {
       type: 'PLAY_AI_MOVE'
       shapeId: ShapeId
