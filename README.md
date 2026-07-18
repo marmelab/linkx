@@ -60,6 +60,7 @@ src/
     minimax.ts          chooseMinimaxMove, alpha-bêta et table de transposition
     reducer.ts          état initial et transitions du jeu
     boardText.ts        parseur/sérialiseur du format B/W/.
+    moveNotation.ts     grammaire, parse et sérialisation d'une notation de partie
     queryState.ts       construction d'un état depuis la query string
   components/           affichage React
     Board.tsx           grille, ghost, surlignage du chemin gagnant
@@ -96,7 +97,8 @@ Les tests vivent à côté de leur module, en `*.test.ts` / `*.test.tsx`.
 - `Board` est un tableau de 9 lignes de 9 `BoardCell`, chaque case occupée portant `player`, `pieceId` et `shapeId`.
 - `Inventory` compte les exemplaires restants ; `PlayedCopies` mémorise lequel des deux exemplaires a été joué, afin que la silhouette cliquée soit exactement celle qui devient pointillée.
 - `DropResult` est un résultat discriminé : soit `{ valid: true, cells, anchorY }`, soit une raison structurée `horizontal-bounds`, `overflow` ou `unsupported`.
-- `GameState` porte `phase`, `mode`, `aiPlayer`, `board`, `inventories`, `playedCopies`, `activePlayer`, `selection`, `consecutivePasses`, `result`, `lastEvent`, `nextPieceId` et `lastPlacedPieceId`.
+- `GameState` porte `phase`, `mode`, `aiPlayer`, `firstPlayer`, `history`, `board`, `inventories`, `playedCopies`, `activePlayer`, `selection`, `consecutivePasses`, `result`, `lastEvent`, `nextPieceId` et `lastPlacedPieceId`.
+- `history` est la suite des `HistoryEntry` : une pose (`RecordedMove`) ou une passe forcée, dans l'ordre. Les joueurs alternent d'une entrée à l'autre, ce qui suffit à re-sérialiser la partie depuis `firstPlayer`.
 - Actions du reducer : `START_GAME`, `SELECT_SHAPE`, `ROTATE_SELECTION`, `FLIP_SELECTION`, `DROP_SELECTED_SHAPE`, `PLAY_AI_MOVE`, `RESET_GAME`.
 - En mode `ai`, `aiPlayer` vaut `'white'` et l'ordinateur pose uniquement via `PLAY_AI_MOVE` ; ses cases ne passent jamais par le chemin de sélection humain.
 
@@ -106,6 +108,16 @@ Les tests vivent à côté de leur module, en `*.test.ts` / `*.test.tsx`.
 
 - Le parseur partagé est `src/game/boardText.ts`, utilisé à la fois par `queryState.ts` et par les tests d'évaluation. Ne pas recréer ce format dans un test.
 - Les fixtures regroupent les cases orthogonalement connexes d'une couleur sous un même `pieceId`. Elles ne restaurent ni l'inventaire consommé, ni la frontière entre deux pièces adjacentes de même couleur.
+
+### Notation de partie par URL
+
+`?moves=<notation>` rejoue une partie coup par coup et restaure donc la position complète : plateau, réserves, exemplaires pointillés, joueur actif et issue éventuelle. `?moves=` a la priorité sur `?board=` ; `turn` ne s'applique qu'à `board`, une notation portant elle-même son premier joueur.
+
+- La grammaire, la règle de canonicité et le jeton de passe sont documentés en tête de `src/game/moveNotation.ts` : `<forme>[s][r|l N]<colonne>`, formes `1`, `2`, `3I`, `3L`, `4S`, `4T`, `4L`, colonne d'ancrage de 1 à 9 toujours en dernier, `--` pour un tour passé.
+- `parseGameRecord` rejoue les coups en dispatchant les actions du reducer : légalité, victoire, passes et blocage restent calculés par le moteur, jamais recopiés. Il renvoie un résultat discriminé et, en cas de refus, l'index du jeton fautif avec une raison structurée.
+- Une orientation donnée n'a qu'une écriture canonique, celle des orientations uniques de `transforms.ts`. Les écritures redondantes sont acceptées en lecture puis normalisées, donc `serializeGameRecord(parseGameRecord(x).state) === x` pour toute notation canonique.
+- `GameState` porte `firstPlayer` et `history` pour re-sérialiser une partie en cours ; le reducer y ajoute chaque pose et chaque passe forcée.
+- `fixtures/urls.md` contient des URLs prêtes à coller pour les vérifications navigateur.
 
 ## Tests et vérification
 

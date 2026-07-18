@@ -41,6 +41,8 @@ export function createInitialState(): GameState {
     phase: 'setup',
     mode: 'human',
     aiPlayer: null,
+    firstPlayer: 'blue',
+    history: [],
     board: createEmptyBoard(),
     inventories: makeInventories(),
     playedCopies: makePlayedCopies(),
@@ -85,6 +87,7 @@ function advanceAfterPlacement(state: GameState, playerWhoPlaced: PlayerId): Gam
       ...state,
       activePlayer: playerWhoPlaced,
       consecutivePasses: 1,
+      history: [...state.history, { kind: 'pass' }],
       lastEvent: { type: 'forced-pass', player: next },
     }
   }
@@ -149,6 +152,10 @@ function placeSelection(
     board,
     inventories,
     playedCopies,
+    history: [
+      ...state.history,
+      { kind: 'move', shapeId, rotation, flipped, column },
+    ],
     selection:
       keepSelection && remaining > 0 && nextCopy !== -1
         ? { ...selection, copy: nextCopy }
@@ -171,8 +178,8 @@ function placeSelection(
   return advanceAfterPlacement(placed, player)
 }
 
-/** Premier exemplaire encore en réserve, pour armer un coup de l'ordinateur. */
-function firstAvailableCopy(
+/** Premier exemplaire encore en réserve, pour armer un coup non interactif. */
+export function firstAvailableCopy(
   state: GameState,
   player: PlayerId,
   shapeId: ShapeId,
@@ -195,6 +202,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         mode,
         // Le joueur humain garde toujours les bleus, à gauche de l'écran.
         aiPlayer: mode === 'ai' ? 'white' : null,
+        firstPlayer: action.firstPlayer,
         activePlayer: action.firstPlayer,
       }
     }

@@ -69,11 +69,30 @@ export type GameEvent =
 
 export type GameMode = 'human' | 'ai'
 
+/** Coup joué, tel qu'il est rejouable depuis une partie vierge. */
+export type RecordedMove = {
+  shapeId: ShapeId
+  rotation: Rotation
+  flipped: boolean
+  /** Colonne d'ancrage, c'est-à-dire la colonne de la case la plus à gauche. */
+  column: number
+}
+
+/**
+ * Entrée d'historique. Les joueurs alternent d'une entrée à l'autre : une passe
+ * forcée occupe donc sa propre entrée pour que l'alternance reste vraie.
+ */
+export type HistoryEntry = ({ kind: 'move' } & RecordedMove) | { kind: 'pass' }
+
 export type GameState = {
   phase: 'setup' | 'playing' | 'finished'
   mode: GameMode
   /** Couleur tenue par l'ordinateur, `null` en partie à deux joueurs. */
   aiPlayer: PlayerId | null
+  /** Joueur ayant ouvert la partie : point de départ de l'alternance. */
+  firstPlayer: PlayerId
+  /** Coups et passes déjà joués, dans l'ordre, pour re-sérialiser la partie. */
+  history: HistoryEntry[]
   board: Board
   inventories: Record<PlayerId, Inventory>
   playedCopies: Record<PlayerId, PlayedCopies>
