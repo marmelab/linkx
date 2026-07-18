@@ -309,7 +309,14 @@
    s'anime par pas, la matière clignoterait au lieu de respirer. */
 .board-piece--glowing { animation: piece-arrive 240ms cubic-bezier(.2,.8,.2,1), piece-glow 900ms ease-in-out 240ms infinite alternate; }
 
-@keyframes piece-arrive { from { opacity: 0; transform: translateY(-3px); } }
+/* `.board-piece` est un élément SVG. Dans un `transform` CSS, une longueur s'y
+   exprime en unités de l'espace utilisateur local — ici une case — et non en
+   pixels d'écran. `-3px` ne décalait donc pas la pièce de trois pixels mais de
+   trois cases, soit un tiers du plateau : les pièces débordaient largement
+   au-dessus du cadre pendant toute la descente. Le décalage est exprimé en
+   fraction de case, comme le reste des longueurs de la couche des pièces, pour
+   garder la même ampleur relative du plateau de bureau à celui du mobile. */
+@keyframes piece-arrive { from { opacity: 0; transform: translateY(-0.18px); } }
 @keyframes piece-glow {
   from { stroke: #d59b00; stroke-width: var(--piece-outline); }
   to { stroke: #ffd54a; stroke-width: 0.13; }
