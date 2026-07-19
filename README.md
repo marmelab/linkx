@@ -72,6 +72,7 @@ src/
     winningTrail.ts     reconstruction du tracé du chemin gagnant
     pieceGeometry.ts    getCellsOutlinePath, contour de l'union des cases
     usePointerHasHover.ts  détection du survol réel du pointeur
+    useStoredDifficulty.ts  niveau de l'ordinateur retenu d'une partie à l'autre
   App.tsx               câblage du reducer, tour de l'ordinateur, raccourcis clavier
   App.css, index.css    toute la mise en page
   main.tsx              montage React et enregistrement du service worker
@@ -119,5 +120,5 @@ npm run build
 - Préférer de petits composants et des fonctions nommées aux duplications de logique.
 - **Commenter peu.** Un commentaire n'explique que ce qui n'est pas clair à la lecture du code. Ne rien redire de ce que `plan.md` ou un `CLAUDE.md` spécifie déjà : le doublon se périme. Souvent, un meilleur nom suffit.
 - Ne pas modifier les matrices des pièces, les règles de support ou la connectivité pour résoudre un problème purement visuel.
-- Ne pas introduire de backend, de jeu en réseau, de comptes, de persistance ou d'effets sonores sans demande explicite. L'adversaire ordinateur existe déjà et reste local : `minimax.ts` tourne dans le navigateur, sans appel réseau.
+- Ne pas introduire de backend, de jeu en réseau, de comptes, de persistance ou d'effets sonores sans demande explicite. Seule exception accordée à ce jour : le niveau de l'ordinateur, retenu dans `localStorage` par `useStoredDifficulty.ts`. Rien d'autre n'est stocké — surtout pas l'état d'une partie, dont `plan.md` exige qu'elle reparte à zéro. Tout ce qui est relu du stockage se valide avant emploi. L'adversaire ordinateur existe déjà et reste local : `minimax.ts` tourne dans le navigateur, sans appel réseau.
 - Avant de terminer, examiner le diff, exécuter `git diff --check` et résumer les vérifications effectuées.

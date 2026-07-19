@@ -64,34 +64,30 @@
 }
 
 /* Setup */
+/* L'écran d'accueil tient en trois niveaux de texte : le titre, le corps à
+   1rem et un secondaire unique à `--setup-small`, toujours en `--muted`. Toute
+   ligne ajoutée ici reprend l'un des trois ; n'y introduire ni quatrième taille
+   ni gris de plus, c'est ce qui rendait la carte bruyante. La famille et la
+   graisse viennent de `:root` sauf pour le titre : ne pas les redéclarer. */
 .setup-screen {
   --safe-gutter: 2rem;
+  --setup-small: 0.82rem;
 
-  position: relative;
   display: grid;
   min-height: 100vh;
   min-height: 100dvh;
   place-items: center;
-  overflow: hidden;
+  /* Photo du plateau, voilée pour que la carte s'en détache et que le texte ne
+     se lise jamais sur les pièces. Le chemin part de la racine parce que
+     l'image vit dans `public/` : Vite le réécrit en relatif à la CSS de sortie
+     (`../linkx.jpg`), ce qui reste juste sous le sous-chemin GitHub Pages.
+     L'écrire `./linkx.jpg` ferait chercher le fichier dans `src/` et casserait
+     le build. La couleur de secours se voit tant que l'image n'est pas là. */
   background:
-    linear-gradient(90deg, transparent 49.9%, rgb(23 33 58 / 5%) 50%, transparent 50.1%),
-    linear-gradient(0deg, transparent 49.9%, rgb(23 33 58 / 5%) 50%, transparent 50.1%),
+    linear-gradient(rgb(233 235 239 / 72%), rgb(233 235 239 / 72%)),
+    url(/linkx.jpg) center / cover no-repeat,
     #e9ebef;
-  background-size: 84px 84px;
 }
-
-.setup-screen::before,
-.setup-screen::after {
-  position: absolute;
-  width: 380px;
-  height: 380px;
-  border: 46px solid rgb(22 103 217 / 8%);
-  content: '';
-  transform: rotate(18deg);
-}
-
-.setup-screen::before { top: -240px; left: -150px; }
-.setup-screen::after { right: -170px; bottom: -250px; border-color: rgb(23 33 58 / 6%); }
 
 .setup-card {
   position: relative;
@@ -105,21 +101,25 @@
   text-align: center;
 }
 
-.brand-mark { display: flex; width: 48px; height: 38px; margin: 0 auto 1.5rem; align-items: end; gap: 3px; }
-.brand-mark span { width: 14px; border-radius: 2px; background: var(--blue); }
-.brand-mark span:nth-child(1) { height: 16px; }
-.brand-mark span:nth-child(2) { height: 38px; }
-.brand-mark span:nth-child(3) { height: 26px; background: var(--ink); }
-
 .game-title {
-  margin: 0.25rem 0 0.75rem;
+  margin: 0 0 0.75rem;
   color: var(--ink);
-  font: 800 clamp(3.5rem, 10vw, 5.7rem)/0.95 'Avenir Next', 'Segoe UI', sans-serif;
+  font-size: clamp(3.5rem, 10vw, 5.7rem);
+  font-weight: 800;
   letter-spacing: 0.02em;
+  line-height: 0.95;
 }
 
-.setup-intro { max-width: 440px; margin: 0 auto 2rem; color: #5e687a; line-height: 1.6; }
-.mode-choice { display: grid; gap: 0.75rem; margin-bottom: 1.1rem; }
+/* Accroche et crédit sont deux phrases de même rang, l'une en tête de carte et
+   l'autre en pied : même typographie, seul l'écart qui les détache diffère. Le
+   crédit étant le dernier élément, c'est une marge haute qui le sépare du
+   niveau de difficulté ; une marge basse ne ferait que doubler la marge
+   intérieure de la carte. */
+.setup-intro,
+.setup-credit { max-width: 440px; margin: 0 auto; color: var(--muted); line-height: 1.6; }
+.setup-intro { margin-bottom: 0.6rem; }
+.setup-credit { margin-top: 1.5rem; }
+.mode-choice { display: grid; gap: 0.75rem; margin-bottom: 1.1rem; margin-top: 1.1rem; }
 
 .mode-button {
   display: flex;
@@ -139,12 +139,25 @@
 .mode-button:focus-visible { border-color: var(--blue); box-shadow: 0 6px 18px rgb(21 76 168 / 16%); transform: translateY(-1px); }
 .mode-icon { font-size: 1.6rem; line-height: 1; }
 .mode-text { display: flex; flex: 1; flex-direction: column; gap: 0.2rem; }
-.mode-text strong { font: 800 1rem 'Avenir Next', 'Segoe UI', sans-serif; }
-.mode-text small { color: #70798a; font-size: 0.78rem; }
+.mode-text strong { font-weight: 800; }
+.mode-text small { color: var(--muted); font-size: var(--setup-small); }
 .mode-arrow { color: var(--blue); font-size: 1.2rem; font-weight: 800; }
-.setup-note { margin: 0; color: #70798a; font-size: 0.78rem; }
+.setup-note { margin: 0; color: var(--muted); font-size: var(--setup-small); }
 .setup-card > .primary-button { width: 100%; }
-.setup-card > .text-button { margin-top: 0.75rem; font-size: 0.86rem; }
+
+/* Les deux commandes en pleine prose — le bouton des règles et le lien de
+   l'éditeur — se lisent dans le fil de la phrase : ni marge intérieure, qui
+   décalerait l'interligne, ni taille propre. Le soulignement est permanent
+   parce qu'au milieu d'un texte la graisse seule ne signale pas une action. */
+.setup-intro .text-button,
+.setup-credit a { padding: 0; color: inherit; font: inherit; font-weight: 700; text-decoration: underline; }
+.setup-intro .text-button:hover,
+.setup-credit a:hover { color: var(--blue); }
+
+/* Le rendu natif de la liste est minuscule à côté du reste de la carte : cette
+   marge intérieure lui rend une cible tactile utilisable sans lui donner une
+   taille de texte à elle. */
+.setup-note select { padding: 0.45rem 0.4rem; font: inherit; }
 
 /* Game chrome */
 .game-shell {
@@ -795,7 +808,6 @@
   .setup-screen,
   .modal-backdrop { --safe-gutter: 0.8rem; }
   .setup-card { padding: 2rem 1.1rem 1.5rem; }
-  .setup-intro { font-size: 0.88rem; }
   /* Une seule rangée, resserrée : un retour à la ligne déborderait du bandeau,
      dont la hauteur est fixe par construction. La médaille est décorative et
      part la première quand la place manque. */

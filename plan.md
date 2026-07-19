@@ -230,7 +230,7 @@ Le cas d'une position **déjà gagnante** relève de l'histoire 4 : tant que la 
 
 **Ce que ça recouvre** — le lancement d'une partie, les deux réserves, la sélection d'un exemplaire, la rotation, le retournement, la visée d'une colonne, l'aperçu de la position d'arrivée, la pose, la consommation de l'exemplaire et l'alternance des tours.
 
-**Lancement.** Un écran de départ lance une partie à deux joueurs sur le même écran et donne accès à un résumé des règles. Il annonce que la couleur qui commence est tirée au sort. Une fois la partie lancée, un résumé des règles reste consultable sans quitter la partie, et une commande permet à tout moment de recommencer.
+**Lancement.** Un écran de départ lance une partie à deux joueurs sur le même écran et donne accès à un résumé des règles. Il montre en fond une photo du jeu de plateau et en crédite l'éditeur, en pied de carte, par un lien vers sa fiche produit. Il n'annonce pas le tirage au sort de la couleur qui commence : c'est le bandeau de tour qui dit d'emblée qui joue, et l'écran de départ n'a pas à préparer à une information qu'il ne porte pas encore. Une fois la partie lancée, un résumé des règles reste consultable sans quitter la partie, et une commande permet à tout moment de recommencer.
 
 **Réserves.** Chaque joueur voit ses sept formes, chacune représentée par **deux silhouettes** côte à côte. Un exemplaire disponible est plein et sélectionnable ; un exemplaire joué reste visible en **contour pointillé** et n'est plus sélectionnable. La séquence d'une forme est donc : deux pleines, puis une pleine et une pointillée, puis deux pointillées. Aucun nom de forme ni compteur numérique n'est affiché ; ces informations restent disponibles pour qui n'a pas accès à l'image. La réserve adverse est visible mais inerte.
 
@@ -518,7 +518,7 @@ Le chemin est un vrai chemin dans la zone gagnante, reconstruit avec la **même*
 
 **Ce que ça recouvre** — le choix du niveau avant la partie, le tour de l'ordinateur, et le budget de réflexion.
 
-**Les niveaux.** L'écran de départ de l'histoire 2 propose désormais deux modes : à deux joueurs sur le même écran, ou contre l'ordinateur. Avant de lancer une partie contre l'ordinateur, le joueur choisit son niveau : **débutant**, **confirmé** ou **expert**. Le débutant joue au coup par coup et laisse passer les menaces. Le confirmé, proposé par défaut, anticipe la réponse de son adversaire. L'expert pousse son analyse plus loin dès que le plateau se resserre. Le choix vaut pour toute la partie ; une nouvelle partie repart du niveau par défaut.
+**Les niveaux.** L'écran de départ de l'histoire 2 propose désormais deux modes : à deux joueurs sur le même écran, ou contre l'ordinateur. Avant de lancer une partie contre l'ordinateur, le joueur choisit son niveau : **débutant**, **confirmé** ou **expert**. Le débutant joue au coup par coup et laisse passer les menaces. Le confirmé, proposé par défaut, anticipe la réponse de son adversaire. L'expert pousse son analyse plus loin dès que le plateau se resserre. Le choix vaut pour toute la partie, et il est **retenu d'une partie à l'autre** : le joueur qui a réglé son niveau une fois ne le règle plus, y compris après avoir fermé puis rouvert le jeu. C'est la seule préférence conservée, et elle est traitée comme une donnée du dehors — une valeur illisible ou écrite par une version antérieure est ignorée au profit du niveau par défaut, qui reste **confirmé** au tout premier lancement.
 
 **Choix de cette version** — le joueur humain tient toujours les bleus et l'ordinateur les blancs, ce qui fixe leur place à l'écran et évite un réglage de plus. Qui **ouvre** la partie reste tiré au sort : l'ordinateur joue donc le premier coup une fois sur deux.
 
@@ -605,7 +605,7 @@ La dernière version est servie dès que le réseau revient : le joueur ne doit 
 - Aucun compte n'est demandé à aucun moment.
 - Une version plus récente est prise en compte dès le retour du réseau, sans intervention du joueur.
 - Une coupure réseau en cours de partie n'interrompt pas la partie.
-- L'état de la partie n'est pas restauré après fermeture ; le jeu redémarre sur son écran de départ.
+- L'état de la partie n'est pas restauré après fermeture ; le jeu redémarre sur son écran de départ. Seul le niveau de l'ordinateur y est retrouvé.
 
 ---
 
