@@ -310,15 +310,8 @@
 .control-button:hover:not(:disabled) { border-color: #7e899c; }
 .control-button:disabled { cursor: not-allowed; opacity: 0.38; }
 
-/* Commande de conseil : une commande de coup comme les deux autres, donc le même
-   bouton-icône, posé face à elles de l'autre côté de l'aperçu. Elle ne vaut que
-   pour un humain au trait, et disparaît donc d'elle-même pendant le tour de
-   l'ordinateur et à la fin de la partie. La rangée réserve sa hauteur en
-   permanence : son apparition et sa disparition ne déplacent rien.
-   Ces règles suivent celles de `.control-button`, qu'elles surchargent à
-   spécificité égale. */
-.control-button--hint { position: absolute; left: 0; border-color: var(--hint); background: rgb(124 58 237 / 8%); color: var(--hint-dark); }
-.control-button--hint:hover:not(:disabled) { border-color: var(--hint-dark); background: rgb(124 58 237 / 18%); }
+.control-button--hint { position: absolute; left: 0; border-color: transparent; background: none; opacity: 0.8; }
+.control-button--hint:hover:not(:disabled) { border-color: transparent; opacity: 1; }
 .control-button--hint:disabled { cursor: progress; opacity: 0.55; }
 
 .drop-zones { display: grid; width: min(100%, 520px); grid-template-columns: repeat(9, 1fr); gap: 3px; padding: 0 12px 6px; }

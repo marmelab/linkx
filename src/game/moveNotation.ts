@@ -206,12 +206,16 @@ function applyRecordedMove(state: GameState, move: RecordedMove): ApplyResult {
     return { ok: false, reason: 'exhausted' }
   }
 
-  const turns = (move.rotation - selected.rotation + 4) % 4
+  // Le retournement modifie aussi la rotation : on le passe en premier, puis on
+  // rejoint la rotation visée depuis l'orientation réellement obtenue.
+  let armed = selected
+  if (armed.flipped !== move.flipped) {
+    next = gameReducer(next, { type: 'FLIP_SELECTION' })
+    armed = next.selection ?? armed
+  }
+  const turns = (move.rotation - armed.rotation + 4) % 4
   for (let turn = 0; turn < turns; turn += 1) {
     next = gameReducer(next, { type: 'ROTATE_SELECTION' })
-  }
-  if (selected.flipped !== move.flipped) {
-    next = gameReducer(next, { type: 'FLIP_SELECTION' })
   }
 
   next = gameReducer(next, { type: 'DROP_SELECTED_SHAPE', column: move.column })

@@ -253,13 +253,21 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         },
         lastEvent: null,
       }
-    case 'FLIP_SELECTION':
+    case 'FLIP_SELECTION': {
       if (state.phase !== 'playing' || !state.selection) return state
+      // Le miroir s'applique avant la rotation : retourner la pièce affichée,
+      // et non la forme de base, impose donc d'inverser aussi la rotation.
+      const { rotation, flipped } = state.selection
       return {
         ...state,
-        selection: { ...state.selection, flipped: !state.selection.flipped },
+        selection: {
+          ...state.selection,
+          rotation: ((4 - rotation) % 4) as Rotation,
+          flipped: !flipped,
+        },
         lastEvent: null,
       }
+    }
     case 'DROP_SELECTED_SHAPE': {
       if (state.phase !== 'playing' || !state.selection) return state
       // L'ordinateur pose via PLAY_AI_MOVE : ses cases ne sont pas cliquables.

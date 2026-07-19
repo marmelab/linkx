@@ -12,7 +12,9 @@ export function getTurnKind(
   after: Selection,
 ): TurnKind | null {
   if (before.shapeId !== after.shapeId || before.copy !== after.copy) return null
-  if (before.rotation !== after.rotation) return 'rotate'
+  // Un retournement change aussi la rotation, jamais l'inverse : il se
+  // reconnaît donc au seul changement de `flipped`, testé en premier.
   if (before.flipped !== after.flipped) return 'flip'
+  if (before.rotation !== after.rotation) return 'rotate'
   return null
 }

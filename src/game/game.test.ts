@@ -303,6 +303,22 @@ describe('gardes du reducer', () => {
     expect(flipped.selection?.flipped).toBe(true)
   })
 
+  // Le joueur retourne ce qu'il voit, pas la forme de base : depuis une rotation
+  // impaire, garder la rotation telle quelle renverrait une tout autre pièce.
+  it('retourne l’orientation affichée, quelle que soit la rotation', () => {
+    let state = started()
+    state = gameReducer(state, { type: 'SELECT_SHAPE', player: 'blue', shapeId: 'largeL' })
+    for (let turn = 0; turn < 4; turn += 1) {
+      const before = state.selection!
+      const shown = getOrientation(before.shapeId, before.rotation, before.flipped)
+      const after = gameReducer(state, { type: 'FLIP_SELECTION' }).selection!
+      expect(pointsKey(getOrientation(after.shapeId, after.rotation, after.flipped).cells)).toBe(
+        pointsKey(shown.cells.map(({ x, y }) => ({ x: -x, y }))),
+      )
+      state = gameReducer(state, { type: 'ROTATE_SELECTION' })
+    }
+  })
+
   it('ignore une rotation sans sélection', () => {
     const state = started()
     expect(gameReducer(state, { type: 'ROTATE_SELECTION' })).toBe(state)

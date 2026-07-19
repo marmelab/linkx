@@ -13,6 +13,12 @@ describe('mouvement de la pièce sélectionnée', () => {
     expect(getTurnKind(base, { ...base, flipped: true })).toBe('flip')
   })
 
+  // Un retournement inverse aussi la rotation ; seule une rotation seule tourne.
+  it('anime un retournement qui a changé la rotation', () => {
+    const turned = { ...base, rotation: 1 } as const
+    expect(getTurnKind(turned, { ...turned, rotation: 3, flipped: true })).toBe('flip')
+  })
+
   // Prendre une autre pièce n'est pas un mouvement : rien à faire tourner, la
   // silhouette d'arrivée n'a aucune parenté avec celle qu'elle remplace.
   it('n’anime pas un changement de forme', () => {

@@ -301,6 +301,7 @@ L'attribution des touches relève de l'implémentation. À titre indicatif, cett
 - Tourner ou retourner fait passer l'aperçu de sélection d'une orientation à l'autre par un mouvement, non par une substitution ; changer d'exemplaire, lui, n'anime rien.
 - Enchaîner les quarts de tour plus vite que l'animation ne fait jamais reculer la pièce, et la pose obéit à l'orientation demandée, pas à celle qui est peinte.
 - La commande de retournement transforme le grand `L` en `J` et le `S` en `Z` ; elle est indisponible pour les cinq autres formes.
+- Le retournement est le **miroir de la pièce affichée**, quelle que soit sa rotation : la silhouette d'arrivée est celle de départ vue dans un miroir d'axe vertical, et retourner deux fois de suite ramène à l'orientation de départ.
 - Les silhouettes de réserve ne tournent jamais, quelle que soit l'orientation de la sélection.
 - Une pose consomme **exactement** l'exemplaire choisi : c'est cette silhouette-là qui devient pointillée, pas l'autre.
 - Après une pose, le tour passe à l'adversaire et la sélection est vidée.
