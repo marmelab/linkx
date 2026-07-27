@@ -3,6 +3,8 @@ import { boardFromText } from './boardText'
 import { enumerateLegalMoves } from './legalMoves'
 import {
   DIFFICULTY_DEPTHS,
+  MASTER_DEEP_MOVES,
+  MASTER_WIDE_MOVES,
   TERMINAL_SCORE,
   WIDE_POSITION_MOVES,
   chooseMinimaxMove,
@@ -451,16 +453,31 @@ describe('Minimax', () => {
     expect(new Set(depths).size).toBe(depths.length)
   })
 
-  it('abaisse la profondeur du niveau expert sur une position trop large', () => {
-    // Une grille vide offre 95 coups légaux : à profondeur 3, la recherche
-    // demande une quinzaine de secondes et figerait l'écran.
-    expect(getAffordableDepth('hard', WIDE_POSITION_MOVES + 1)).toBe(2)
+  it('abaisse par paliers la profondeur des niveaux profonds sur une position trop large', () => {
+    // Expert : depth 3 jusqu'à 24 coups, depth 2 au-delà — au-delà, la recherche
+    // demanderait plusieurs secondes et figerait l'écran.
     expect(getAffordableDepth('hard', WIDE_POSITION_MOVES)).toBe(DIFFICULTY_DEPTHS.hard)
-    // Les niveaux plus tendres tiennent déjà le budget : ils ne sont jamais
-    // relevés ni abaissés.
-    expect(getAffordableDepth('easy', WIDE_POSITION_MOVES + 50)).toBe(1)
-    expect(getAffordableDepth('standard', WIDE_POSITION_MOVES + 50)).toBe(2)
-    expect(getAffordableDepth('standard', 1)).toBe(2)
+    expect(getAffordableDepth('hard', WIDE_POSITION_MOVES + 1)).toBe(2)
+    // Maître : depth 4 jusqu'à 30 coups, depth 3 jusqu'à 48, depth 2 au-delà.
+    expect(getAffordableDepth('master', MASTER_DEEP_MOVES)).toBe(DIFFICULTY_DEPTHS.master)
+    expect(getAffordableDepth('master', MASTER_DEEP_MOVES + 1)).toBe(3)
+    expect(getAffordableDepth('master', MASTER_WIDE_MOVES)).toBe(3)
+    expect(getAffordableDepth('master', MASTER_WIDE_MOVES + 1)).toBe(2)
+    // Le maître est au moins aussi profond que l'expert à toute largeur, et
+    // strictement plus profond partout où l'expert ne touche pas déjà depth 2.
+    for (const moves of [1, 24, 25, 30, 40, 48, 60, 95]) {
+      expect(getAffordableDepth('master', moves)).toBeGreaterThanOrEqual(
+        getAffordableDepth('hard', moves),
+      )
+    }
+    // Sur une position minuscule, chaque niveau atteint sa profondeur nominale :
+    // le sommet du barème vaut bien DIFFICULTY_DEPTHS.
+    for (const difficulty of DIFFICULTY_IDS) {
+      expect(getAffordableDepth(difficulty, 1)).toBe(DIFFICULTY_DEPTHS[difficulty])
+    }
+    // Les niveaux plus tendres tiennent déjà le budget : jamais relevés ni abaissés.
+    expect(getAffordableDepth('easy', 95)).toBe(1)
+    expect(getAffordableDepth('standard', 95)).toBe(2)
   })
 
   it('joue le coup du niveau demandé pour le joueur au trait', () => {

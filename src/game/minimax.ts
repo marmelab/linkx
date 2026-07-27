@@ -8,29 +8,56 @@ import { BOARD_SIZE, DEFAULT_DIFFICULTY, SHAPE_IDS } from './types'
 import type { Difficulty, GameResult, PlayerId } from './types'
 
 /**
- * Profondeur visée par chaque niveau, en nombre de poses examinées.
+ * Barème d'abordabilité par niveau : pour chaque niveau, ses profondeurs en
+ * ordre décroissant, chacune avec le nombre maximal de coups légaux jusqu'où elle
+ * tient le budget de réflexion. Au-delà, la recherche se rabat d'un cran, car
+ * chaque tour d'anticipation multiplie le travail par le facteur de branchement.
+ * Ce barème est l'unique source des profondeurs : `DIFFICULTY_DEPTHS` en dérive.
  *
- * Le plafond vient du temps de réflexion : la recherche est synchrone dans le
- * navigateur, y compris sur mobile. Chaque profondeur supplémentaire multiplie
- * le temps par le facteur de branchement, qui atteint 95 coups légaux sur une
- * grille vide et retombe sous 20 en fin de partie.
+ * Le maître tolère un temps de réflexion plus long que l'expert — jusqu'à deux ou
+ * trois secondes sur mobile au lieu d'une à deux —, d'où des plafonds plus hauts
+ * à profondeur égale. C'est ce surcroît de budget, et non un simple +1 de
+ * profondeur, qui le rend strictement plus profond que l'expert sur tout le jeu
+ * hors des tout premiers coups : là où l'expert tient depth 3, le maître tient
+ * depth 4 ; là où l'expert retombe à depth 2, le maître tient encore depth 3.
+ *
+ * Seuils calés au profileur (portable de développement, mobile ~3-4× plus lent) :
+ * depth 3 ~0,15 s à 32 coups et ~1 s à 57 ; depth 4 ~0,5 s à 32 et ~4 s à 57 ;
+ * depth 2 ~0,3 s sur la grille vide, qui en offre 95. Ils se règlent sur la
+ * machine cible, la contrainte tenable étant le temps, pas le nombre.
  */
-export const DIFFICULTY_DEPTHS: Record<Difficulty, number> = {
-  easy: 1,
-  standard: 2,
-  hard: 3,
+export const WIDE_POSITION_MOVES = 24
+export const MASTER_DEEP_MOVES = 30
+export const MASTER_WIDE_MOVES = 48
+
+type DepthCeiling = { depth: number; maxMoves: number }
+
+const DEPTH_SCHEDULE: Record<Difficulty, DepthCeiling[]> = {
+  easy: [{ depth: 1, maxMoves: Number.POSITIVE_INFINITY }],
+  standard: [{ depth: 2, maxMoves: Number.POSITIVE_INFINITY }],
+  hard: [
+    { depth: 3, maxMoves: WIDE_POSITION_MOVES },
+    { depth: 2, maxMoves: Number.POSITIVE_INFINITY },
+  ],
+  master: [
+    { depth: 4, maxMoves: MASTER_DEEP_MOVES },
+    { depth: 3, maxMoves: MASTER_WIDE_MOVES },
+    { depth: 2, maxMoves: Number.POSITIVE_INFINITY },
+  ],
 }
 
 /**
- * Nombre de coups légaux au-delà duquel la profondeur 3 dépasse le budget de
- * réflexion. Temps mesurés à cette profondeur sur un portable de développement,
- * un mobile étant plusieurs fois plus lent : 0,3 s en moyenne et 1 s au pire
- * jusqu'à 27 coups, 1,4 s vers 30 coups, 2 s à 48 coups, 15 s sur une grille
- * vide, qui en offre 95.
+ * Profondeur nominale de chaque niveau : la plus grande qu'il vise jamais, une
+ * fois le plateau assez resserré — le sommet de son barème. Dérivée de
+ * `DEPTH_SCHEDULE` pour n'avoir qu'une source ; `getAffordableDepth` l'abaisse
+ * tant que la position offre trop de coups.
  */
-export const WIDE_POSITION_MOVES = 24
-/** Profondeur retenue tant que la position reste trop large. */
-const WIDE_POSITION_DEPTH = 2
+export const DIFFICULTY_DEPTHS: Record<Difficulty, number> = {
+  easy: DEPTH_SCHEDULE.easy[0].depth,
+  standard: DEPTH_SCHEDULE.standard[0].depth,
+  hard: DEPTH_SCHEDULE.hard[0].depth,
+  master: DEPTH_SCHEDULE.master[0].depth,
+}
 
 const DEFAULT_DEPTH = DIFFICULTY_DEPTHS[DEFAULT_DIFFICULTY]
 /** Valeur d'une partie terminée : elle domine toujours l'heuristique. */
@@ -146,6 +173,43 @@ function scoreTransition(
   return minimax(transition.position, depth, alpha, beta, context)
 }
 
+type OrderedTransition = {
+  move: LegalMove
+  transition: SimulationTransition
+  orderingScore: number
+}
+
+/**
+ * Trie les coups pour que l'élagage alpha-bêta rencontre les meilleurs d'abord :
+ * un coup fort resserre tôt la fenêtre et coupe tout le reste. On classe chaque
+ * coup par l'évaluation statique de la position qu'il produit — la même mesure
+ * qu'aux feuilles —, décroissante pour le joueur qui maximise, croissante pour
+ * l'adversaire qui minimise. Ce tri des nœuds internes, absent jusqu'ici, fait
+ * chuter d'un ordre de grandeur le nombre de nœuds explorés sur les positions
+ * larges, là où le facteur de branchement est le plus fort.
+ */
+function orderTransitions(
+  position: GamePosition,
+  moves: LegalMove[],
+  orderingDepth: number,
+  aiPlayer: PlayerId,
+  maximizing: boolean,
+): OrderedTransition[] {
+  const scored = moves.map((move) => {
+    const transition = simulateLegalMove(position, move)
+    const orderingScore = transition.result
+      ? evaluateResult(transition.result, aiPlayer, orderingDepth)
+      : evaluatePosition(transition.position, aiPlayer)
+    return { move, transition, orderingScore }
+  })
+  scored.sort((left, right) =>
+    maximizing
+      ? right.orderingScore - left.orderingScore
+      : left.orderingScore - right.orderingScore,
+  )
+  return scored
+}
+
 function minimax(
   position: GamePosition,
   depth: number,
@@ -178,10 +242,21 @@ function minimax(
   const maximizing = position.activePlayer === context.aiPlayer
   let bestScore = maximizing ? Number.NEGATIVE_INFINITY : Number.POSITIVE_INFINITY
 
-  for (const move of moves) {
-    const transition = simulateLegalMove(position, move)
-    const score = scoreTransition(transition, depth - 1, alpha, beta, context)
+  // Aux nœuds internes (depth ≥ 2), on trie d'abord tous les coups pour
+  // rencontrer les meilleurs en premier : un coup fort élague un sous-arbre
+  // entier, et le tri, qui coûte une évaluation par enfant, s'y rentabilise.
+  // Au palier des feuilles (depth 1), la boucle reste paresseuse : elle simule à
+  // la demande et coupe sans tout évaluer. Même boucle, sans fermeture par nœud.
+  const ordered =
+    depth >= 2
+      ? orderTransitions(position, moves, depth - 1, context.aiPlayer, maximizing)
+      : null
 
+  for (let index = 0; index < moves.length; index += 1) {
+    const transition = ordered
+      ? ordered[index].transition
+      : simulateLegalMove(position, moves[index])
+    const score = scoreTransition(transition, depth - 1, alpha, beta, context)
     if (maximizing) {
       bestScore = Math.max(bestScore, score)
       alpha = Math.max(alpha, bestScore)
@@ -189,9 +264,7 @@ function minimax(
       bestScore = Math.min(bestScore, score)
       beta = Math.min(beta, bestScore)
     }
-    if (beta <= alpha) {
-      break
-    }
+    if (beta <= alpha) break
   }
 
   context.transpositions.set(key, {
@@ -235,15 +308,15 @@ export function chooseMinimaxMove(
   const beta = Number.POSITIVE_INFINITY
   let bestMoves: LegalMove[] = [moves[0]]
   let bestScore = Number.NEGATIVE_INFINITY
-  const candidates = moves
-    .map((move) => {
-      const transition = simulateLegalMove(position, move)
-      const orderingScore = transition.result
-        ? evaluateResult(transition.result, context.aiPlayer, depth - 1)
-        : evaluatePosition(transition.position, context.aiPlayer)
-      return { move, transition, orderingScore }
-    })
-    .sort((left, right) => right.orderingScore - left.orderingScore)
+  // Le trait racine maximise toujours (l'ordinateur y joue) : même tri que les
+  // nœuds internes, d'où le partage de `orderTransitions`.
+  const candidates = orderTransitions(
+    position,
+    moves,
+    depth - 1,
+    context.aiPlayer,
+    true,
+  )
 
   for (const { move, transition, orderingScore } of candidates) {
     if (depth === 1) context.exploredNodes += 1
@@ -280,15 +353,18 @@ export function chooseMinimaxMove(
  * Le niveau fixe une profondeur visée, pas une promesse d'attente : tant que la
  * position reste large, la recherche s'arrête plus tôt pour ne pas figer
  * l'écran. Elle va au bout dès que le plateau se resserre, c'est-à-dire là où
- * la profondeur décide de la partie.
+ * la profondeur décide de la partie. On prend le premier palier du barème du
+ * niveau (`DEPTH_SCHEDULE`) dont le plafond de coups couvre la position.
  */
 export function getAffordableDepth(
   difficulty: Difficulty,
   legalMoveCount: number,
 ): number {
-  const depth = DIFFICULTY_DEPTHS[difficulty]
-  if (legalMoveCount <= WIDE_POSITION_MOVES) return depth
-  return Math.min(depth, WIDE_POSITION_DEPTH)
+  for (const { depth, maxMoves } of DEPTH_SCHEDULE[difficulty]) {
+    if (legalMoveCount <= maxMoves) return depth
+  }
+  // Inatteignable : le dernier palier de chaque barème porte un plafond infini.
+  return DIFFICULTY_DEPTHS[difficulty]
 }
 
 /**

@@ -27,6 +27,7 @@ const DIFFICULTIES: { id: Difficulty; label: string }[] = [
   { id: "easy", label: "Débutant" },
   { id: "standard", label: "Confirmé" },
   { id: "hard", label: "Expert" },
+  { id: "master", label: "Maître" },
 ];
 
 export function SetupPanel({ onStart, onShowRules }: SetupPanelProps) {

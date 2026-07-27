@@ -490,6 +490,36 @@ describe('connexions', () => {
     expect(getLargestZone(board, 'blue')).toBe(2)
   })
 
+  it('détecte la connexion même quand la zone gagnante n’est pas la première rencontrée', () => {
+    // Une petite zone non gagnante en haut à gauche est parcourue avant la ligne
+    // du bas, qui relie les deux bords : la détection s'arrête au premier
+    // composant gagnant, quel que soit son ordre de découverte.
+    const board = createEmptyBoard()
+    occupy(board, [
+      { x: 0, y: 0 },
+      { x: 1, y: 0 },
+    ])
+    occupy(board, Array.from({ length: 9 }, (_, x) => ({ x, y: 8 })))
+    expect(hasWinningConnection(board, 'blue')).toBe(true)
+  })
+
+  it('rend la taille de la plus grande de plusieurs zones', () => {
+    const board = createEmptyBoard()
+    occupy(board, [{ x: 0, y: 0 }])
+    occupy(board, [
+      { x: 0, y: 8 },
+      { x: 1, y: 8 },
+      { x: 2, y: 8 },
+      { x: 3, y: 8 },
+    ])
+    occupy(board, [
+      { x: 8, y: 4 },
+      { x: 8, y: 5 },
+    ])
+    expect(getLargestZone(board, 'blue')).toBe(4)
+    expect(getLargestZone(board, 'white')).toBe(0)
+  })
+
   it('le coup qui complète un chemin gagne immédiatement', () => {
     let state = gameReducer(createInitialState(), { type: 'START_GAME', firstPlayer: 'blue' })
     occupy(state.board, Array.from({ length: 8 }, (_, x) => ({ x, y: 8 })))

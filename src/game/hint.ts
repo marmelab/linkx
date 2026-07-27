@@ -1,5 +1,6 @@
 import { chooseMoveForDifficulty } from './minimax'
 import type { GamePosition } from './simulation'
+import { DIFFICULTY_IDS } from './types'
 import type { Difficulty, GameState, Point, Rotation, ShapeId } from './types'
 
 /**
@@ -7,13 +8,15 @@ import type { Difficulty, GameState, Point, Rotation, ShapeId } from './types'
  *
  * Le conseil ne joue pas au niveau de l'adversaire : un conseil calculé à la
  * force « débutant » proposerait un coup qu'on ne souhaite recommander à
- * personne. Il vise donc toujours la profondeur la plus grande, et c'est le
- * plafond adaptatif de `getAffordableDepth` — le même que celui du tour de
- * l'ordinateur, jamais un second mécanisme — qui la ramène à 2 tant que la
- * position reste large. Le pire cas tombe ainsi sous la seconde : profondeur 2
- * sur une ouverture à 95 coups légaux, profondeur 3 seulement en deçà de 24.
+ * personne. Il vise donc toujours le niveau le plus fort — le dernier de
+ * `DIFFICULTY_IDS`, ordonné par profondeur croissante —, et c'est le plafond
+ * adaptatif de `getAffordableDepth` — le même que celui du tour de l'ordinateur,
+ * jamais un second mécanisme — qui l'abaisse tant que la position reste large :
+ * profondeur 2 sur une ouverture à 95 coups légaux, profondeur 3 en deçà de 48,
+ * profondeur 4 en deçà de 30. Le dériver du dernier niveau évite d'oublier de le
+ * remonter quand on en ajoute un plus fort.
  */
-export const HINT_DIFFICULTY: Difficulty = 'hard'
+export const HINT_DIFFICULTY: Difficulty = DIFFICULTY_IDS[DIFFICULTY_IDS.length - 1]
 
 /**
  * Coup recommandé, décrit exactement comme la sélection d'un joueur humain :

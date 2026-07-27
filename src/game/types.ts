@@ -73,7 +73,7 @@ export type GameMode = 'human' | 'ai'
  * Force de l'ordinateur, de la plus tendre à la plus coriace. Chaque niveau
  * fixe la profondeur de recherche : voir `DIFFICULTY_DEPTHS` dans `minimax.ts`.
  */
-export const DIFFICULTY_IDS = ['easy', 'standard', 'hard'] as const
+export const DIFFICULTY_IDS = ['easy', 'standard', 'hard', 'master'] as const
 export type Difficulty = (typeof DIFFICULTY_IDS)[number]
 export const DEFAULT_DIFFICULTY: Difficulty = 'standard'
 

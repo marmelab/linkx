@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import { enumerateLegalMoves } from './legalMoves'
-import { chooseMinimaxMove } from './minimax'
+import { chooseMinimaxMove, chooseMoveForDifficulty } from './minimax'
 import { createGamePosition, simulateLegalMove } from './simulation'
 import type { GamePosition } from './simulation'
-import type { GameResult, PlayerId } from './types'
+import type { Difficulty, GameResult, PlayerId } from './types'
 
 /**
  * Duel entre deux profondeurs de recherche. Une partie complète à profondeur 3
@@ -96,5 +96,58 @@ describe.skipIf(!ENABLED)('duel entre profondeurs', () => {
       expect(deepWins + shallowWins + draws).toBe(OPENINGS * 2)
     },
     120_000,
+  )
+})
+
+/** Une partie où chaque joueur joue à son propre niveau, plafond adaptatif compris. */
+function playDifficultyGame(
+  start: GamePosition,
+  difficulties: Record<PlayerId, Difficulty>,
+): GameResult {
+  let position = start
+  for (let turn = 0; turn < 60; turn += 1) {
+    const decision = chooseMoveForDifficulty(
+      position,
+      difficulties[position.activePlayer],
+    )
+    if (!decision) throw new Error('Le joueur actif devrait disposer d’un coup légal.')
+    const transition = simulateLegalMove(position, decision.move)
+    if (transition.result) return transition.result
+    position = transition.position
+  }
+  throw new Error('La partie simulée dépasse le nombre maximal de poses.')
+}
+
+/**
+ * Duel entre niveaux réels — plafond adaptatif compris, sinon la profondeur 4
+ * jouerait l'ouverture à 95 coups et chaque pose demanderait des minutes. Le
+ * maître est un cran plus profond que l'expert sur presque tout le jeu (depth 4
+ * jusqu'à 30 coups, depth 3 jusqu'à 48), mais un demi-coup d'anticipation de plus
+ * ne garantit pas un meilleur coup à chaque position — seulement en moyenne. On
+ * n'exige donc que « au moins aussi fort », le critère d'acceptation de `plan.md`.
+ */
+describe.skipIf(!ENABLED)('duel entre niveaux', () => {
+  it(
+    'le niveau maître fait au moins aussi bien que l’expert',
+    () => {
+      let masterWins = 0
+      let expertWins = 0
+
+      for (let opening = 1; opening <= OPENINGS; opening += 1) {
+        const start = openingPosition(9_000 + opening * 53)
+        if (!start) continue
+        for (const masterPlayer of ['blue', 'white'] as PlayerId[]) {
+          const result = playDifficultyGame(start, {
+            blue: masterPlayer === 'blue' ? 'master' : 'hard',
+            white: masterPlayer === 'white' ? 'master' : 'hard',
+          })
+          if (result.winner === masterPlayer) masterWins += 1
+          else if (result.winner !== null) expertWins += 1
+        }
+      }
+
+      expect(masterWins).toBeGreaterThanOrEqual(expertWins)
+    },
+    240_000,
   )
 })
