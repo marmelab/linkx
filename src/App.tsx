@@ -8,6 +8,7 @@ import { PieceTray } from './components/PieceTray'
 import { RulesPanel } from './components/RulesPanel'
 import { SelectedPiecePreview } from './components/SelectedPiecePreview'
 import { SetupPanel } from './components/SetupPanel'
+import { SharePositionButton } from './components/SharePositionButton'
 import { FLIPPABLE_SHAPES } from './game/pieces'
 import { getWinningPath } from './game/connectivity'
 import { aimedColumn, calculateDrop } from './game/placement'
@@ -257,6 +258,7 @@ function App() {
         </button>
         <div className="topbar-actions">
           <button type="button" className="text-button" onClick={() => setRulesOpen(true)}>Règles</button>
+          <SharePositionButton state={state} />
           <button type="button" className="secondary-button secondary-button--small" onClick={() => dispatch({ type: 'RESET_GAME' })}>Nouvelle partie</button>
         </div>
       </header>
