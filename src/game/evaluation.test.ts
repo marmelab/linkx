@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { boardFromText, boardToText, rowsFromBoardText } from './boardText'
 import { hasWinningConnection } from './connectivity'
-import { getConnectionScore } from './evaluation'
+import { getConnectionPotential, getConnectionScore } from './evaluation'
 import { enumerateLegalMoves } from './legalMoves'
 import { createInitialInventory } from './pieces'
 import { createEmptyBoard } from './placement'
@@ -233,5 +233,81 @@ describe('évaluation d’une grille', () => {
     )
     expect(getConnectionScore(board, 'blue')).toBe(scores.blue)
     expect(getConnectionScore(board, 'white')).toBe(scores.white)
+  })
+})
+
+describe('potentiel de connexion', () => {
+  // Axe le plus proche identique, mais l'un des deux plateaux a le second axe
+  // plus avancé : le potentiel doit préférer celui-là, là où la distance seule
+  // les jugeait égaux.
+  const nearVerticalOnly = boardFromText(`
+    ....B....
+    ....B....
+    ....B....
+    ....B....
+    ....B....
+    ....B....
+    ....B....
+    ....B....
+    .........
+  `)
+  const nearVerticalPlusHorizontal = boardFromText(`
+    ....BBBBB
+    ....B....
+    ....B....
+    ....B....
+    ....B....
+    ....B....
+    ....B....
+    ....B....
+    .........
+  `)
+
+  it('départage deux positions de même distance par le second axe', () => {
+    expect(getConnectionScore(nearVerticalOnly, 'blue')).toBe(
+      getConnectionScore(nearVerticalPlusHorizontal, 'blue'),
+    )
+    expect(getConnectionPotential(nearVerticalPlusHorizontal, 'blue')).toBeLessThan(
+      getConnectionPotential(nearVerticalOnly, 'blue'),
+    )
+  })
+
+  it('laisse l’axe le plus proche primer sur le second', () => {
+    // Plateau en croix : les deux axes à distance 2. Son axe principal est plus
+    // loin que celui de `nearVerticalOnly` (distance 1), et son second axe bien
+    // plus proche (2 contre 8) — pourtant l'axe principal doit trancher.
+    const cross = boardFromText(`
+      .........
+      ....B....
+      ....B....
+      ....B....
+      .BBBBBBB.
+      ....B....
+      ....B....
+      ....B....
+      .........
+    `)
+    expect(getConnectionScore(nearVerticalOnly, 'blue')).toBeLessThan(
+      getConnectionScore(cross, 'blue'),
+    )
+    expect(getConnectionPotential(nearVerticalOnly, 'blue')).toBeLessThan(
+      getConnectionPotential(cross, 'blue'),
+    )
+  })
+
+  it('reste fini quand un joueur ne peut plus connecter', () => {
+    const fullWhite = boardFromText(`
+      WWWWWWWWW
+      WWWWWWWWW
+      WWWWWWWWW
+      WWWWWWWWW
+      WWWWWWWWW
+      WWWWWWWWW
+      WWWWWWWWW
+      WWWWWWWWW
+      WWWWWWWWW
+    `)
+    expect(getConnectionPotential(fullWhite, 'white')).toBe(0)
+    expect(Number.isFinite(getConnectionPotential(fullWhite, 'blue'))).toBe(true)
   })
 })

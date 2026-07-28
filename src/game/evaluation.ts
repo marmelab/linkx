@@ -5,6 +5,21 @@ const CELL_COUNT = BOARD_SIZE * BOARD_SIZE
 const BLOCKED = Number.POSITIVE_INFINITY
 
 /**
+ * Valeur d'un axe infranchissable : un cran au-delà de la pire distance
+ * atteignable (traverser les neuf cases d'une ligne ou colonne coûte au plus
+ * `BOARD_SIZE`). Un axe bloqué reste ainsi comparable aux axes ouverts sans
+ * jamais empiéter sur eux.
+ */
+const AXIS_UNREACHABLE = BOARD_SIZE + 1
+/**
+ * Poids de l'axe le plus proche dans le potentiel de connexion. Strictement
+ * supérieur à la pire valeur d'axe (`AXIS_UNREACHABLE`), pour que l'axe
+ * dominant — la vraie menace, puisqu'on gagne sur l'un *ou* l'autre — l'emporte
+ * toujours sur le second, qui ne sert qu'à départager.
+ */
+const PRIMARY_AXIS_WEIGHT = AXIS_UNREACHABLE + 1
+
+/**
  * Buffers de travail réutilisés d'un appel à l'autre. `getConnectionScore` est
  * l'entrée la plus chaude de la recherche (~60 % du temps mesuré au profileur) :
  * réallouer trois tableaux de 81 à chaque appel — quatre par évaluation — pesait
@@ -94,11 +109,15 @@ function getAxisScore(vertical: boolean): number {
 }
 
 /**
- * Estimates the number of empty cells still needed for a player to connect
- * either pair of opposite edges. Player cells cost 0, empty cells cost 1 and
- * opponent cells cannot be crossed. A lower score is better.
+ * Distances des deux axes pour `player`, la plus courte d'abord. Chaque axe est
+ * le nombre minimal de cases vides encore à conquérir pour relier ses deux
+ * bords, l'infini s'il est infranchissable. Un seul calcul de coût sert les deux
+ * axes ; le garde `scoring` protège les buffers partagés d'un appel réentrant.
  */
-export function getConnectionScore(board: Board, player: PlayerId): number {
+function computeAxes(
+  board: Board,
+  player: PlayerId,
+): { primary: number; secondary: number } {
   if (scoring) {
     throw new Error(
       'getConnectionScore réentrant : ses buffers partagés seraient corrompus.',
@@ -107,8 +126,42 @@ export function getConnectionScore(board: Board, player: PlayerId): number {
   scoring = true
   try {
     fillCost(board, player)
-    return Math.min(getAxisScore(false), getAxisScore(true))
+    const horizontal = getAxisScore(false)
+    const vertical = getAxisScore(true)
+    return {
+      primary: Math.min(horizontal, vertical),
+      secondary: Math.max(horizontal, vertical),
+    }
   } finally {
     scoring = false
   }
+}
+
+/**
+ * Estimates the number of empty cells still needed for a player to connect
+ * either pair of opposite edges. Player cells cost 0, empty cells cost 1 and
+ * opponent cells cannot be crossed. A lower score is better.
+ */
+export function getConnectionScore(board: Board, player: PlayerId): number {
+  return computeAxes(board, player).primary
+}
+
+function finiteAxis(distance: number): number {
+  return Number.isFinite(distance) ? distance : AXIS_UNREACHABLE
+}
+
+/**
+ * Potentiel de connexion d'un joueur : bas = proche de la victoire. On combine
+ * les *deux* axes au lieu du seul plus court. L'axe dominant pèse
+ * `PRIMARY_AXIS_WEIGHT` — il reste la mesure principale, puisqu'on gagne sur l'un
+ * ou l'autre —, mais le second entre comme départage.
+ *
+ * C'est ce second terme qui rend l'évaluation sensible au blocage : refermer un
+ * chemin adverse qui n'était pas le plus court ne changeait pas le minimum et
+ * passait donc inaperçu ; ici il alourdit le second axe de l'adversaire, donc la
+ * recherche préfère à mérite égal le coup qui, en plus d'avancer, gêne l'autre.
+ */
+export function getConnectionPotential(board: Board, player: PlayerId): number {
+  const { primary, secondary } = computeAxes(board, player)
+  return finiteAxis(primary) * PRIMARY_AXIS_WEIGHT + finiteAxis(secondary)
 }

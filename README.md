@@ -20,6 +20,7 @@ npm run dev
 | `npm run build` | `tsc -b` puis build de production |
 | `npm run preview` | sert le build de production |
 | `node scripts/generate-icons.mjs` | régénère les icônes PNG de `public/` |
+| `node node_modules/vite-node/dist/cli.mjs scripts/generate-opening-book.ts` | régénère le livre d'ouverture du maître (long, hors ligne) |
 
 ## Source de vérité
 
@@ -38,6 +39,7 @@ Deux documents, deux périmètres disjoints. Ne pas recopier l'un dans l'autre.
 - Vitest pour les tests, oxlint pour le lint.
 - Vite 8 demande Node `20.19+`.
 - `package-lock.json` fait foi : utiliser `npm`.
+- `scripts/*.ts` sont vérifiés au build via `tsconfig.scripts.json` (résolution bundler, types Node), et se lancent avec `vite-node` ; les `.mjs` restent du JS pur.
 - Aucune dépendance d'état, de routage ou de rendu graphique. Le jeu tient dans un reducer React et des fonctions TypeScript pures ; ne pas en ajouter sans nécessité démontrée.
 
 ## Arborescence
@@ -54,6 +56,8 @@ src/
     evaluation.ts       getConnectionScore, heuristique de distance aux bords
     simulation.ts       position pure simulée pour la recherche
     minimax.ts          alpha-bêta, table de transposition, niveaux de difficulté
+    openingBook.ts      livre d'ouverture du maître : clé canonique et lecture
+    openingBook.data.ts livre généré (vide par défaut), rempli hors ligne
     hint.ts             chooseHint et canOfferHint, conseil au joueur au trait
     reducer.ts          état initial et transitions du jeu
     boardText.ts        parseur/sérialiseur du format B/W/.
@@ -69,6 +73,7 @@ src/
     SelectedPiecePreview.tsx  pièce en main, tournée et retournée par mouvement
     pieceTurn.ts        mouvement déduit de la différence entre deux sélections
     SetupPanel, RulesPanel, GameOverPanel, Fireworks : écrans et panneaux
+    SharePositionButton.tsx  copie un lien ?moves= de la position courante
     winningTrail.ts     reconstruction du tracé du chemin gagnant
     pieceGeometry.ts    getCellsOutlinePath, contour de l'union des cases
     usePointerHasHover.ts  détection du survol réel du pointeur
@@ -77,7 +82,7 @@ src/
   App.css, index.css    toute la mise en page
   main.tsx              montage React et enregistrement du service worker
 public/                 copié tel quel : manifeste, service worker, icônes
-scripts/generate-icons.mjs · fixtures/urls.md : outils et positions de test
+scripts/generate-icons.mjs · scripts/generate-opening-book.ts · fixtures/urls.md : outils et positions de test
 ```
 
 Les tests vivent à côté de leur module, en `*.test.ts` / `*.test.tsx`.
@@ -89,6 +94,7 @@ Les tests vivent à côté de leur module, en `*.test.ts` / `*.test.tsx`.
 - Une action de dépôt transmet seulement la colonne. Le reducer recalcule toujours l'atterrissage ; ne jamais accepter des cellules finales calculées par un composant.
 - `placement.ts` pour la chute et le support, `aimedColumn` pour la conversion pointeur → ancre, `pieceGeometry.ts` pour les silhouettes, `PlexiDefs.tsx` pour la matière : chacun est **source unique** de son sujet. Ne pas en recréer une variante à côté.
 - `connectivity.ts` détecte les connexions sur la **couleur** des cases. Le `pieceId` identifie une pièce physique pour le rendu et l'animation, jamais pour relier les zones gagnantes.
+- Le livre d'ouverture (`openingBook.ts`) ne guide que le **maître**, sur ses deux premiers coups, et retombe sur la recherche en dehors de son périmètre. `openingBook.data.ts` est **généré** par `scripts/generate-opening-book.ts` ; ne pas l'éditer à la main.
 - L'état de survol, les délais et les animations restent dans l'UI tant qu'ils n'affectent pas les règles.
 - `App.tsx` ne fait que câbler : reducer, tour de l'ordinateur, raccourcis clavier. Les invariants qu'il doit respecter sont détaillés dans les deux `CLAUDE.md` de répertoire.
 

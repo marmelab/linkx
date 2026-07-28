@@ -1,10 +1,11 @@
 import { getLargestZone } from './connectivity'
-import { getConnectionScore } from './evaluation'
+import { getConnectionPotential } from './evaluation'
 import { enumerateLegalMoves } from './legalMoves'
 import type { LegalMove } from './legalMoves'
+import { lookupOpeningMove } from './openingBook'
 import { getOtherPlayer, simulateLegalMove } from './simulation'
 import type { GamePosition, SimulationTransition } from './simulation'
-import { BOARD_SIZE, DEFAULT_DIFFICULTY, SHAPE_IDS } from './types'
+import { DEFAULT_DIFFICULTY, SHAPE_IDS } from './types'
 import type { Difficulty, GameResult, PlayerId } from './types'
 
 /**
@@ -63,7 +64,6 @@ const DEFAULT_DEPTH = DIFFICULTY_DEPTHS[DEFAULT_DIFFICULTY]
 /** Valeur d'une partie terminée : elle domine toujours l'heuristique. */
 export const TERMINAL_SCORE = 1_000_000
 const CONNECTION_WEIGHT = 100
-const UNREACHABLE_SCORE = BOARD_SIZE * BOARD_SIZE + 1
 
 export type MinimaxOptions = {
   depth?: number
@@ -79,6 +79,17 @@ export type MinimaxOptions = {
 
 export type MinimaxDecision = {
   move: LegalMove
+  score: number
+  exploredNodes: number
+}
+
+/**
+ * Résultat brut de la recherche à la racine : **tous** les coups de valeur
+ * strictement égale au meilleur, avant tirage. `chooseMinimaxMove` n'en garde
+ * qu'un ; le générateur du livre d'ouverture les stocke tous pour varier.
+ */
+export type MinimaxSearch = {
+  moves: LegalMove[]
   score: number
   exploredNodes: number
 }
@@ -114,15 +125,11 @@ export function classifyTranspositionBound(
   return 'exact'
 }
 
-function finiteConnectionScore(score: number): number {
-  return Number.isFinite(score) ? score : UNREACHABLE_SCORE
-}
-
 function evaluatePosition(position: GamePosition, aiPlayer: PlayerId): number {
   const opponent = getOtherPlayer(aiPlayer)
   const connectionAdvantage =
-    finiteConnectionScore(getConnectionScore(position.board, opponent)) -
-    finiteConnectionScore(getConnectionScore(position.board, aiPlayer))
+    getConnectionPotential(position.board, opponent) -
+    getConnectionPotential(position.board, aiPlayer)
   const zoneAdvantage =
     getLargestZone(position.board, aiPlayer) -
     getLargestZone(position.board, opponent)
@@ -284,10 +291,14 @@ function pickAmongEquals(moves: LegalMove[], random?: () => number): LegalMove {
   return moves[Math.min(Math.floor(random() * moves.length), moves.length - 1)]
 }
 
-export function chooseMinimaxMove(
+/**
+ * Recherche à la racine renvoyant tout l'ensemble des meilleurs coups ex æquo.
+ * `chooseMinimaxMove` en tire un ; le générateur du livre les stocke tous.
+ */
+export function searchTopMoves(
   position: GamePosition,
   options: MinimaxOptions = {},
-): MinimaxDecision | null {
+): MinimaxSearch | null {
   const depth = options.depth ?? DEFAULT_DEPTH
   if (!Number.isInteger(depth) || depth < 1) {
     throw new Error('La profondeur Minimax doit être un entier supérieur ou égal à 1.')
@@ -340,9 +351,22 @@ export function chooseMinimaxMove(
   }
 
   return {
-    move: pickAmongEquals(bestMoves, options.random),
+    moves: bestMoves,
     score: bestScore,
     exploredNodes: context.exploredNodes,
+  }
+}
+
+export function chooseMinimaxMove(
+  position: GamePosition,
+  options: MinimaxOptions = {},
+): MinimaxDecision | null {
+  const search = searchTopMoves(position, options)
+  if (!search) return null
+  return {
+    move: pickAmongEquals(search.moves, options.random),
+    score: search.score,
+    exploredNodes: search.exploredNodes,
   }
 }
 
@@ -379,6 +403,16 @@ export function chooseMoveForDifficulty(
   difficulty: Difficulty,
   random?: () => number,
 ): MinimaxDecision | null {
+  // Le maître consulte d'abord le livre d'ouverture : ses coups y sont calculés
+  // hors ligne bien plus profondément que le budget en direct ne le permet au
+  // fort facteur de branchement du début de partie. Un coup trouvé est joué tel
+  // quel ; hors livre, la recherche reprend. Réservé au maître : le livre est un
+  // jeu parfait, hors de portée des niveaux plus faibles.
+  if (difficulty === 'master') {
+    const bookMove = lookupOpeningMove(position, random)
+    if (bookMove) return { move: bookMove, score: 0, exploredNodes: 0 }
+  }
+
   const legalMoveCount = enumerateLegalMoves(
     position.board,
     position.inventories[position.activePlayer],
