@@ -24,7 +24,7 @@
  * donc la portée du site publié sous un sous-chemin (`/linkx/`) reste correcte.
  */
 
-const VERSION = 'v1'
+const VERSION = 'v2'
 const SHELL_CACHE = `linkx-shell-${VERSION}`
 const ASSET_CACHE = `linkx-assets-${VERSION}`
 const CURRENT_CACHES = [SHELL_CACHE, ASSET_CACHE]
@@ -55,6 +55,41 @@ function findAssetUrls(html) {
   return [...html.matchAll(ASSET_REFERENCE)].map((match) => match[1])
 }
 
+/**
+ * Fragments cités par un script plutôt que par le document — le worker de
+ * recherche du coup de l'ordinateur, notamment.
+ *
+ * Le bundle d'entrée le désigne par son seul nom haché (`aiWorker-XXXX.js`),
+ * résolu par le navigateur relativement au script lui-même : il n'apparaît donc
+ * ni dans le HTML, ni sous la forme `assets/…`. Sans ce second balayage, un
+ * joueur qui installe le jeu puis passe hors ligne sans avoir déclenché un tour
+ * d'ordinateur n'aurait jamais le worker en cache.
+ *
+ * Le repérage est volontairement large — tout nom de fichier haché cité entre
+ * guillemets — et les mises en cache sont au mieux : une fausse piste échoue
+ * sans conséquence.
+ */
+const CHUNK_REFERENCE = /["'`]([\w.-]+-[\w]{8,}\.js)["'`]/g
+
+async function findScriptChunkUrls(scriptUrls) {
+  const found = new Set()
+  for (const scriptUrl of scriptUrls) {
+    if (!scriptUrl.endsWith('.js')) continue
+    try {
+      const response = await fetch(scriptUrl)
+      if (!response.ok) continue
+      const base = new URL(scriptUrl, self.location.href)
+      for (const match of (await response.text()).matchAll(CHUNK_REFERENCE)) {
+        found.add(new URL(match[1], base).href)
+      }
+    } catch {
+      // Balayage au mieux : un script illisible ne doit pas faire échouer
+      // l'installation, le fragment sera simplement mis en cache à l'usage.
+    }
+  }
+  return [...found]
+}
+
 self.addEventListener('install', (event) => {
   event.waitUntil(
     (async () => {
@@ -64,7 +99,12 @@ self.addEventListener('install', (event) => {
       await shell.put(DOCUMENT_URL, page.clone())
 
       const assets = await caches.open(ASSET_CACHE)
-      const urls = [...OPTIONAL_URLS, ...findAssetUrls(await page.text())]
+      const fromDocument = findAssetUrls(await page.text())
+      const urls = [
+        ...OPTIONAL_URLS,
+        ...fromDocument,
+        ...(await findScriptChunkUrls(fromDocument)),
+      ]
       await Promise.all(urls.map((url) => assets.add(url).catch(() => undefined)))
 
       // Le HTML étant servi réseau d'abord et les assets étant hachés, prendre

@@ -2,9 +2,8 @@ import { describe, expect, it } from 'vitest'
 import { boardFromText } from './boardText'
 import { enumerateLegalMoves } from './legalMoves'
 import {
+  DEPTH_DRIVEN_DIFFICULTIES,
   DIFFICULTY_DEPTHS,
-  MASTER_DEEP_MOVES,
-  MASTER_WIDE_MOVES,
   TERMINAL_SCORE,
   WIDE_POSITION_MOVES,
   chooseMinimaxMove,
@@ -446,11 +445,19 @@ describe('Minimax', () => {
     expect(classifyTranspositionBound(55, 50, 60)).toBe('exact')
   })
 
-  it('associe à chaque niveau une profondeur strictement croissante', () => {
-    const depths = DIFFICULTY_IDS.map((difficulty) => DIFFICULTY_DEPTHS[difficulty])
+  it('associe à chaque niveau réglé en profondeur une profondeur strictement croissante', () => {
+    const depths = DEPTH_DRIVEN_DIFFICULTIES.map(
+      (difficulty) => DIFFICULTY_DEPTHS[difficulty],
+    )
     expect(depths.every((depth) => Number.isInteger(depth) && depth >= 1)).toBe(true)
     expect(depths).toEqual([...depths].sort((left, right) => left - right))
     expect(new Set(depths).size).toBe(depths.length)
+
+    // Le maître est hors de cette échelle : sa force ne vient pas d'une
+    // profondeur fixe mais d'un budget, donc il n'a pas à s'y insérer. Il reste
+    // le dernier des niveaux, ce dont `hint.ts` dépend pour la force du conseil.
+    expect(DEPTH_DRIVEN_DIFFICULTIES).not.toContain('master')
+    expect(DIFFICULTY_IDS[DIFFICULTY_IDS.length - 1]).toBe('master')
   })
 
   it('abaisse par paliers la profondeur des niveaux profonds sur une position trop large', () => {
@@ -459,10 +466,8 @@ describe('Minimax', () => {
     expect(getAffordableDepth('hard', WIDE_POSITION_MOVES)).toBe(DIFFICULTY_DEPTHS.hard)
     expect(getAffordableDepth('hard', WIDE_POSITION_MOVES + 1)).toBe(2)
     // Maître : depth 4 jusqu'à 30 coups, depth 3 jusqu'à 48, depth 2 au-delà.
-    expect(getAffordableDepth('master', MASTER_DEEP_MOVES)).toBe(DIFFICULTY_DEPTHS.master)
-    expect(getAffordableDepth('master', MASTER_DEEP_MOVES + 1)).toBe(3)
-    expect(getAffordableDepth('master', MASTER_WIDE_MOVES)).toBe(3)
-    expect(getAffordableDepth('master', MASTER_WIDE_MOVES + 1)).toBe(2)
+    // Le maître n'a plus de paliers : il ne passe plus par ce barème du tout.
+    expect(DEPTH_DRIVEN_DIFFICULTIES).not.toContain('master')
     // Le maître est au moins aussi profond que l'expert à toute largeur, et
     // strictement plus profond partout où l'expert ne touche pas déjà depth 2.
     for (const moves of [1, 24, 25, 30, 40, 48, 60, 95]) {

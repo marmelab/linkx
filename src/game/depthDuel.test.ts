@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { enumerateLegalMoves } from './legalMoves'
+import { chooseMasterMove } from './engineSearch'
+import { lookupOpeningMove } from './openingBook'
 import { chooseMinimaxMove, chooseMoveForDifficulty } from './minimax'
 import { createGamePosition, simulateLegalMove } from './simulation'
 import type { GamePosition } from './simulation'
@@ -149,5 +151,93 @@ describe.skipIf(!ENABLED)('duel entre niveaux', () => {
       expect(masterWins).toBeGreaterThanOrEqual(expertWins)
     },
     240_000,
+  )
+})
+
+/**
+ * Duel du maître contre son propre passé.
+ *
+ * Le maître ne se règle plus en profondeur : il a son propre moteur. Pour que le
+ * gain reste vérifiable, on **reconstruit ici l'ancien maître** — livre
+ * d'ouverture puis alpha-bêta à profondeur 4/3/2 selon la largeur de la
+ * position, exactement son barème d'alors — et on le fait jouer contre le
+ * nouveau. C'est une référence figée : elle ne doit pas suivre les évolutions du
+ * niveau, sinon elle cesserait de mesurer quoi que ce soit.
+ *
+ * **Depuis la grille vide.** Les duels ci-dessus partent de huit poses
+ * aléatoires, ce qui écarte les parties d'une même racine mais fabrique souvent
+ * une position **déjà décidée** : mesurée ainsi, une recherche huit fois plus
+ * fournie ne bat la même recherche que 19 à 13. Depuis la grille vide, où chaque
+ * camp choisit son ouverture, les mêmes moteurs donnent 21 à 3. C'est la
+ * variation de l'aléa de départage, et non un préfixe aléatoire, qui doit
+ * distinguer deux parties.
+ */
+const LEGACY_MASTER_DEEP_MOVES = 30
+const LEGACY_MASTER_WIDE_MOVES = 48
+
+function legacyMasterMove(position: GamePosition, random: () => number) {
+  const fromBook = lookupOpeningMove(position, random)
+  if (fromBook) return fromBook
+  const moves = enumerateLegalMoves(
+    position.board,
+    position.inventories[position.activePlayer],
+  ).length
+  const depth =
+    moves <= LEGACY_MASTER_DEEP_MOVES ? 4 : moves <= LEGACY_MASTER_WIDE_MOVES ? 3 : 2
+  return chooseMinimaxMove(position, { depth, random })?.move ?? null
+}
+
+function playMasterAgainstLegacy(
+  currentPlayer: PlayerId,
+  seed: number,
+  nodes: number,
+): GameResult {
+  const random = randomForSeed(seed)
+  let position = createGamePosition('blue')
+  for (let turn = 0; turn < 60; turn += 1) {
+    const move =
+      position.activePlayer === currentPlayer
+        ? (chooseMasterMove(position, { maxNodes: nodes, random })?.move ?? null)
+        : legacyMasterMove(position, random)
+    if (!move) throw new Error('Le joueur actif devrait disposer d’un coup légal.')
+    const transition = simulateLegalMove(position, move)
+    if (transition.result) return transition.result
+    position = transition.position
+  }
+  throw new Error('La partie simulée dépasse le nombre maximal de poses.')
+}
+
+describe.skipIf(!ENABLED)('duel du maître contre son propre passé', () => {
+  it(
+    'le maître actuel bat nettement l’ancien',
+    () => {
+      const GAMES = 8
+      let currentWins = 0
+      let legacyWins = 0
+
+      for (let game = 0; game < GAMES; game += 1) {
+        // Les deux couleurs à tour de rôle : le trait ne peut pas expliquer
+        // seul le résultat.
+        const currentPlayer: PlayerId = game % 2 === 0 ? 'blue' : 'white'
+        const result = playMasterAgainstLegacy(
+          currentPlayer,
+          1_000 + game * 7_919,
+          60_000,
+        )
+        if (result.winner === currentPlayer) currentWins += 1
+        else if (result.winner !== null) legacyWins += 1
+      }
+
+      // Mesure de référence sur ces graines : 24 victoires sur 24 parties.
+      //
+      // 60 000 nœuds n'est pas un chiffre rond : c'est le seuil mesuré à partir
+      // duquel le nouveau moteur domine. En deçà (30 000 et 45 000 nœuds), il ne
+      // fait que 5 à 3 — la profondeur atteinte dans l'ouverture retombe alors
+      // au niveau de l'ancien barème. C'est ce seuil qui fixe le budget du
+      // niveau. Le critère reste plus lâche que la mesure, huit parties étant
+      // bruitées.
+      expect(currentWins).toBeGreaterThan(legacyWins * 2)
+    },
+    600_000,
   )
 })

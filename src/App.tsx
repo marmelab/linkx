@@ -17,7 +17,7 @@ import { canOfferHint, chooseHint } from './game/hint'
 import type { Hint } from './game/hint'
 import { getOrientation } from './game/transforms'
 import { createGameStateFromSearch } from './game/queryState'
-import { chooseMoveForDifficulty } from './game/minimax'
+import { useAiMove } from './components/useAiMove'
 import { usePointerHasHover } from './components/usePointerHasHover'
 import { BOARD_SIZE, PLAYER_IDS } from './game/types'
 import type {
@@ -53,6 +53,7 @@ function App() {
       return createInitialState()
     }
   })
+  const { request: requestAiMove, cancel: cancelAiMove } = useAiMove()
   const [pointedColumn, setPointedColumn] = useState<number | null>(null)
   const [rulesOpen, setRulesOpen] = useState(false)
   const [glowPieceId, setGlowPieceId] = useState<string | null>(null)
@@ -120,32 +121,41 @@ function App() {
     setPointedColumn(null)
   }, [state.activePlayer, state.selection?.shapeId])
 
-  // Tour de l'ordinateur : la recherche est synchrone et bloque brièvement le
-  // rendu, d'où le délai qui laisse d'abord peindre le message d'attente.
+  // Tour de l'ordinateur. La recherche part dans un worker quand le navigateur
+  // en offre un (voir `useAiMove`), sinon elle reste synchrone et bloque
+  // brièvement le rendu — d'où le délai, qui laisse d'abord peindre le message
+  // d'attente. Le nettoyage annule la recherche : si le joueur agit entre-temps,
+  // l'état a changé et la réponse ne le concerne plus.
   useEffect(() => {
     if (!aiTurn) return
+    let cancelled = false
     const timer = setTimeout(() => {
-      const decision = chooseMoveForDifficulty(
+      void requestAiMove(
         {
           board: state.board,
           inventories: state.inventories,
           activePlayer: state.activePlayer,
         },
         state.difficulty,
-        Math.random,
-      )
-      if (!decision) return
-      const { shapeId, orientation, column } = decision.move
-      dispatch({
-        type: 'PLAY_AI_MOVE',
-        shapeId,
-        rotation: orientation.rotation,
-        flipped: orientation.flipped,
-        column,
+      ).then((move) => {
+        if (cancelled || !move) return
+        dispatch({ type: 'PLAY_AI_MOVE', ...move })
       })
     }, AI_THINKING_DELAY)
-    return () => clearTimeout(timer)
-  }, [aiTurn, state.activePlayer, state.board, state.difficulty, state.inventories])
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+      cancelAiMove()
+    }
+  }, [
+    aiTurn,
+    cancelAiMove,
+    requestAiMove,
+    state.activePlayer,
+    state.board,
+    state.difficulty,
+    state.inventories,
+  ])
 
   // Même contrainte que le tour de l'ordinateur : la recherche est synchrone et
   // bloque brièvement le rendu, d'où le délai qui laisse d'abord peindre l'état

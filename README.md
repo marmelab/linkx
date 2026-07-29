@@ -20,7 +20,10 @@ npm run dev
 | `npm run build` | `tsc -b` puis build de production |
 | `npm run preview` | sert le build de production |
 | `node scripts/generate-icons.mjs` | régénère les icônes PNG de `public/` |
-| `node node_modules/vite-node/dist/cli.mjs scripts/generate-opening-book.ts` | régénère le livre d'ouverture du maître (long, hors ligne) |
+| `node node_modules/vite-node/dist/cli.mjs scripts/duel-maitre.ts` | duel du maître contre son propre passé, hors de Vitest |
+| `node node_modules/vite-node/dist/cli.mjs scripts/generate-opening-book.ts --depth 6` | régénère le livre d'ouverture du maître (1-2 h, hors ligne) |
+| `node node_modules/vite-node/dist/cli.mjs scripts/audit-livre.ts` | compare chaque coup du livre à la recherche en direct |
+| `node node_modules/vite-node/dist/cli.mjs scripts/duel-livre.ts` | duel apparié avec et sans livre, à ouverture imposée |
 
 ## Source de vérité
 
@@ -56,8 +59,10 @@ src/
     evaluation.ts       getConnectionScore, heuristique de distance aux bords
     simulation.ts       position pure simulée pour la recherche
     minimax.ts          alpha-bêta, table de transposition, niveaux de difficulté
+    engineBoard.ts      position compacte de recherche : coups, chute, connexion
+    engineSearch.ts     recherche du maître : itératif, PVS, fin de partie exacte
     openingBook.ts      livre d'ouverture du maître : clé canonique et lecture
-    openingBook.data.ts livre généré (vide par défaut), rempli hors ligne
+    openingBook.data.ts livre généré hors ligne à profondeur 6, 51 entrées
     hint.ts             chooseHint et canOfferHint, conseil au joueur au trait
     reducer.ts          état initial et transitions du jeu
     boardText.ts        parseur/sérialiseur du format B/W/.
@@ -78,11 +83,13 @@ src/
     pieceGeometry.ts    getCellsOutlinePath, contour de l'union des cases
     usePointerHasHover.ts  détection du survol réel du pointeur
     useStoredDifficulty.ts  niveau de l'ordinateur retenu d'une partie à l'autre
+    useAiMove.ts        recherche du coup de l'ordinateur, worker et repli synchrone
+  aiWorker.ts           tour de l'ordinateur hors du fil principal
   App.tsx               câblage du reducer, tour de l'ordinateur, raccourcis clavier
   App.css, index.css    toute la mise en page
   main.tsx              montage React et enregistrement du service worker
 public/                 copié tel quel : manifeste, service worker, icônes
-scripts/generate-icons.mjs · scripts/generate-opening-book.ts · fixtures/urls.md : outils et positions de test
+scripts/generate-icons.mjs · scripts/generate-opening-book.ts · scripts/duel-maitre.ts · scripts/audit-livre.ts · scripts/duel-livre.ts · fixtures/urls.md : outils de mesure et positions de test
 ```
 
 Les tests vivent à côté de leur module, en `*.test.ts` / `*.test.tsx`.
@@ -94,7 +101,9 @@ Les tests vivent à côté de leur module, en `*.test.ts` / `*.test.tsx`.
 - Une action de dépôt transmet seulement la colonne. Le reducer recalcule toujours l'atterrissage ; ne jamais accepter des cellules finales calculées par un composant.
 - `placement.ts` pour la chute et le support, `aimedColumn` pour la conversion pointeur → ancre, `pieceGeometry.ts` pour les silhouettes, `PlexiDefs.tsx` pour la matière : chacun est **source unique** de son sujet. Ne pas en recréer une variante à côté.
 - `connectivity.ts` détecte les connexions sur la **couleur** des cases. Le `pieceId` identifie une pièce physique pour le rendu et l'animation, jamais pour relier les zones gagnantes.
-- Le livre d'ouverture (`openingBook.ts`) ne guide que le **maître**, sur ses deux premiers coups, et retombe sur la recherche en dehors de son périmètre. `openingBook.data.ts` est **généré** par `scripts/generate-opening-book.ts` ; ne pas l'éditer à la main.
+- Le **maître** a son propre moteur, `engineBoard.ts` + `engineSearch.ts`, distinct de `minimax.ts` : position sur tableaux typés, coups empaquetés dans un entier, make/unmake, Zobrist et table de transposition à taille fixe. `src/game/` reste la **source de vérité des règles** ; ce moteur n'en redéfinit aucune et son équivalence est prouvée par test différentiel (`engineBoard.test.ts`) contre `enumerateLegalMoves` et `simulateLegalMove`. Il exploite deux conséquences des règles, vérifiées par ce même test : une colonne n'a jamais de trou, et la légalité se réduit à un test de planéité. Toucher aux règles doit faire échouer ce test avant tout le reste.
+- `chooseMoveForDifficulty` reste l'**unique** entrée : elle détourne le maître vers `engineSearch.ts` et laisse les autres niveaux au barème de `minimax.ts`. L'interface transmet un niveau, jamais une profondeur ni un budget.
+- Le livre d'ouverture (`openingBook.ts`) ne guide que le **maître**, sur son premier coup, et retombe sur la recherche en dehors de son périmètre. `openingBook.data.ts` est **généré** par `scripts/generate-opening-book.ts` à `--depth 6`, deux tours au-delà de ce que le jeu atteint, en une à deux heures ; ne pas l'éditer à la main. Il doit être engendré par le moteur courant : un livre hérité d'une autre évaluation affaiblit la recherche. Engendré par le moteur qui le lit, il la renforce — 12 victoires sur 12 avec, 6 sur 12 sans. Ses seules clés sont `white|`, l'ordinateur jouant toujours blanc : un duel qui alterne les couleurs le rend inerte une partie sur deux et ne peut donc pas le mesurer. C'est `scripts/duel-livre.ts` qui le mesure, apparié et à ouverture imposée, jamais `duel-maitre.ts`.
 - L'état de survol, les délais et les animations restent dans l'UI tant qu'ils n'affectent pas les règles.
 - `App.tsx` ne fait que câbler : reducer, tour de l'ordinateur, raccourcis clavier. Les invariants qu'il doit respecter sont détaillés dans les deux `CLAUDE.md` de répertoire.
 
@@ -116,7 +125,8 @@ npm run build
 `.github/workflows/ci.yml` fait foi : lint, tests et build sur `push` et `pull_request` vers `main`, puis publication de `dist/` sur `gh-pages` au seul `push` vers `main`. Le site est servi par GitHub Pages sous un sous-chemin, et l'application s'installe et se relance hors ligne. D'où quatre contraintes à ne pas casser :
 
 - `vite.config.ts` fixe `base: './'`, et toute référence à un fichier de `public/` s'écrit en relatif (`./favicon.svg`). Une base absolue rendrait la page blanche sous le sous-chemin. Même règle pour `start_url` et `scope` du manifeste, qui valent `./`, et pour le `./sw.js` enregistré par `main.tsx` — ce chemin fixe aussi la portée du worker. `public/.nojekyll` empêche GitHub Pages de filtrer les fichiers commençant par un underscore.
-- `public/sw.js` applique **réseau d'abord** pour les documents, **cache d'abord** pour `assets/…` dont le nom est haché, **cache puis revalidation** pour le reste. Ne pas passer le HTML en cache d'abord : il porte les noms hachés du build courant. À l'installation le worker relit le document pour y trouver les assets à précharger, plutôt qu'une liste de noms hachés codée en dur. Toute modification des stratégies ou du contenu préchargé impose d'incrémenter `VERSION`, qui purge les anciens caches à l'activation.
+- Le tour de l'ordinateur part dans un **Web Worker** (`src/aiWorker.ts`, piloté par `useAiMove.ts`), qui n'appelle que `chooseMoveForDifficulty` et ne porte aucune règle. C'est ce qui permet au maître de dépasser le seuil de force mesuré sans figer l'écran. Le chemin synchrone reste en **repli** : worker indisponible, la partie continue avec le budget réduit. Un worker par recherche, terminé à la réponse ou à l'annulation — c'est la seule façon d'arrêter réellement une recherche abandonnée.
+- `public/sw.js` applique **réseau d'abord** pour les documents, **cache d'abord** pour `assets/…` dont le nom est haché, **cache puis revalidation** pour le reste. Ne pas passer le HTML en cache d'abord : il porte les noms hachés du build courant. À l'installation le worker relit le document pour y trouver les assets à précharger, plutôt qu'une liste de noms hachés codée en dur. Il **balaie aussi les scripts trouvés** : le fragment du worker de recherche n'est cité que par le bundle d'entrée, sous son seul nom haché résolu relativement à ce bundle, donc il n'apparaît ni dans le HTML ni sous la forme `assets/…`. Sans ce second balayage, qui déclencherait un tour d'ordinateur en ligne oublierait le worker et perdrait l'adversaire fort hors ligne. Toute modification des stratégies ou du contenu préchargé impose d'incrémenter `VERSION`, qui purge les anciens caches à l'activation.
 - `main.tsx` n'enregistre le worker que si `import.meta.env.PROD`, pour ne pas masquer le rechargement à chaud en développement. `index.html` porte le lien vers le manifeste, `theme-color`, et les balises `apple-touch-icon` et `apple-mobile-web-app-*` qu'iOS exige faute d'implémenter le manifeste.
 - Vérification manuelle après `npm run build` : servir `dist/` depuis un sous-répertoire (`…/linkx/`), contrôler que le worker atteint `activated`, puis recharger serveur arrêté.
 

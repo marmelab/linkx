@@ -1,11 +1,12 @@
 import { getLargestZone } from './connectivity'
+import { chooseMasterMove } from './engineSearch'
 import { getConnectionPotential } from './evaluation'
+import { lookupOpeningMove } from './openingBook'
 import { enumerateLegalMoves } from './legalMoves'
 import type { LegalMove } from './legalMoves'
-import { lookupOpeningMove } from './openingBook'
 import { getOtherPlayer, simulateLegalMove } from './simulation'
 import type { GamePosition, SimulationTransition } from './simulation'
-import { DEFAULT_DIFFICULTY, SHAPE_IDS } from './types'
+import { DEFAULT_DIFFICULTY, DIFFICULTY_IDS, SHAPE_IDS } from './types'
 import type { Difficulty, GameResult, PlayerId } from './types'
 
 /**
@@ -15,12 +16,8 @@ import type { Difficulty, GameResult, PlayerId } from './types'
  * chaque tour d'anticipation multiplie le travail par le facteur de branchement.
  * Ce barème est l'unique source des profondeurs : `DIFFICULTY_DEPTHS` en dérive.
  *
- * Le maître tolère un temps de réflexion plus long que l'expert — jusqu'à deux ou
- * trois secondes sur mobile au lieu d'une à deux —, d'où des plafonds plus hauts
- * à profondeur égale. C'est ce surcroît de budget, et non un simple +1 de
- * profondeur, qui le rend strictement plus profond que l'expert sur tout le jeu
- * hors des tout premiers coups : là où l'expert tient depth 3, le maître tient
- * depth 4 ; là où l'expert retombe à depth 2, le maître tient encore depth 3.
+ * Le maître n'y figure plus que pour mémoire : il a son propre moteur, borné au
+ * temps et non à une profondeur.
  *
  * Seuils calés au profileur (portable de développement, mobile ~3-4× plus lent) :
  * depth 3 ~0,15 s à 32 coups et ~1 s à 57 ; depth 4 ~0,5 s à 32 et ~4 s à 57 ;
@@ -28,8 +25,6 @@ import type { Difficulty, GameResult, PlayerId } from './types'
  * machine cible, la contrainte tenable étant le temps, pas le nombre.
  */
 export const WIDE_POSITION_MOVES = 24
-export const MASTER_DEEP_MOVES = 30
-export const MASTER_WIDE_MOVES = 48
 
 type DepthCeiling = { depth: number; maxMoves: number }
 
@@ -40,11 +35,11 @@ const DEPTH_SCHEDULE: Record<Difficulty, DepthCeiling[]> = {
     { depth: 3, maxMoves: WIDE_POSITION_MOVES },
     { depth: 2, maxMoves: Number.POSITIVE_INFINITY },
   ],
-  master: [
-    { depth: 4, maxMoves: MASTER_DEEP_MOVES },
-    { depth: 3, maxMoves: MASTER_WIDE_MOVES },
-    { depth: 2, maxMoves: Number.POSITIVE_INFINITY },
-  ],
+  // Le maître n'a plus de barème : il approfondit tant que son budget le permet
+  // et résout exactement la fin de partie (`engineSearch.ts`). L'entrée n'existe
+  // que pour que le barème couvre tous les niveaux ; `chooseMoveForDifficulty`
+  // le détourne avant d'y venir.
+  master: [{ depth: 4, maxMoves: Number.POSITIVE_INFINITY }],
 }
 
 /**
@@ -61,6 +56,40 @@ export const DIFFICULTY_DEPTHS: Record<Difficulty, number> = {
 }
 
 const DEFAULT_DEPTH = DIFFICULTY_DEPTHS[DEFAULT_DIFFICULTY]
+
+/**
+ * Niveaux dont la force se règle par une **profondeur fixe**, dans l'ordre
+ * croissant. Le maître n'en fait plus partie : il approfondit tant que son budget
+ * le permet, si bien qu'aucun nombre ne le décrit. C'est cette liste, et non
+ * `DIFFICULTY_IDS`, qui définit l'échelle de profondeurs.
+ */
+export const DEPTH_DRIVEN_DIFFICULTIES = DIFFICULTY_IDS.filter(
+  (difficulty) => difficulty !== 'master',
+)
+
+/**
+ * Budgets du maître.
+ *
+ * Le temps est celui du tour de l'ordinateur. Sur le fil principal — le repli,
+ * quand aucun worker n'est disponible — c'est aussi la durée pendant laquelle
+ * l'écran ne répond pas, d'où un budget serré.
+ *
+ * Le plafond de nœuds sert au conseil, qui doit être reproductible et ne peut
+ * donc pas s'arrêter à l'horloge. Il est calé pour coûter, sur une machine de
+ * développement, l'ordre de grandeur du budget de temps ci-dessus.
+ */
+export const MASTER_BUDGET_MS = 2_500
+/**
+ * Budget accordé quand la recherche ne tourne **pas** sur le fil principal.
+ *
+ * Le niveau bascule au-delà d'environ 60 000 positions examinées : en deçà il ne
+ * fait que 5 à 3 contre sa version précédente, au-delà 8 à 0. Sur le fil principal, 2,5 s
+ * n'en achètent qu'environ 49 000 — sous le seuil, et bien plus bas encore sur
+ * un téléphone. Hors du fil principal, l'attente ne fige plus rien : le budget
+ * s'élargit jusqu'à franchir le seuil avec de la marge.
+ */
+export const MASTER_WORKER_BUDGET_MS = 6_000
+export const MASTER_HINT_NODES = 120_000
 /** Valeur d'une partie terminée : elle domine toujours l'heuristique. */
 export const TERMINAL_SCORE = 1_000_000
 const CONNECTION_WEIGHT = 100
@@ -402,15 +431,48 @@ export function chooseMoveForDifficulty(
   position: GamePosition,
   difficulty: Difficulty,
   random?: () => number,
+  /**
+   * Temps accordé au maître, en millisecondes ; sans effet sur les autres
+   * niveaux, réglés en profondeur. C'est une **ressource**, pas une profondeur :
+   * l'appelant dit combien de temps il peut attendre — bien davantage hors du
+   * fil principal —, jamais jusqu'où chercher.
+   */
+  budgetMs?: number,
 ): MinimaxDecision | null {
-  // Le maître consulte d'abord le livre d'ouverture : ses coups y sont calculés
-  // hors ligne bien plus profondément que le budget en direct ne le permet au
-  // fort facteur de branchement du début de partie. Un coup trouvé est joué tel
-  // quel ; hors livre, la recherche reprend. Réservé au maître : le livre est un
-  // jeu parfait, hors de portée des niveaux plus faibles.
+  // Le maître ne passe plus par ce barème : il a son propre moteur, qui
+  // approfondit au temps et résout exactement la fin de partie.
+  //
+  // Il consulte **d'abord** le livre d'ouverture, dont les coups sont calculés
+  // hors ligne bien plus profondément que le budget en direct ne le permet aux
+  // 60 à 95 coups légaux du début de partie.
+  //
+  // Le livre doit être engendré par **ce moteur-ci** : un livre issu d'une autre
+  // évaluation affaiblit la recherche au lieu de l'aider — mesuré sur l'ancien
+  // livre, 17 victoires à 7 contre 24 à 0 sans lui. Engendré par le même
+  // évaluateur avec davantage de nœuds, il ne peut en revanche qu'égaler ou
+  // dépasser ce que la recherche en direct trouverait.
+  //
+  // Le budget suit la convention d'aléa du domaine. Avec `random` — le tour de
+  // l'ordinateur — la recherche est bornée au **temps** : elle répond dans le
+  // délai promis, quitte à s'arrêter à une profondeur variable. Sans `random` —
+  // le conseil, les tests — elle est bornée aux **nœuds**, donc strictement
+  // reproductible, comme `plan.md` l'exige d'un conseil.
   if (difficulty === 'master') {
     const bookMove = lookupOpeningMove(position, random)
     if (bookMove) return { move: bookMove, score: 0, exploredNodes: 0 }
+
+    const decision = chooseMasterMove(
+      position,
+      random
+        ? { budgetMs: budgetMs ?? MASTER_BUDGET_MS, random }
+        : { maxNodes: MASTER_HINT_NODES },
+    )
+    if (!decision) return null
+    return {
+      move: decision.move,
+      score: decision.score,
+      exploredNodes: decision.nodes,
+    }
   }
 
   const legalMoveCount = enumerateLegalMoves(

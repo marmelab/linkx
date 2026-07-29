@@ -70,8 +70,13 @@ export type GameEvent =
 export type GameMode = 'human' | 'ai'
 
 /**
- * Force de l'ordinateur, de la plus tendre à la plus coriace. Chaque niveau
- * fixe la profondeur de recherche : voir `DIFFICULTY_DEPTHS` dans `minimax.ts`.
+ * Force de l'ordinateur, de la plus tendre à la plus coriace, **dans cet
+ * ordre** : `hint.ts` en déduit la force du conseil en prenant le dernier.
+ *
+ * Les trois premiers niveaux fixent une profondeur de recherche (voir
+ * `DIFFICULTY_DEPTHS` dans `minimax.ts`). Le maître n'en fixe aucune : il
+ * approfondit tant qu'il lui reste du budget et résout exactement la fin de
+ * partie (voir `engineSearch.ts`).
  */
 export const DIFFICULTY_IDS = ['easy', 'standard', 'hard', 'master'] as const
 export type Difficulty = (typeof DIFFICULTY_IDS)[number]

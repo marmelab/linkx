@@ -69,6 +69,22 @@ function movesPlayedBy(position: GamePosition, player: PlayerId): number {
 }
 
 /**
+ * Nombre de coups déjà posés par le joueur au trait au-delà duquel le livre ne
+ * s'applique plus. À 1, il couvre ses deux premiers coups.
+ *
+ * Source **unique** du périmètre du livre : la lecture s'en sert pour sortir
+ * sans construire de clé, et `scripts/generate-opening-book.ts` pour ne pas
+ * écrire des entrées que la lecture refuserait. Les deux doivent bouger
+ * ensemble, sinon la génération produit des entrées mortes.
+ */
+export const BOOK_MAX_PLAYED_MOVES = 1
+
+/** Vrai quand cette position est dans le périmètre du livre. */
+export function isWithinBookRange(position: GamePosition): boolean {
+  return movesPlayedBy(position, position.activePlayer) <= BOOK_MAX_PLAYED_MOVES
+}
+
+/**
  * Clé de recherche d'une position, et si le miroir gauche-droite a été appliqué
  * pour l'obtenir. La forme canonique est celle des deux orientations dont la
  * chaîne de plateau est la plus petite ; la clé y ajoute réserves et joueur au
@@ -98,9 +114,8 @@ export function lookupOpeningMove(
   random?: () => number,
   book: OpeningBook = OPENING_BOOK,
 ): LegalMove | null {
-  // Garde rapide : le livre ne couvre que les deux premiers coups du joueur au
-  // trait ; passé cela, inutile de construire une clé.
-  if (movesPlayedBy(position, position.activePlayer) > 1) return null
+  // Garde rapide : passé le périmètre du livre, inutile de construire une clé.
+  if (!isWithinBookRange(position)) return null
 
   const { key, mirror } = canonicalPosition(position)
   const moves = book[key]
