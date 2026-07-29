@@ -7,8 +7,8 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
-    "test": "vitest run",
-    "test:watch": "vitest",
+    "test": "vitest run --testTimeout=20000",
+    "test:watch": "vitest --testTimeout=20000",
     "preview": "vite preview"
   },
   "dependencies": {

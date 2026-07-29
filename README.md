@@ -110,6 +110,7 @@ Les tests vivent à côté de leur module, en `*.test.ts` / `*.test.tsx`.
 ## Tests et vérification
 
 - Ajouter ou adapter des tests de domaine pour toute modification de règles, de chute, de passe ou de connexion, et toujours couvrir le cas de refus.
+- Les scripts `test` relèvent `--testTimeout` à 20 s : plusieurs tests lancent une vraie recherche et dépassent, sur un runner de CI chargé, les cinq secondes du défaut — ils échouaient sur le temps, jamais sur leur résultat. Un test franchement plus long garde en plus son délai explicite, passé en troisième argument de `it`. Le délai vit dans `package.json` et non dans `vite.config.ts` : Vitest 3 embarque sa propre copie de Vite, dont les types ne se mêlent pas à ceux de Vite 8, et `tsc -b` vérifie ce fichier.
 - Pour toute modification d'interface, faire aussi le passage navigateur décrit dans `plan.md` (étape de vérification finale) sur un viewport bureau et un viewport mobile, et vérifier l'absence de débordement horizontal et d'erreur console. `fixtures/urls.md` fournit des positions prêtes à coller.
 
 Vérification finale obligatoire :
