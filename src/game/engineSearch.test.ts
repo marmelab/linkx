@@ -1,12 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import {
   MATE_THRESHOLD,
+  TEMPO,
   chooseMasterMove,
   searchMasterTopMoves,
   evaluate,
 } from './engineSearch'
 import { createEnginePosition, loadPosition } from './engineBoard'
-import { parseGameRecord } from './moveNotation'
+import { referencePositionAfter } from './referenceGame'
 import { chooseMoveForDifficulty } from './minimax'
 import { createGamePosition, simulateLegalMove } from './simulation'
 import type { GamePosition } from './simulation'
@@ -14,26 +15,6 @@ import { boardFromText } from './boardText'
 import { createInitialInventory } from './pieces'
 import { enumerateLegalMoves } from './legalMoves'
 import type { Inventory, PlayerId } from './types'
-
-/**
- * La partie que le maître a perdue avec l'ancienne recherche. Elle sert de
- * non-régression : c'est sur ces positions qu'il doit désormais voir clair.
- */
-const LOST_GAME =
-  '4Lsr21 4Ss3 3Ir11 3Ir11 4Ss3 3Ir13 3Ir14 3Lr13 4Tr26 4Tr36 4Lr17 4Lsr26 ' +
-  '4Sr16 2r12 2r12 2r15 15 4Ls6 15 15 2r15 3L5 -- 12'
-const TOKENS = LOST_GAME.split(/\s+/)
-
-function positionAfter(moveCount: number): GamePosition {
-  const parsed = parseGameRecord(TOKENS.slice(0, moveCount).join(' '))
-  if (!parsed.ok) throw new Error('La partie de référence doit se rejouer.')
-  const state = parsed.state
-  return {
-    board: state.board,
-    inventories: state.inventories,
-    activePlayer: state.activePlayer,
-  }
-}
 
 describe('recherche du maître', () => {
   /**
@@ -51,7 +32,7 @@ describe('recherche du maître', () => {
   ] as const)(
     'résout exactement la position après %i coups (%s est %s)',
     (moveCount, expectedMover, verdict) => {
-      const position = positionAfter(moveCount)
+      const position = referencePositionAfter(moveCount)
       expect(position.activePlayer).toBe(expectedMover)
 
       const decision = chooseMasterMove(position, { budgetMs: 20_000 })
@@ -96,7 +77,7 @@ describe('recherche du maître', () => {
   })
 
   it('rend le même conseil deux fois quand il est borné aux nœuds', () => {
-    const position = positionAfter(9)
+    const position = referencePositionAfter(9)
     const first = chooseMasterMove(position, { maxNodes: 30_000 })
     const second = chooseMasterMove(position, { maxNodes: 30_000 })
 
@@ -110,7 +91,7 @@ describe('recherche du maître', () => {
 
   it('ne consulte jamais l’horloge quand il est borné aux nœuds', () => {
     let clockReads = 0
-    const position = positionAfter(9)
+    const position = referencePositionAfter(9)
     chooseMasterMove(position, {
       maxNodes: 20_000,
       now: () => {
@@ -125,7 +106,7 @@ describe('recherche du maître', () => {
     let clock = 0
     // Horloge injectée qui avance d'elle-même : la recherche doit s'arrêter
     // sans dépendre du temps réel de la machine de test.
-    const decision = chooseMasterMove(positionAfter(0), {
+    const decision = chooseMasterMove(referencePositionAfter(0), {
       budgetMs: 1_000,
       now: () => {
         clock += 25
@@ -163,9 +144,16 @@ describe('recherche du maître', () => {
     }
   })
 
-  it('évalue une position vide comme équilibrée', () => {
+  /**
+   * Une position vide est symétrique : les deux joueurs ont les mêmes réserves
+   * et la même distance à chaque bord. Il ne doit donc rester que l'avantage du
+   * trait, qui est précisément ce que `TEMPO` chiffre.
+   */
+  it('évalue une position vide comme équilibrée, au trait près', () => {
     const engine = loadPosition(createEnginePosition(), createGamePosition('blue'))
-    expect(evaluate(engine)).toBe(0)
+    expect(evaluate(engine)).toBe(TEMPO)
+    const white = loadPosition(createEnginePosition(), createGamePosition('white'))
+    expect(evaluate(white)).toBe(TEMPO)
   })
 
   /**
@@ -175,7 +163,7 @@ describe('recherche du maître', () => {
    */
   it('rend une variante principale rejouable, partant du coup choisi', () => {
     for (const moveCount of [0, 6, 12]) {
-      const position = moveCount === 0 ? createGamePosition('blue') : positionAfter(moveCount)
+      const position = moveCount === 0 ? createGamePosition('blue') : referencePositionAfter(moveCount)
       const search = searchMasterTopMoves(position, { maxNodes: 40_000 })
       expect(search).not.toBeNull()
 
@@ -204,8 +192,41 @@ describe('recherche du maître', () => {
     }
   })
 
+  /**
+   * `TEMPO` n'est pas une constante d'ajustement libre : c'est la mesure de
+   * l'avantage du trait, et c'est elle qui autorise à jouer une profondeur
+   * impaire. Si l'évaluation change sans qu'on la recalibre, les paliers
+   * impairs se remettent à surestimer et la recherche joue des scores qui ne se
+   * comparent plus d'un palier à l'autre.
+   *
+   * Le test porte sur la **moyenne** et non sur chaque position : l'avantage du
+   * trait varie d'une position à l'autre et un terme constant ne peut pas
+   * suivre cette variation. C'est bien la moyenne qu'il doit annuler.
+   *
+   * Recalibrage : `node node_modules/vite-node/dist/cli.mjs scripts/bench-moteur.ts`
+   * affiche le score de chaque palier ; la correction à apporter à `TEMPO` est
+   * la moitié de l'écart moyen entre paliers impairs et pairs.
+   */
+  it('garde un avantage du trait calibré, sans quoi les paliers ne se comparent plus', () => {
+    const gaps: number[] = []
+    for (const moveCount of [7, 9, 11, 13, 15]) {
+      const position = referencePositionAfter(moveCount)
+      const scores = [4, 5].map(
+        (maxDepth) =>
+          searchMasterTopMoves(position, { maxDepth, maxNodes: 400_000 })?.score ?? 0,
+      )
+      if (scores.some((score) => Math.abs(score) > MATE_THRESHOLD)) continue
+      gaps.push(scores[1] - scores[0])
+    }
+    expect(gaps.length).toBeGreaterThan(2)
+    const mean = gaps.reduce((total, gap) => total + gap, 0) / gaps.length
+    // Sans terme de tempo, cet écart valait environ 1 250 points, soit plus d'un
+    // cran d'axe principal.
+    expect(Math.abs(mean)).toBeLessThan(400)
+  })
+
   it('est atteignable par le niveau, sans profondeur transmise', () => {
-    const position = positionAfter(18)
+    const position = referencePositionAfter(18)
     const decision = chooseMoveForDifficulty(position, 'master')
     expect(decision).not.toBeNull()
     // Position gagnée pour bleu : le niveau doit la voir gagnée.

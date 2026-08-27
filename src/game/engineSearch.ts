@@ -58,12 +58,36 @@ const BLOCKED = 1 << 24
 /** Un cran au-delà de la pire distance atteignable : traverser neuf cases. */
 const AXIS_UNREACHABLE = N + 1
 /**
- * L'axe le plus court domine — on gagne sur l'un *ou* l'autre —, le second ne
- * fait que départager. Même arbitrage que `evaluation.ts`, dont ce calcul est la
- * transposition sur tableaux typés.
+ * L'axe le plus court domine : on gagne sur l'un *ou* l'autre. Le second compte
+ * aussi, mais moins — voir `SECONDARY_AXIS_WEIGHT`, qui est l'écart entre cette
+ * évaluation et celle de `evaluation.ts`, restée lexicographique pour les trois
+ * premiers niveaux.
  */
 const PRIMARY_AXIS_WEIGHT = AXIS_UNREACHABLE + 1
 const CONNECTION_WEIGHT = 100
+
+/**
+ * Poids du **second** axe dans le potentiel de connexion.
+ *
+ * À 1, le potentiel est un ordre lexicographique : `PRIMARY_AXIS_WEIGHT` étant
+ * strictement supérieur à toute la plage du second axe, un cran sur l'axe
+ * dominant l'emporte sur n'importe quelle variation du second, qui ne peut donc
+ * que départager des égalités.
+ *
+ * C'est discutable dans **ce** jeu. Contrairement au Hex, aucun joueur ne se
+ * voit assigner un axe : menacer les deux paires de bords à la fois est l'arme
+ * principale, et l'ordre lexicographique la valorise à peine — une position à
+ * distance 3 sur les deux axes y est jugée pire qu'une position à distance 2 sur
+ * un axe et bloquée sur l'autre, alors qu'elle est bien plus difficile à
+ * couper. Le poids est donc un réglage à mesurer, pas une évidence.
+ *
+ * **Mesuré.** À 3 contre 1, 30 victoires à 18 sur 48 parties appariées, et
+ * 7 ouvertures gagnées des deux couleurs contre 1 (test des signes p = 0,07).
+ * À 5 contre 3, en revanche, 49 % — les deux se valent. Le gain vient donc de
+ * sortir de l'ordre lexicographique, pas du réglage fin du poids ; 3 est retenu
+ * comme la plus petite valeur qui le fasse.
+ */
+const SECONDARY_AXIS_WEIGHT = 3
 
 /**
  * Poids du départage au blocage, croissant avec le remplissage du plateau.
@@ -98,14 +122,95 @@ const ZONE_WEIGHT_FILL = 60
 const PATH_WIDTH_CAP = 16
 const PATH_WIDTH_WEIGHT = 30
 
+/**
+ * Avantage du trait, en points d'évaluation.
+ *
+ * Sans lui, une position vaut plus cher vue juste après un coup qu'après la
+ * réponse : le joueur au trait tient un gain que l'autre n'a pas encore
+ * annulé. Le biais est mesurable — `scripts/bench-moteur.ts` affiche le score
+ * de chaque palier, et les paliers impairs revenaient de plusieurs centaines de
+ * points au-dessus de leurs voisins pairs, soit près d'un cran d'axe principal.
+ *
+ * C'est ce biais, et non la profondeur, qui rendait une profondeur impaire
+ * inexploitable : la recherche la calculait puis la jetait. Un terme constant
+ * ajouté au joueur au trait décale les feuilles paires de `+TEMPO` et les
+ * impaires de `-TEMPO`, donc referme l'écart de `2 × TEMPO`.
+ *
+ * **Calibrage.** La valeur est mesurée, pas devinée : sur les 26 comparaisons
+ * de profondeurs 4, 5 et 6 de la partie de référence, l'écart moyen impair
+ * moins pair valait environ 1 250 points sans terme de tempo, et une vingtaine
+ * avec celui-ci. Le recalibrer après **toute** modification de l'évaluation —
+ * changer le poids du second axe a déplacé l'écart de 200 points. La correction
+ * à appliquer est la moitié de l'écart moyen constaté, et un test garde cet
+ * étalonnage.
+ *
+ * La correction n'est pas parfaite — une passe forcée récurse sans changer le
+ * trait et retourne le signe pour ce sous-arbre, et l'écart réel varie d'une
+ * position à l'autre — mais elle annule le biais **en moyenne**, ce qui suffit
+ * à rendre une profondeur impaire aussi jouable qu'une paire.
+ */
+export const TEMPO = 819
+
+/**
+ * Voisinage à huit cases, aplati une fois pour toutes.
+ *
+ * Le parcours de distances visite près de quatre mille voisins par évaluation.
+ * Les recalculer — deux boucles, quatre tests de bord et une multiplication à
+ * chaque fois — coûtait plus cher que le parcours lui-même. Le voisinage ne
+ * dépend que de la géométrie du plateau : il se tabule au chargement.
+ */
+const NEIGHBOURS = new Int32Array(CELLS * 8)
+const NEIGHBOUR_COUNT = new Int32Array(CELLS)
+for (let y = 0; y < N; y += 1) {
+  for (let x = 0; x < N; x += 1) {
+    const cell = y * N + x
+    let count = 0
+    for (let dy = -1; dy <= 1; dy += 1) {
+      const ny = y + dy
+      if (ny < 0 || ny >= N) continue
+      for (let dx = -1; dx <= 1; dx += 1) {
+        if (dx === 0 && dy === 0) continue
+        const nx = x + dx
+        if (nx < 0 || nx >= N) continue
+        NEIGHBOURS[cell * 8 + count] = ny * N + nx
+        count += 1
+      }
+    }
+    NEIGHBOUR_COUNT[cell] = count
+  }
+}
+
 // Tampons de l'évaluation. La recherche est mono-thread et n'imbrique jamais
 // deux évaluations : ces tampons sont entièrement réécrits à chaque appel.
 const cost = new Int32Array(CELLS)
-const distanceNear = new Int32Array(CELLS)
+// Une carte de distances par axe : décider lequel domine demande les deux, et
+// les garder évite de refaire un parcours pour mesurer la largeur du vainqueur.
+const distanceHorizontal = new Int32Array(CELLS)
+const distanceVertical = new Int32Array(CELLS)
 const distanceFar = new Int32Array(CELLS)
-const settled = new Uint8Array(CELLS)
-let frontA: number[] = []
-let frontB: number[] = []
+
+/**
+ * Marquage des cases déjà réglées, par numéro de génération plutôt que par
+ * remise à zéro. `fillDistances` est appelé six fois par évaluation et
+ * l'évaluation des dizaines de milliers de fois par seconde : quatre-vingt-une
+ * écritures à chaque appel se voyaient au profileur.
+ */
+const settled = new Int32Array(CELLS)
+let settledGeneration = 0
+
+/**
+ * File à deux bouts du parcours 0-1, en tableau typé circulaire.
+ *
+ * Elle remplace deux `number[]` et un `reverse()` — qui **allouait un tableau**
+ * à chaque bascule, au cœur de la boucle la plus chaude du moteur. La capacité
+ * couvre le pire cas : une case n'entre dans la file qu'à une amélioration de
+ * sa distance, soit au plus une fois par arête, et le plateau en compte moins
+ * de 648.
+ */
+const QUEUE_MASK = 1023
+const queue = new Int32Array(QUEUE_MASK + 1)
+let queueHead = 0
+let queueTail = 0
 
 /**
  * Coût de traversée de chaque case pour `side` : 0 sur les siennes, 1 sur une
@@ -126,16 +231,18 @@ let frontB: number[] = []
 function fillCost(position: EnginePosition, side: number, stackBudget: number): void {
   const board = position.board
   const top = position.top
-  for (let cell = 0; cell < CELLS; cell += 1) {
-    const occupant = board[cell]
-    if (occupant === side) {
-      cost[cell] = 0
-    } else if (occupant !== 0) {
-      cost[cell] = BLOCKED
-    } else {
-      const x = cell % N
-      const y = (cell / N) | 0
-      cost[cell] = top[x] - 1 - y > stackBudget ? BLOCKED : 1
+  // Boucle imbriquée plutôt qu'un index unique : `x` et `y` sont alors des
+  // compteurs, là où l'index seul imposait un modulo et une division par case.
+  for (let y = 0, cell = 0; y < N; y += 1) {
+    for (let x = 0; x < N; x += 1, cell += 1) {
+      const occupant = board[cell]
+      if (occupant === side) {
+        cost[cell] = 0
+      } else if (occupant !== 0) {
+        cost[cell] = BLOCKED
+      } else {
+        cost[cell] = top[x] - 1 - y > stackBudget ? BLOCKED : 1
+      }
     }
   }
 }
@@ -147,9 +254,10 @@ function fillCost(position: EnginePosition, side: number, stackBudget: number): 
  */
 function fillDistances(vertical: boolean, far: boolean, out: Int32Array): void {
   out.fill(BLOCKED)
-  settled.fill(0)
-  frontA.length = 0
-  frontB.length = 0
+  settledGeneration += 1
+  const generation = settledGeneration
+  queueHead = 0
+  queueTail = 0
 
   for (let offset = 0; offset < N; offset += 1) {
     const cell = vertical
@@ -162,67 +270,77 @@ function fillDistances(vertical: boolean, far: boolean, out: Int32Array): void {
     const entry = cost[cell]
     if (entry >= BLOCKED) continue
     out[cell] = entry
-    if (entry === 0) frontA.push(cell)
-    else frontB.push(cell)
+    if (entry === 0) {
+      queueHead = (queueHead - 1) & QUEUE_MASK
+      queue[queueHead] = cell
+    } else {
+      queue[queueTail] = cell
+      queueTail = (queueTail + 1) & QUEUE_MASK
+    }
   }
 
-  while (frontA.length > 0 || frontB.length > 0) {
-    if (frontA.length === 0) {
-      const swap = frontA
-      frontA = frontB.reverse()
-      frontB = swap
-    }
-    const current = frontA.pop()
-    if (current === undefined || settled[current]) continue
-    settled[current] = 1
+  while (queueHead !== queueTail) {
+    const current = queue[queueHead]
+    queueHead = (queueHead + 1) & QUEUE_MASK
+    if (settled[current] === generation) continue
+    settled[current] = generation
     const currentDistance = out[current]
-    const x = current % N
-    const y = (current / N) | 0
 
-    for (let dy = -1; dy <= 1; dy += 1) {
-      const ny = y + dy
-      if (ny < 0 || ny >= N) continue
-      for (let dx = -1; dx <= 1; dx += 1) {
-        if (dx === 0 && dy === 0) continue
-        const nx = x + dx
-        if (nx < 0 || nx >= N) continue
-        const next = ny * N + nx
-        if (settled[next] || cost[next] >= BLOCKED) continue
-        const candidate = currentDistance + cost[next]
-        if (candidate < out[next]) {
-          out[next] = candidate
-          if (cost[next] === 0) frontA.push(next)
-          else frontB.push(next)
+    const first = current * 8
+    const last = first + NEIGHBOUR_COUNT[current]
+    for (let i = first; i < last; i += 1) {
+      const next = NEIGHBOURS[i]
+      const step = cost[next]
+      if (settled[next] === generation || step >= BLOCKED) continue
+      const candidate = currentDistance + step
+      if (candidate < out[next]) {
+        out[next] = candidate
+        if (step === 0) {
+          queueHead = (queueHead - 1) & QUEUE_MASK
+          queue[queueHead] = next
+        } else {
+          queue[queueTail] = next
+          queueTail = (queueTail + 1) & QUEUE_MASK
         }
       }
     }
   }
 }
 
-// Résultats du dernier axe mesuré, pour éviter d'allouer un objet par appel.
-let axisDistance = 0
-let axisWidth = 0
-
-function measureAxis(position: EnginePosition, vertical: boolean): void {
-  fillDistances(vertical, false, distanceNear)
-
+/** Distance minimale au bord d'arrivée, lue sur une carte déjà remplie. */
+function axisDistance(near: Int32Array, vertical: boolean): number {
   let best = BLOCKED
   for (let offset = 0; offset < N; offset += 1) {
     const cell = vertical ? (N - 1) * N + offset : offset * N + (N - 1)
-    if (distanceNear[cell] < best) best = distanceNear[cell]
+    if (near[cell] < best) best = near[cell]
   }
-  axisDistance = best
-  axisWidth = 0
-  if (best >= BLOCKED) return
+  return best
+}
 
+/**
+ * Largeur d'un axe : cases vides situées sur au moins un plus court chemin.
+ *
+ * Elle demande une seconde carte, prise depuis le bord opposé — d'où le test
+ * classique « distance aller + distance retour − coût = optimum ». On ne la
+ * calcule que pour l'axe **dominant**, le seul dont la largeur soit retenue :
+ * la mesurer sur les deux, comme le faisait la version précédente, doublait le
+ * nombre de parcours pour jeter la moitié du résultat.
+ */
+function axisWidth(
+  position: EnginePosition,
+  vertical: boolean,
+  near: Int32Array,
+  best: number,
+): number {
+  if (best >= BLOCKED) return 0
   fillDistances(vertical, true, distanceFar)
   const board = position.board
+  let width = 0
   for (let cell = 0; cell < CELLS; cell += 1) {
     if (board[cell] !== 0) continue
-    if (distanceNear[cell] + distanceFar[cell] - cost[cell] === best) {
-      axisWidth += 1
-    }
+    if (near[cell] + distanceFar[cell] - cost[cell] === best) width += 1
   }
+  return width
 }
 
 const finiteAxis = (value: number): number =>
@@ -234,24 +352,22 @@ let playerWidth = 0
 
 /**
  * Potentiel de connexion d'un joueur — bas vaut mieux — et largeur de son axe
- * dominant. L'axe le plus court domine, le second départage : même arbitrage
- * que `evaluation.ts`, dont ce calcul est la transposition sur tableaux typés.
+ * dominant. L'axe le plus court pèse `PRIMARY_AXIS_WEIGHT`, le second
+ * `SECONDARY_AXIS_WEIGHT`.
  */
 function measurePlayer(
   position: EnginePosition,
   side: number,
   ownBudget: number,
   stackBudget: number,
+  secondaryWeight: number,
 ): void {
   fillCost(position, side, stackBudget)
 
-  measureAxis(position, false)
-  const horizontal = axisDistance
-  const horizontalWidth = axisWidth
-
-  measureAxis(position, true)
-  const vertical = axisDistance
-  const verticalWidth = axisWidth
+  fillDistances(false, false, distanceHorizontal)
+  const horizontal = axisDistance(distanceHorizontal, false)
+  fillDistances(true, false, distanceVertical)
+  const vertical = axisDistance(distanceVertical, true)
 
   // Un axe qui demande plus de cases qu'il n'en reste en réserve est mort : le
   // joueur doit **posséder** chaque case du chemin, et il ne peut pas en poser
@@ -266,24 +382,35 @@ function measurePlayer(
   const horizontalLeads = horizontalReach <= verticalReach
   const primary = finiteAxis(horizontalLeads ? horizontalReach : verticalReach)
   const secondary = finiteAxis(horizontalLeads ? verticalReach : horizontalReach)
-  playerPotential = primary * PRIMARY_AXIS_WEIGHT + secondary
+  playerPotential = primary * PRIMARY_AXIS_WEIGHT + secondary * secondaryWeight
   playerWidth = Math.min(
-    horizontalLeads ? horizontalWidth : verticalWidth,
+    horizontalLeads
+      ? axisWidth(position, false, distanceHorizontal, horizontal)
+      : axisWidth(position, true, distanceVertical, vertical),
     PATH_WIDTH_CAP,
   )
 }
 
 /** Évaluation statique, du point de vue du joueur au trait. */
-export function evaluate(position: EnginePosition): number {
+export function evaluate(
+  position: EnginePosition,
+  secondaryWeight: number = SECONDARY_AXIS_WEIGHT,
+): number {
   const side = position.side
   const opponent = otherSide(side)
 
   const stackBudget = totalRemainingCells(position)
-  measurePlayer(position, side, remainingCells(position, side), stackBudget)
+  measurePlayer(position, side, remainingCells(position, side), stackBudget, secondaryWeight)
   const myPotential = playerPotential
   const myWidth = playerWidth
 
-  measurePlayer(position, opponent, remainingCells(position, opponent), stackBudget)
+  measurePlayer(
+    position,
+    opponent,
+    remainingCells(position, opponent),
+    stackBudget,
+    secondaryWeight,
+  )
   const connection = playerPotential - myPotential
   const width = myWidth - playerWidth
 
@@ -294,7 +421,8 @@ export function evaluate(position: EnginePosition): number {
   return (
     connection * CONNECTION_WEIGHT +
     width * PATH_WIDTH_WEIGHT +
-    zone * zoneWeight
+    zone * zoneWeight +
+    TEMPO
   )
 }
 
@@ -345,6 +473,10 @@ type SearchContext = {
   deadline: number
   /** Plafond de nœuds, `Infinity` quand la recherche est bornée au temps. */
   maxNodes: number
+  /** Réduire les coups tardifs. Voir `reduction`. */
+  reduce: boolean
+  /** Poids du second axe dans l'évaluation. Voir `SECONDARY_AXIS_WEIGHT`. */
+  secondaryWeight: number
   nodes: number
   aborted: boolean
 }
@@ -431,6 +563,46 @@ function recordCutoff(move: number, ply: number, side: number, depth: number): v
 }
 
 /**
+ * Réduction des coups tardifs.
+ *
+ * Le facteur de branchement de ce jeu est de 95 à l'ouverture — c'est lui, et
+ * non le débit, qui plafonne l'anticipation : monter d'un palier coûte cinq à
+ * neuf fois le palier précédent (`scripts/bench-moteur.ts`). Accélérer la
+ * machine ne fait que déplacer ce mur ; le faire reculer demande de ne pas
+ * accorder à tous les coups la même profondeur.
+ *
+ * Les coups sont déjà triés : coup de la table, tueurs, puis historique des
+ * coupures. Passé les premiers, un coup n'est presque jamais le meilleur. On le
+ * cherche donc à profondeur réduite, à fenêtre nulle, et **on le recherche à
+ * pleine profondeur dès qu'il dépasse alpha** — la réduction ne peut donc
+ * jamais faire manquer un bon coup, seulement retarder sa découverte.
+ *
+ * Ni le coup de la table ni les tueurs ne sont réduits : ce sont ceux dont on a
+ * déjà la preuve qu'ils valent quelque chose ici.
+ *
+ * **Limite à connaître.** Un coup réduit qui reste sous alpha n'est pas
+ * rejugé : la réduction est donc une heuristique, pas une équivalence, et une
+ * recherche qui réduit ne **prouve** plus rien. C'est pourquoi
+ * `searchMasterTopMoves` la coupe sur l'itération qui résout la fin de partie
+ * (`depth >= remainingPlies`) : là, la valeur rendue doit être la valeur de jeu
+ * vraie, pas une estimation. Les scores de mat, eux, restent sûrs — ils
+ * naissent de `movePlacedWins` et de `stalemateValue`, qui ne dépendent
+ * d'aucune profondeur.
+ */
+const LMR_MIN_DEPTH = 3
+const LMR_MIN_INDEX = 4
+const LMR_DEEP_INDEX = 12
+/** Seuil de score au-dessus duquel un coup est un tueur ou celui de la table. */
+const ORDER_TRUSTED = (1 << 29) - 1
+
+function reduction(depth: number, index: number, order: number): number {
+  if (depth < LMR_MIN_DEPTH || index < LMR_MIN_INDEX || order >= ORDER_TRUSTED) {
+    return 0
+  }
+  return index < LMR_DEEP_INDEX ? 1 : 2
+}
+
+/**
  * Negamax : le score rendu est toujours du point de vue du joueur au trait.
  *
  * Une passe forcée ne change pas le trait ; la récursion se fait alors **sans**
@@ -467,13 +639,13 @@ function search(
     }
   }
 
-  if (depth <= 0) return evaluate(position)
+  if (depth <= 0) return evaluate(position, context.secondaryWeight)
 
   const base = ply * MAX_MOVES
   const count = generateMoves(position, moveBuffer, base)
   // Le joueur au trait a toujours un coup ici : l'appelant a déjà résolu la
   // passe forcée et le blocage avant de récurser.
-  if (count === 0) return evaluate(position)
+  if (count === 0) return evaluate(position, context.secondaryWeight)
   scoreMoves(moveBuffer, orderBuffer, base, count, ttBest, ply, position.side)
 
   let best = -MATE - 1
@@ -492,8 +664,15 @@ function search(
       if (index === 0) {
         score = -search(context, depth - 1, -beta, -alpha, ply + 1)
       } else {
-        // Fenêtre nulle : on ne cherche qu'à savoir si ce coup dépasse alpha.
-        score = -search(context, depth - 1, -alpha - 1, -alpha, ply + 1)
+        // Fenêtre nulle : on ne cherche qu'à savoir si ce coup dépasse alpha,
+        // et à profondeur réduite s'il est classé assez loin pour cela.
+        const cut = context.reduce ? reduction(depth, index, orderBuffer[base + index]) : 0
+        score = -search(context, depth - 1 - cut, -alpha - 1, -alpha, ply + 1)
+        // Un coup réduit qui dépasse quand même alpha a droit à sa profondeur
+        // pleine : c'est ce qui rend la réduction sans perte.
+        if (cut > 0 && score > alpha) {
+          score = -search(context, depth - 1, -alpha - 1, -alpha, ply + 1)
+        }
         if (score > alpha && score < beta) {
           score = -search(context, depth - 1, -beta, -alpha, ply + 1)
         }
@@ -539,13 +718,25 @@ export type RootSearch = {
   /** Tous les coups de valeur strictement égale à la meilleure, avant tirage. */
   moves: number[]
   score: number
+  /**
+   * Coups racine dont la recherche est allée à son terme. Inférieur à leur
+   * nombre total quand le budget s'est épuisé en cours d'itération : l'appelant
+   * s'en sert pour décider si le résultat partiel vaut mieux que le palier
+   * précédent.
+   */
+  completed: number
 }
 
 /**
- * Recherche à la racine. La fenêtre alpha reste ouverte d'un point sous le
- * meilleur score pour qu'un ex æquo revienne **exact** au lieu d'une borne
- * tronquée — même raison qu'à la racine de `minimax.ts`, et sans quoi le tirage
- * de départage n'aurait jamais qu'un candidat.
+ * Recherche à la racine.
+ *
+ * Deux points la distinguent d'un nœud interne. La fenêtre alpha reste ouverte
+ * d'un point sous le meilleur score, pour qu'un ex æquo revienne **exact** au
+ * lieu d'une borne tronquée — même raison qu'à la racine de `minimax.ts`, et
+ * sans quoi le tirage de départage n'aurait jamais qu'un candidat. Et la
+ * fenêtre nulle y est employée comme ailleurs : chercher chaque coup à fenêtre
+ * pleine interdisait toute coupure là où il y a le plus de coups — 95 à
+ * l'ouverture —, donc au poste le plus cher de l'arbre.
  */
 function searchRoot(context: SearchContext, depth: number): RootSearch | null {
   const position = context.position
@@ -565,6 +756,7 @@ function searchRoot(context: SearchContext, depth: number): RootSearch | null {
   let alpha = -MATE - 1
   let best = -MATE - 1
   let bestMoves: number[] = []
+  let completed = 0
 
   for (let index = 0; index < count; index += 1) {
     pickBest(moveBuffer, orderBuffer, 0, count, index)
@@ -575,11 +767,30 @@ function searchRoot(context: SearchContext, depth: number): RootSearch | null {
     if (movePlacedWins(position, move, mover)) {
       score = MATE
     } else if (hasAnyMove(position, position.side)) {
-      score = -search(context, depth - 1, -MATE - 1, -alpha, 1)
+      if (index === 0) {
+        score = -search(context, depth - 1, -MATE - 1, -alpha, 1)
+      } else {
+        // Fenêtre nulle : savoir si ce coup atteint le meilleur score suffit à
+        // écarter tous ceux qui sont strictement moins bons. Un dépassement
+        // — donc un ex æquo ou un progrès — impose seul une seconde recherche,
+        // à fenêtre pleine, pour obtenir la valeur exacte que le départage
+        // réclame.
+        score = -search(context, depth - 1, -alpha - 1, -alpha, 1)
+        if (score > alpha && !context.aborted) {
+          score = -search(context, depth - 1, -MATE - 1, -alpha, 1)
+        }
+      }
     } else {
       flipSide(position)
       if (hasAnyMove(position, position.side)) {
-        score = search(context, depth - 1, alpha, MATE + 1, 1)
+        if (index === 0) {
+          score = search(context, depth - 1, alpha, MATE + 1, 1)
+        } else {
+          score = search(context, depth - 1, alpha, alpha + 1, 1)
+          if (score > alpha && !context.aborted) {
+            score = search(context, depth - 1, alpha, MATE + 1, 1)
+          }
+        }
       } else {
         score = stalemateValue(position, mover, 0)
       }
@@ -588,6 +799,7 @@ function searchRoot(context: SearchContext, depth: number): RootSearch | null {
 
     undoMove(position, move)
     if (context.aborted) break
+    completed += 1
 
     if (score > best) {
       best = score
@@ -599,7 +811,7 @@ function searchRoot(context: SearchContext, depth: number): RootSearch | null {
   }
 
   if (bestMoves.length === 0) return null
-  return { moves: bestMoves, score: best }
+  return { moves: bestMoves, score: best, completed }
 }
 
 const pvBuffer = new Int32Array(MAX_MOVES)
@@ -684,18 +896,31 @@ export type MasterSearchOptions = {
   /** Plafond de profondeur, surtout utile aux tests. */
   maxDepth?: number
   /**
-   * Accepte aussi les profondeurs impaires. **Réservé au livre d'ouverture.**
-   *
-   * En jeu, la profondeur atteinte dépend de l'horloge et donc de la machine :
-   * retenir une profondeur impaire y ferait jouer, selon l'appareil, une valeur
-   * biaisée face à une valeur saine. Le livre, lui, est calculé hors ligne à
-   * plafond fixe : tous les coups candidats d'une position y sont comparés à la
-   * **même** profondeur, si bien que le biais est uniforme et s'annule dans le
-   * classement. Le refuser coûterait un demi-coup d'anticipation pour rien — au
-   * plateau vide, la profondeur 6 est hors de portée même à quatre millions de
-   * positions, si bien que la parité y plafonnerait le livre au niveau du jeu.
+   * Retient les profondeurs impaires. Vrai par défaut depuis que `TEMPO` en
+   * annule le biais ; l'option ne sert plus qu'à mesurer ce choix, en opposant
+   * les deux arms dans `scripts/duel-appariee.ts`.
    */
   allowOddDepth?: boolean
+  /**
+   * Réduit les coups tardifs (voir `reduction`). **Faux par défaut** : elle
+   * divise bien le nombre de nœuds par 4 à 9, mais fait 22 victoires à 26 en
+   * duel apparié à nœuds égaux. L'option reste pour la remesurer une fois le
+   * tri des coups amélioré.
+   */
+  reduce?: boolean
+  /**
+   * Poids du second axe dans l'évaluation (voir `SECONDARY_AXIS_WEIGHT`).
+   * Réglage à mesurer, arme contre arme, dans `duel-appariee.ts`.
+   */
+  secondaryAxisWeight?: number
+  /**
+   * Retient un palier interrompu qui confirme ou améliore le précédent.
+   * **Faux par défaut** : la mesure ne l'a pas départagé de son absence
+   * (2 ouvertures gagnées contre 5, test des signes p = 0,45 sur 22 ouvertures).
+   * Comme pour `reduce`, une profondeur nominale gagnée sur une recherche
+   * incomplète ne se transforme pas en force. L'option reste pour la remesurer.
+   */
+  keepPartial?: boolean
   /** Départage des ex æquo, comme ailleurs dans le domaine. */
   random?: () => number
 }
@@ -703,7 +928,7 @@ export type MasterSearchOptions = {
 export type MasterDecision = {
   move: LegalMove
   score: number
-  /** Profondeur de la dernière itération achevée. */
+  /** Profondeur du dernier palier retenu, achevé ou interrompu. */
   depth: number
   /** Vrai quand la valeur rendue est la valeur de jeu **exacte**. */
   exact: boolean
@@ -761,6 +986,12 @@ export function searchMasterTopMoves(
   history.fill(0)
   clearTranspositions()
 
+  // Les paliers impairs sont retenus par défaut : `TEMPO` en annule le biais.
+  // L'option ne subsiste que pour mesurer ce choix, arme contre arme.
+  const keepOddDepth = options.allowOddDepth ?? true
+  const reduce = options.reduce ?? false
+  const keepPartial = options.keepPartial ?? false
+  const secondaryWeight = options.secondaryAxisWeight ?? SECONDARY_AXIS_WEIGHT
   const timed = maxNodes === Number.POSITIVE_INFINITY
   const context: SearchContext = {
     position,
@@ -769,50 +1000,79 @@ export function searchMasterTopMoves(
     // fixer une échéance : c'est ce qui rend la recherche reproductible.
     deadline: timed ? now() + budget : Number.POSITIVE_INFINITY,
     maxNodes,
+    reduce,
+    secondaryWeight,
     nodes: 0,
     aborted: false,
   }
 
   let decision: MasterSearch | null = null
+  let previousSpent = 0
   for (let depth = 1; depth <= ceiling; depth += 1) {
+    const iterationStart = timed ? now() : 0
+    // L'itération qui atteint le nombre de demi-coups restants ne juge plus, elle
+    // prouve : elle doit donc voir tout l'arbre, sans réduction.
+    context.reduce = reduce && depth < plies
     const result = searchRoot(context, depth)
-    if (context.aborted || !result) break
+    if (!result) break
 
-    const exact = depth >= plies || Math.abs(result.score) > MATE_THRESHOLD
-    // Une profondeur **impaire** s'arrête juste après un coup du moteur : elle
-    // voit son propre gain sans voir la réponse, et surestime donc la position.
-    // Le biais est loin d'être théorique — à budget serré, ne retenir que les
-    // profondeurs impaires faisait passer le niveau de 8 victoires sur 8 contre
-    // le maître à 4 sur 8. Comme le budget est en temps, la profondeur atteinte
-    // dépend de la machine : un téléphone lent tomberait sur la mauvaise parité
-    // et jouerait nettement plus faible. On ne **retient** donc qu'une
-    // profondeur paire — les impaires servent quand même à ordonner les coups de
-    // l'itération suivante, ce qui ne coûte presque rien. Exceptions : la
-    // profondeur 1, pour avoir toujours un coup sous la main, et une valeur
-    // exacte, qui ne souffre d'aucun biais puisqu'elle ne dépend d'aucune
-    // évaluation.
-    if (options.allowOddDepth || depth % 2 === 0 || depth === 1 || exact) {
+    // Une itération interrompue n'a pas examiné tous les coups racine : sa
+    // valeur de jeu n'est donc pas prouvée, sauf victoire trouvée — une
+    // victoire forcée reste forcée quels que soient les coups non examinés.
+    const partial = context.aborted
+    const exact = partial
+      ? result.score > MATE_THRESHOLD
+      : depth >= plies || Math.abs(result.score) > MATE_THRESHOLD
+    // Une profondeur impaire s'arrête juste après un coup du moteur : elle voit
+    // son propre gain sans voir la réponse. C'est le biais que `TEMPO` corrige
+    // à la source ; il n'y a donc plus de raison de jeter ces paliers, et les
+    // jeter coûtait cher — mesuré sur la partie de référence, la profondeur 5
+    // s'achevait en 1,2 s aux demi-coups 9 et 12, pour être remplacée par une
+    // profondeur 4 et cinq secondes de budget dépensées en pure perte.
+    const retained = keepOddDepth || depth % 2 === 0 || depth === 1 || exact
+
+    // Un palier **interrompu** n'est retenu que s'il confirme ou améliore le
+    // précédent. Les coups racine étant triés meilleur d'abord, celui du palier
+    // précédent a été réexaminé le premier et plus profondément : son score est
+    // donc mieux fondé. Un palier qui s'effondre, à l'inverse, a découvert une
+    // réfutation sans avoir eu le temps de chercher la parade ailleurs ; jouer
+    // sur cette moitié d'information serait pire que s'en tenir au palier
+    // complet précédent.
+    const improves = decision === null || result.score >= decision.score
+    if (retained && (!partial || (keepPartial && improves))) {
       decision = {
         moves: result.moves.map(toLegalMove),
         score: result.score,
         depth,
-        // Aucune feuille n'a été coupée par la profondeur : la valeur est vraie.
+        // Hors interruption, aucune feuille n'a été coupée par la profondeur :
+        // la valeur est vraie.
         exact,
         nodes: context.nodes,
         // Relevée maintenant : la table décrit l'itération qui vient de finir,
         // et une itération suivante, même abandonnée, en écraserait des nœuds.
         pv: collectPrincipalVariation(position, result.moves[0], depth),
       }
-      if (exact) break
     }
-    // Approfondir coûte plusieurs fois l'itération précédente : sans marge, on
-    // en lance une qu'on n'a aucune chance d'achever. La marge est doublée
-    // après une profondeur impaire : s'arrêter là rendrait un coup plus ancien,
-    // donc il vaut mieux ne pas s'y engager sans de quoi finir la suivante.
-    // Sans budget de temps, la borne est le plafond de nœuds, que `exhausted`
-    // fait respecter.
-    const margin = depth % 2 === 0 ? budget / 4 : budget / 2
-    if (timed && now() >= context.deadline - margin) break
+    if (partial || exact) break
+    // Ne pas s'engager dans un palier qu'on n'a pas le temps de finir. Un palier
+    // interrompu n'étant pas retenu (voir `keepPartial`), tout ce qu'on y passe
+    // est perdu — mesuré, quatre à six secondes sur six avec la marge fixe
+    // d'avant, qui ne regardait que la parité.
+    //
+    // Le coût du palier suivant s'**observe** au lieu de se deviner : il vaut
+    // plusieurs fois celui qu'on vient de finir, et ce facteur se lit sur les
+    // deux derniers paliers. Faute de deux paliers, on prend le bas de la plage
+    // mesurée sur la partie de référence, entre trois et neuf.
+    //
+    // Sous plafond de nœuds l'horloge n'est **jamais** lue, pas même ici : c'est
+    // ce qui rend le conseil reproductible. La borne y est le plafond lui-même,
+    // que `exhausted` fait respecter.
+    if (timed) {
+      const spent = now() - iterationStart
+      const growth = previousSpent > 0 ? Math.max(2, spent / previousSpent) : 4
+      previousSpent = spent
+      if (now() + spent * growth > context.deadline) break
+    }
   }
 
   if (decision) return decision

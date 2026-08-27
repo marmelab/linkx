@@ -75,8 +75,12 @@ export const DEPTH_DRIVEN_DIFFICULTIES = DIFFICULTY_IDS.filter(
  * l'écran ne répond pas, d'où un budget serré.
  *
  * Le plafond de nœuds sert au conseil, qui doit être reproductible et ne peut
- * donc pas s'arrêter à l'horloge. Il est calé pour coûter, sur une machine de
- * développement, l'ordre de grandeur du budget de temps ci-dessus.
+ * donc pas s'arrêter à l'horloge. Le conseil tourne sur le fil principal : ce
+ * plafond est donc aussi la durée pendant laquelle l'écran ne répond pas, et il
+ * se lit en temps, pas en force. L'accélération de l'évaluation l'a ramené à
+ * environ une seconde sur une machine de développement, contre deux auparavant.
+ * Le relever rendrait le conseil plus fort et le gel plus long : c'est un
+ * arbitrage d'interface, pas de moteur.
  */
 export const MASTER_BUDGET_MS = 2_500
 /**
