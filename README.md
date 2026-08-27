@@ -24,6 +24,9 @@ npm run dev
 | `node node_modules/vite-node/dist/cli.mjs scripts/generate-opening-book.ts --depth 6` | régénère le livre d'ouverture du maître (1-2 h, hors ligne) |
 | `node node_modules/vite-node/dist/cli.mjs scripts/audit-livre.ts` | compare chaque coup du livre à la recherche en direct |
 | `node node_modules/vite-node/dist/cli.mjs scripts/duel-livre.ts` | duel apparié avec et sans livre, à ouverture imposée |
+| `node node_modules/vite-node/dist/cli.mjs scripts/bench-moteur.ts` | coût de chaque palier de recherche, profondeur jouée, budget perdu |
+| `node node_modules/vite-node/dist/cli.mjs scripts/duel-appariee.ts --a X --b Y` | duel apparié entre deux réglages du moteur, 48 parties |
+| `node node_modules/vite-node/dist/cli.mjs scripts/pecher-bevues.ts` | fabrique des positions de test là où le moteur se trompe |
 
 ## Source de vérité
 
@@ -62,7 +65,8 @@ src/
     engineBoard.ts      position compacte de recherche : coups, chute, connexion
     engineSearch.ts     recherche du maître : itératif, PVS, fin de partie exacte
     openingBook.ts      livre d'ouverture du maître : clé canonique et lecture
-    openingBook.data.ts livre généré hors ligne à profondeur 6, 51 entrées
+    openingBook.data.ts livre généré hors ligne à profondeur 6, 470 entrées
+    referenceGame.ts    partie de référence figée, partagée par les tests et le banc
     hint.ts             chooseHint et canOfferHint, conseil au joueur au trait
     reducer.ts          état initial et transitions du jeu
     boardText.ts        parseur/sérialiseur du format B/W/.
@@ -89,7 +93,7 @@ src/
   App.css, index.css    toute la mise en page
   main.tsx              montage React et enregistrement du service worker
 public/                 copié tel quel : manifeste, service worker, icônes
-scripts/generate-icons.mjs · scripts/generate-opening-book.ts · scripts/duel-maitre.ts · scripts/audit-livre.ts · scripts/duel-livre.ts · fixtures/urls.md : outils de mesure et positions de test
+scripts/generate-icons.mjs · scripts/generate-opening-book.ts · scripts/duel-maitre.ts · scripts/audit-livre.ts · scripts/duel-livre.ts · scripts/bench-moteur.ts · scripts/duel-appariee.ts · scripts/pecher-bevues.ts · fixtures/urls.md : outils de mesure et positions de test
 ```
 
 Les tests vivent à côté de leur module, en `*.test.ts` / `*.test.tsx`.
@@ -103,6 +107,7 @@ Les tests vivent à côté de leur module, en `*.test.ts` / `*.test.tsx`.
 - `connectivity.ts` détecte les connexions sur la **couleur** des cases. Le `pieceId` identifie une pièce physique pour le rendu et l'animation, jamais pour relier les zones gagnantes.
 - Le **maître** a son propre moteur, `engineBoard.ts` + `engineSearch.ts`, distinct de `minimax.ts` : position sur tableaux typés, coups empaquetés dans un entier, make/unmake, Zobrist et table de transposition à taille fixe. `src/game/` reste la **source de vérité des règles** ; ce moteur n'en redéfinit aucune et son équivalence est prouvée par test différentiel (`engineBoard.test.ts`) contre `enumerateLegalMoves` et `simulateLegalMove`. Il exploite deux conséquences des règles, vérifiées par ce même test : une colonne n'a jamais de trou, et la légalité se réduit à un test de planéité. Toucher aux règles doit faire échouer ce test avant tout le reste.
 - `chooseMoveForDifficulty` reste l'**unique** entrée : elle détourne le maître vers `engineSearch.ts` et laisse les autres niveaux au barème de `minimax.ts`. L'interface transmet un niveau, jamais une profondeur ni un budget.
+- **Aucune modification de la recherche ou de l'évaluation ne se garde sans mesure.** `bench-moteur.ts` dit ce que coûte chaque palier et ce que le budget gaspille ; `duel-appariee.ts` oppose deux réglages sur 48 parties appariées et rend un test des signes ; `pecher-bevues.ts` fabrique les positions de non-régression. Les réglages comparables sont des options de `MasterSearchOptions` — jamais un moteur modifié à la volée, qui ne se rejouerait pas.
 - Le livre d'ouverture (`openingBook.ts`) ne guide que le **maître**, sur son premier coup, et retombe sur la recherche en dehors de son périmètre. `openingBook.data.ts` est **généré** par `scripts/generate-opening-book.ts` à `--depth 6`, deux tours au-delà de ce que le jeu atteint, en une à deux heures ; ne pas l'éditer à la main. Il doit être engendré par le moteur courant : un livre hérité d'une autre évaluation affaiblit la recherche. Engendré par le moteur qui le lit, il la renforce — 12 victoires sur 12 avec, 6 sur 12 sans. Ses seules clés sont `white|`, l'ordinateur jouant toujours blanc : un duel qui alterne les couleurs le rend inerte une partie sur deux et ne peut donc pas le mesurer. C'est `scripts/duel-livre.ts` qui le mesure, apparié et à ouverture imposée, jamais `duel-maitre.ts`.
 - L'état de survol, les délais et les animations restent dans l'UI tant qu'ils n'affectent pas les règles.
 - `App.tsx` ne fait que câbler : reducer, tour de l'ordinateur, raccourcis clavier. Les invariants qu'il doit respecter sont détaillés dans les deux `CLAUDE.md` de répertoire.
