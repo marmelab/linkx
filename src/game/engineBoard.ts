@@ -1,4 +1,16 @@
 import { enumerateLegalMoves } from './legalMoves'
+import {
+  CELL_BIT,
+  CELL_LIMB,
+  EDGE_BOTTOM,
+  EDGE_LEFT,
+  EDGE_RIGHT,
+  EDGE_TOP,
+  FLOOD,
+  LIMBS,
+  floodFrom,
+  popcount,
+} from './bitboard'
 import type { LegalMove } from './legalMoves'
 import type { GamePosition } from './simulation'
 import { getUniqueOrientations } from './transforms'
@@ -161,28 +173,29 @@ export type EnginePosition = {
   board: Int8Array
   /** Ligne de la case occupée la plus haute de chaque colonne, `9` si vide. */
   top: Int8Array
+  /**
+   * Les cases de chaque joueur en plateau de bits, `LIMBS` mots par joueur, le
+   * joueur `side` à l'indice `(side - 1) * LIMBS`. Redondant avec `board`, tenu
+   * à jour par `applyMove`/`undoMove` : c'est ce qui rend les zones connexes et
+   * les distances de connexion affaire de décalages plutôt que de parcours.
+   */
+  bits: Int32Array
   /** Exemplaires restants, indexés `(side - 1) * 7 + forme`. */
   inventory: Int8Array
   side: number
   hashA: number
   hashB: number
-  /** Tampons de parcours de zone, réutilisés d'un appel à l'autre. */
-  stamp: Int32Array
-  stack: Int32Array
-  stampGeneration: number
 }
 
 export function createEnginePosition(): EnginePosition {
   return {
     board: new Int8Array(CELLS),
     top: new Int8Array(N).fill(N),
+    bits: new Int32Array(2 * LIMBS),
     inventory: new Int8Array(14),
     side: BLUE,
     hashA: 0,
     hashB: 0,
-    stamp: new Int32Array(CELLS),
-    stack: new Int32Array(CELLS),
-    stampGeneration: 0,
   }
 }
 
@@ -211,11 +224,15 @@ export function loadPosition(
 ): EnginePosition {
   position.board.fill(EMPTY)
   position.top.fill(N)
+  position.bits.fill(0)
   for (let y = 0; y < N; y += 1) {
     for (let x = 0; x < N; x += 1) {
       const cell = source.board[y][x]
       if (!cell) continue
-      position.board[y * N + x] = toEngineSide(cell.player)
+      const index = y * N + x
+      const side = toEngineSide(cell.player)
+      position.board[index] = side
+      position.bits[(side - 1) * LIMBS + CELL_LIMB[index]] |= CELL_BIT[index]
       if (y < position.top[x]) position.top[x] = y
     }
   }
@@ -226,8 +243,6 @@ export function loadPosition(
     }
   }
   position.side = toEngineSide(source.activePlayer)
-  position.stampGeneration = 0
-  position.stamp.fill(0)
   rehash(position)
   return position
 }
@@ -358,6 +373,7 @@ export function applyMove(position: EnginePosition, move: number): void {
     const y = anchorY + entry.dy[i]
     const cell = y * N + x
     position.board[cell] = side
+    position.bits[(side - 1) * LIMBS + CELL_LIMB[cell]] |= CELL_BIT[cell]
     position.hashA ^= zCellA[cell * 3 + side]
     position.hashB ^= zCellB[cell * 3 + side]
     if (y < position.top[x]) position.top[x] = y
@@ -384,6 +400,7 @@ export function undoMove(position: EnginePosition, move: number): void {
     const y = anchorY + entry.dy[i]
     const cell = y * N + x
     position.board[cell] = EMPTY
+    position.bits[(side - 1) * LIMBS + CELL_LIMB[cell]] &= ~CELL_BIT[cell]
     position.hashA ^= zCellA[cell * 3 + side]
     position.hashB ^= zCellB[cell * 3 + side]
   }
@@ -400,63 +417,26 @@ export function undoMove(position: EnginePosition, move: number): void {
 
 // --- Connexion ---------------------------------------------------------------
 
-function beginFlood(position: EnginePosition): void {
-  position.stampGeneration += 1
+/** La zone touche-t-elle ce bord ? */
+function touches(zone0: number, zone1: number, zone2: number, edge: Int32Array): boolean {
+  return ((zone0 & edge[0]) | (zone1 & edge[1]) | (zone2 & edge[2])) !== 0
 }
 
-/**
- * Taille du composant de `side` atteignable depuis `start`, et bords touchés
- * déposés dans `floodEdges` : 1 gauche, 2 droite, 4 haut, 8 bas.
- */
-let floodEdges = 0
-
-function flood(position: EnginePosition, start: number, side: number): number {
-  const { board, stamp, stack } = position
-  const generation = position.stampGeneration
-  let pointer = 0
-  let size = 0
-  let edges = 0
-  stack[pointer] = start
-  pointer += 1
-  stamp[start] = generation
-
-  while (pointer > 0) {
-    pointer -= 1
-    const cell = stack[pointer]
-    size += 1
-    const x = cell % N
-    const y = (cell / N) | 0
-    if (x === 0) edges |= 1
-    if (x === N - 1) edges |= 2
-    if (y === 0) edges |= 4
-    if (y === N - 1) edges |= 8
-
-    for (let dy = -1; dy <= 1; dy += 1) {
-      const ny = y + dy
-      if (ny < 0 || ny >= N) continue
-      for (let dx = -1; dx <= 1; dx += 1) {
-        if (dx === 0 && dy === 0) continue
-        const nx = x + dx
-        if (nx < 0 || nx >= N) continue
-        const next = ny * N + nx
-        if (stamp[next] === generation || board[next] !== side) continue
-        stamp[next] = generation
-        stack[pointer] = next
-        pointer += 1
-      }
-    }
-  }
-
-  floodEdges = edges
-  return size
+/** Une zone relie-t-elle deux bords opposés ? Gauche-droite **ou** haut-bas. */
+function connects(zone0: number, zone1: number, zone2: number): boolean {
+  return (
+    (touches(zone0, zone1, zone2, EDGE_LEFT) &&
+      touches(zone0, zone1, zone2, EDGE_RIGHT)) ||
+    (touches(zone0, zone1, zone2, EDGE_TOP) &&
+      touches(zone0, zone1, zone2, EDGE_BOTTOM))
+  )
 }
-
-const connects = (edges: number): boolean =>
-  (edges & 3) === 3 || (edges & 12) === 12
 
 /**
  * Le coup qui vient d'être posé par `side` lui donne-t-il la victoire ? Seul le
- * composant de la pièce posée peut avoir changé, donc on n'inonde que lui.
+ * composant de la pièce posée peut avoir changé, et les cases d'une pièce sont
+ * connexes entre elles : une seule inondation, depuis la pièce entière, rend
+ * exactement ce composant.
  */
 export function movePlacedWins(
   position: EnginePosition,
@@ -466,24 +446,54 @@ export function movePlacedWins(
   const entry = ORIENTATIONS[moveShape(move)][moveOrientation(move)]
   const column = moveColumn(move)
   const anchorY = moveAnchorY(move)
-  beginFlood(position)
+  let seed0 = 0
+  let seed1 = 0
+  let seed2 = 0
   for (let i = 0; i < entry.cellCount; i += 1) {
     const cell = (anchorY + entry.dy[i]) * N + (column + entry.dx[i])
-    if (position.stamp[cell] === position.stampGeneration) continue
-    flood(position, cell, side)
-    if (connects(floodEdges)) return true
+    const bit = CELL_BIT[cell]
+    const limb = CELL_LIMB[cell]
+    if (limb === 0) seed0 |= bit
+    else if (limb === 1) seed1 |= bit
+    else seed2 |= bit
   }
-  return false
+  const base = (side - 1) * LIMBS
+  floodFrom(
+    seed0,
+    seed1,
+    seed2,
+    position.bits[base],
+    position.bits[base + 1],
+    position.bits[base + 2],
+  )
+  return connects(FLOOD[0], FLOOD[1], FLOOD[2])
 }
 
 export function largestZone(position: EnginePosition, side: number): number {
-  beginFlood(position)
+  const base = (side - 1) * LIMBS
+  const own0 = position.bits[base]
+  const own1 = position.bits[base + 1]
+  const own2 = position.bits[base + 2]
+  let rest0 = own0
+  let rest1 = own1
+  let rest2 = own2
   let largest = 0
-  for (let cell = 0; cell < CELLS; cell += 1) {
-    if (position.board[cell] !== side) continue
-    if (position.stamp[cell] === position.stampGeneration) continue
-    const size = flood(position, cell, side)
+  while ((rest0 | rest1 | rest2) !== 0) {
+    // Une case quelconque de ce qui reste : la plus basse allumée.
+    let seed0 = 0
+    let seed1 = 0
+    let seed2 = 0
+    if (rest0 !== 0) seed0 = rest0 & -rest0
+    else if (rest1 !== 0) seed1 = rest1 & -rest1
+    else seed2 = rest2 & -rest2
+
+    floodFrom(seed0, seed1, seed2, own0, own1, own2)
+    const size =
+      popcount(FLOOD[0]) + popcount(FLOOD[1]) + popcount(FLOOD[2])
     if (size > largest) largest = size
+    rest0 &= ~FLOOD[0]
+    rest1 &= ~FLOOD[1]
+    rest2 &= ~FLOOD[2]
   }
   return largest
 }

@@ -21,6 +21,20 @@ import {
 import type { EnginePosition } from './engineBoard'
 import type { LegalMove } from './legalMoves'
 import type { GamePosition } from './simulation'
+import {
+  CELL_BIT,
+  CELL_LIMB,
+  EDGE_BOTTOM,
+  EDGE_LEFT,
+  EDGE_RIGHT,
+  EDGE_TOP,
+  LIMBS,
+  LIMB_MASK,
+  createLayers,
+  fillLayers,
+  setTerrain,
+  popcount,
+} from './bitboard'
 import { BOARD_SIZE } from './types'
 
 /**
@@ -152,193 +166,122 @@ const PATH_WIDTH_WEIGHT = 30
 export const TEMPO = 819
 
 /**
- * Voisinage à huit cases, aplati une fois pour toutes.
- *
- * Le parcours de distances visite près de quatre mille voisins par évaluation.
- * Les recalculer — deux boucles, quatre tests de bord et une multiplication à
- * chaque fois — coûtait plus cher que le parcours lui-même. Le voisinage ne
- * dépend que de la géométrie du plateau : il se tabule au chargement.
+ * L'évaluation travaille sur des **plateaux de bits** (`bitboard.ts`) : les 81
+ * cases tiennent dans trois mots, et le voisinage à huit cases d'un ensemble
+ * entier s'obtient en quatre décalages. Le parcours de distances en visitait
+ * près de quatre mille par évaluation, une par une.
  */
-const NEIGHBOURS = new Int32Array(CELLS * 8)
-const NEIGHBOUR_COUNT = new Int32Array(CELLS)
-for (let y = 0; y < N; y += 1) {
-  for (let x = 0; x < N; x += 1) {
-    const cell = y * N + x
-    let count = 0
-    for (let dy = -1; dy <= 1; dy += 1) {
-      const ny = y + dy
-      if (ny < 0 || ny >= N) continue
-      for (let dx = -1; dx <= 1; dx += 1) {
-        if (dx === 0 && dy === 0) continue
-        const nx = x + dx
-        if (nx < 0 || nx >= N) continue
-        NEIGHBOURS[cell * 8 + count] = ny * N + nx
-        count += 1
-      }
+
+/** Cases vides franchissables du joueur mesuré, relues par `axisWidth`. */
+let free0 = 0
+let free1 = 0
+let free2 = 0
+
+const horizontalLayers = createLayers()
+const verticalLayers = createLayers()
+const returnLayers = createLayers()
+
+/**
+ * Distance de connexion d'un axe, et couches laissées derrière elle pour la
+ * mesure de largeur. `BLOCKED` quand le bord d'arrivée est hors d'atteinte.
+ */
+function axisDistance(entry: Int32Array, exit: Int32Array, layers: Int32Array): number {
+  const distance = fillLayers(entry, exit, layers)
+  return distance < 0 ? BLOCKED : distance
+}
+
+/**
+ * Cases d'une colonne situées à la ligne `from` ou en dessous, en plateau de
+ * bits, indexées `(x * (N + 1) + from) * LIMBS`. Une colonne hors budget se
+ * retire alors d'un masque, sans parcourir le plateau.
+ */
+const COLUMN_FROM = new Int32Array(N * (N + 1) * LIMBS)
+for (let x = 0; x < N; x += 1) {
+  for (let from = N - 1; from >= 0; from -= 1) {
+    const slot = (x * (N + 1) + from) * LIMBS
+    const cell = from * N + x
+    for (let limb = 0; limb < LIMBS; limb += 1) {
+      COLUMN_FROM[slot + limb] = COLUMN_FROM[slot + LIMBS + limb]
     }
-    NEIGHBOUR_COUNT[cell] = count
+    COLUMN_FROM[slot + CELL_LIMB[cell]] |= CELL_BIT[cell]
   }
 }
 
-// Tampons de l'évaluation. La recherche est mono-thread et n'imbrique jamais
-// deux évaluations : ces tampons sont entièrement réécrits à chaque appel.
-const cost = new Int32Array(CELLS)
-// Une carte de distances par axe : décider lequel domine demande les deux, et
-// les garder évite de refaire un parcours pour mesurer la largeur du vainqueur.
-const distanceHorizontal = new Int32Array(CELLS)
-const distanceVertical = new Int32Array(CELLS)
-const distanceFar = new Int32Array(CELLS)
-
 /**
- * Marquage des cases déjà réglées, par numéro de génération plutôt que par
- * remise à zéro. `fillDistances` est appelé six fois par évaluation et
- * l'évaluation des dizaines de milliers de fois par seconde : quatre-vingt-une
- * écritures à chaque appel se voyaient au profileur.
- */
-const settled = new Int32Array(CELLS)
-let settledGeneration = 0
-
-/**
- * File à deux bouts du parcours 0-1, en tableau typé circulaire.
- *
- * Elle remplace deux `number[]` et un `reverse()` — qui **allouait un tableau**
- * à chaque bascule, au cœur de la boucle la plus chaude du moteur. La capacité
- * couvre le pire cas : une case n'entre dans la file qu'à une amélioration de
- * sa distance, soit au plus une fois par arête, et le plateau en compte moins
- * de 648.
- */
-const QUEUE_MASK = 1023
-const queue = new Int32Array(QUEUE_MASK + 1)
-let queueHead = 0
-let queueTail = 0
-
-/**
- * Coût de traversée de chaque case pour `side` : 0 sur les siennes, 1 sur une
- * case vide, infini sur une case adverse — **et infini aussi sur une case vide
- * que plus personne ne peut atteindre**.
+ * Terrain du parcours de distances pour `side` : ses cases, franchissables sans
+ * coût, et les cases vides, qui coûtent un pas. Tout le reste est
+ * infranchissable — les cases adverses, **et les cases vides que plus personne
+ * ne peut atteindre**.
  *
  * C'est la correction que la seule distance ne voyait pas. Une case vide ne se
  * remplit que si sa colonne monte jusqu'à elle, et la faire monter coûte
- * `top[x] - 1 - y` cases prises dans les réserves — celles des deux joueurs,
+ * `top[x] - 1 - y` cases prises dans les réserves — celles des **deux** joueurs,
  * puisque n'importe quelle pièce fait monter la pile. Passé ce budget, la case
- * restera vide jusqu'à la fin de la partie : la compter à 1 faisait miroiter au
- * moteur des chemins qu'aucune réserve ne pouvait plus tracer.
- *
- * La borne est **sûre** dans le sens qui compte : elle ne déclare inatteignable
- * qu'une case dont on est certain qu'elle le restera, et laisse à 1 tout ce dont
- * on n'est pas sûr. Elle ne peut donc pas masquer une menace réelle.
+ * restera vide jusqu'à la fin de la partie : la compter à un pas faisait
+ * miroiter au moteur des chemins qu'aucune réserve ne pouvait plus tracer. La
+ * borne est sûre dans le sens qui compte — elle n'écarte qu'une case dont on est
+ * certain qu'elle le restera — et ne peut donc masquer aucune menace réelle.
  */
-function fillCost(position: EnginePosition, side: number, stackBudget: number): void {
-  const board = position.board
-  const top = position.top
-  // Boucle imbriquée plutôt qu'un index unique : `x` et `y` sont alors des
-  // compteurs, là où l'index seul imposait un modulo et une division par case.
-  for (let y = 0, cell = 0; y < N; y += 1) {
-    for (let x = 0; x < N; x += 1, cell += 1) {
-      const occupant = board[cell]
-      if (occupant === side) {
-        cost[cell] = 0
-      } else if (occupant !== 0) {
-        cost[cell] = BLOCKED
-      } else {
-        cost[cell] = top[x] - 1 - y > stackBudget ? BLOCKED : 1
-      }
+function fillMasks(position: EnginePosition, side: number, stackBudget: number): void {
+  const bits = position.bits
+  const base = (side - 1) * LIMBS
+  const other = (otherSide(side) - 1) * LIMBS
+  let f0 = ~(bits[base] | bits[other]) & LIMB_MASK
+  let f1 = ~(bits[base + 1] | bits[other + 1]) & LIMB_MASK
+  let f2 = ~(bits[base + 2] | bits[other + 2]) & LIMB_MASK
+
+  // Tant qu'il reste huit cases en réserve, aucune case vide n'est hors
+  // d'atteinte : le budget ne se regarde qu'en toute fin de partie.
+  if (stackBudget < N - 1) {
+    const top = position.top
+    let reach0 = 0
+    let reach1 = 0
+    let reach2 = 0
+    for (let x = 0; x < N; x += 1) {
+      const lowest = top[x] - 1 - stackBudget
+      const slot = (x * (N + 1) + (lowest > 0 ? lowest : 0)) * LIMBS
+      reach0 |= COLUMN_FROM[slot]
+      reach1 |= COLUMN_FROM[slot + 1]
+      reach2 |= COLUMN_FROM[slot + 2]
     }
+    f0 &= reach0
+    f1 &= reach1
+    f2 &= reach2
   }
+
+  free0 = f0
+  free1 = f1
+  free2 = f2
+  setTerrain(bits[base], bits[base + 1], bits[base + 2], f0, f1, f2)
 }
 
 /**
- * Distances depuis l'un des deux bords d'un axe, sur tout le plateau, par un
- * parcours 0-1. Contrairement à `evaluation.ts`, ce parcours ne s'arrête pas au
- * bord opposé : la carte complète est nécessaire pour mesurer la largeur.
- */
-function fillDistances(vertical: boolean, far: boolean, out: Int32Array): void {
-  out.fill(BLOCKED)
-  settledGeneration += 1
-  const generation = settledGeneration
-  queueHead = 0
-  queueTail = 0
-
-  for (let offset = 0; offset < N; offset += 1) {
-    const cell = vertical
-      ? far
-        ? (N - 1) * N + offset
-        : offset
-      : far
-        ? offset * N + (N - 1)
-        : offset * N
-    const entry = cost[cell]
-    if (entry >= BLOCKED) continue
-    out[cell] = entry
-    if (entry === 0) {
-      queueHead = (queueHead - 1) & QUEUE_MASK
-      queue[queueHead] = cell
-    } else {
-      queue[queueTail] = cell
-      queueTail = (queueTail + 1) & QUEUE_MASK
-    }
-  }
-
-  while (queueHead !== queueTail) {
-    const current = queue[queueHead]
-    queueHead = (queueHead + 1) & QUEUE_MASK
-    if (settled[current] === generation) continue
-    settled[current] = generation
-    const currentDistance = out[current]
-
-    const first = current * 8
-    const last = first + NEIGHBOUR_COUNT[current]
-    for (let i = first; i < last; i += 1) {
-      const next = NEIGHBOURS[i]
-      const step = cost[next]
-      if (settled[next] === generation || step >= BLOCKED) continue
-      const candidate = currentDistance + step
-      if (candidate < out[next]) {
-        out[next] = candidate
-        if (step === 0) {
-          queueHead = (queueHead - 1) & QUEUE_MASK
-          queue[queueHead] = next
-        } else {
-          queue[queueTail] = next
-          queueTail = (queueTail + 1) & QUEUE_MASK
-        }
-      }
-    }
-  }
-}
-
-/** Distance minimale au bord d'arrivée, lue sur une carte déjà remplie. */
-function axisDistance(near: Int32Array, vertical: boolean): number {
-  let best = BLOCKED
-  for (let offset = 0; offset < N; offset += 1) {
-    const cell = vertical ? (N - 1) * N + offset : offset * N + (N - 1)
-    if (near[cell] < best) best = near[cell]
-  }
-  return best
-}
-
-/**
- * Largeur d'un axe : cases vides situées sur au moins un plus court chemin.
+ * Largeur d'un axe : cases vides situées sur **au moins un** plus court chemin.
+ * Voir `PATH_WIDTH_WEIGHT` pour ce qu'elle vaut dans l'évaluation.
  *
- * Elle demande une seconde carte, prise depuis le bord opposé — d'où le test
- * classique « distance aller + distance retour − coût = optimum ». On ne la
- * calcule que pour l'axe **dominant**, le seul dont la largeur soit retenue :
- * la mesurer sur les deux, comme le faisait la version précédente, doublait le
- * nombre de parcours pour jeter la moitié du résultat.
+ * Une case vide est sur un plus court chemin quand sa distance à l'aller plus sa
+ * distance au retour valent la longueur du chemin plus son propre pas, soit
+ * `aller + retour = best + 1`. En couches, cela se lit sans parcourir le
+ * plateau : on croise la couche `d` de l'aller avec la couche `best + 1 - d` du
+ * retour. On ne le fait que pour l'axe **dominant**, le seul dont la largeur
+ * compte.
  */
 function axisWidth(
-  position: EnginePosition,
-  vertical: boolean,
   near: Int32Array,
+  exit: Int32Array,
+  entry: Int32Array,
   best: number,
 ): number {
   if (best >= BLOCKED) return 0
-  fillDistances(vertical, true, distanceFar)
-  const board = position.board
+  fillLayers(exit, entry, returnLayers)
   let width = 0
-  for (let cell = 0; cell < CELLS; cell += 1) {
-    if (board[cell] !== 0) continue
-    if (near[cell] + distanceFar[cell] - cost[cell] === best) width += 1
+  for (let depth = 1; depth <= best; depth += 1) {
+    const here = depth * LIMBS
+    const back = (best + 1 - depth) * LIMBS
+    width +=
+      popcount(near[here] & returnLayers[back] & free0) +
+      popcount(near[here + 1] & returnLayers[back + 1] & free1) +
+      popcount(near[here + 2] & returnLayers[back + 2] & free2)
   }
   return width
 }
@@ -362,12 +305,10 @@ function measurePlayer(
   stackBudget: number,
   secondaryWeight: number,
 ): void {
-  fillCost(position, side, stackBudget)
+  fillMasks(position, side, stackBudget)
 
-  fillDistances(false, false, distanceHorizontal)
-  const horizontal = axisDistance(distanceHorizontal, false)
-  fillDistances(true, false, distanceVertical)
-  const vertical = axisDistance(distanceVertical, true)
+  const horizontal = axisDistance(EDGE_LEFT, EDGE_RIGHT, horizontalLayers)
+  const vertical = axisDistance(EDGE_TOP, EDGE_BOTTOM, verticalLayers)
 
   // Un axe qui demande plus de cases qu'il n'en reste en réserve est mort : le
   // joueur doit **posséder** chaque case du chemin, et il ne peut pas en poser
@@ -385,8 +326,8 @@ function measurePlayer(
   playerPotential = primary * PRIMARY_AXIS_WEIGHT + secondary * secondaryWeight
   playerWidth = Math.min(
     horizontalLeads
-      ? axisWidth(position, false, distanceHorizontal, horizontal)
-      : axisWidth(position, true, distanceVertical, vertical),
+      ? axisWidth(horizontalLayers, EDGE_RIGHT, EDGE_LEFT, horizontal)
+      : axisWidth(verticalLayers, EDGE_BOTTOM, EDGE_TOP, vertical),
     PATH_WIDTH_CAP,
   )
 }
