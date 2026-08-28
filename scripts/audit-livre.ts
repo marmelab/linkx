@@ -2,14 +2,20 @@
  * Audit du livre d'ouverture, entrée par entrée.
  *
  * Pour chaque ouverture de bleu, compare trois choses sur la même position :
- * le coup du livre, le coup que le maître joue en direct au budget du jeu, et
+ * le coup du livre, le coup que le maître joue en direct au budget donné, et
  * le score que la recherche profonde attribue à chacun. Un livre utile doit
  * différer du jeu en direct **et** valoir mieux à profondeur égale.
  *
  *   node node_modules/vite-node/dist/cli.mjs scripts/audit-livre.ts
  *
- * Options : --nodes N (budget du jeu, défaut 60 000) · --depth N (profondeur du
- * livre, défaut 6) · --openings M (limite, pour un échantillon).
+ * Options : --nodes N (défaut 60 000) · --depth N (profondeur du livre, défaut
+ * 7) · --openings M (limite, pour un échantillon).
+ *
+ * Le défaut de `--nodes` n'est **pas** le budget du jeu : c'est le seuil de
+ * force mesuré (voir `plan.md`), retenu parce qu'il rend l'audit abordable. Le
+ * maître en examine aujourd'hui près de deux millions dans ses six secondes ;
+ * auditer contre une recherche vingt fois plus faible flatterait le livre. Pour
+ * juger de son intérêt réel, passer `--nodes 1500000`.
  */
 import { chooseMasterMove, searchMasterTopMoves } from '../src/game/engineSearch'
 import { enumerateLegalMoves } from '../src/game/legalMoves'
@@ -24,7 +30,7 @@ const arg = (name: string, fallback: number): number => {
   return i >= 0 ? Number(process.argv[i + 1]) : fallback
 }
 const NODES = arg('--nodes', 60_000)
-const DEPTH = arg('--depth', 6)
+const DEPTH = arg('--depth', 7)
 const LIMIT = arg('--openings', Number.POSITIVE_INFINITY)
 
 const cellKey = (move: LegalMove): string =>

@@ -15,6 +15,12 @@
  *
  * Options : --nodes N (défaut 60 000) · --openings M (défaut 12).
  *
+ * Ce défaut est le seuil de force mesuré (voir `plan.md`), retenu parce qu'il
+ * rend le duel abordable — ce n'est **pas** le budget du jeu, dont le maître
+ * tire aujourd'hui près de deux millions de positions en six secondes. Un livre
+ * mesuré contre une recherche en direct vingt fois plus faible paraît meilleur
+ * qu'il n'est : pour trancher, passer `--nodes 1500000` et compter une demi-heure.
+ *
  * Pourquoi pas `duel-maitre.ts` : celui-ci alterne les couleurs et fait varier
  * les parties par l'aléa de départage. Or le livre n'a que des clés `white|` —
  * il ne se déclenche jamais quand le camp mesuré joue bleu, si bien que la

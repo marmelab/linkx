@@ -11,10 +11,10 @@ import { OPENING_BOOK } from './openingBook.data'
  * =================
  *
  * En début de partie le plateau offre 60 à 95 coups légaux : à ce facteur de
- * branchement, le maître ne tient que la profondeur 2 en direct, trop courte
- * pour distinguer un bon coup d'un coup perdant (cf. `plan.md`). Le livre lève
- * cette limite : ses coups sont calculés **hors ligne** à profondeur 5+ par
- * `scripts/generate-opening-book.ts`, puis lus instantanément ici.
+ * branchement, la recherche en direct plafonne à la profondeur 6, là où elle en
+ * atteint huit ou dix une fois le plateau resserré (cf. `plan.md`). Le livre
+ * lève cette limite : ses coups sont calculés **hors ligne**, un palier plus
+ * loin, par `scripts/generate-opening-book.ts`, puis lus instantanément ici.
  *
  * Une entrée couvre une position où c'est au tour de l'IA de jouer son **premier
  * ou deuxième** coup. Au-delà, le plateau s'est assez resserré pour que la

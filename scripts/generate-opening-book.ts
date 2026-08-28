@@ -27,9 +27,11 @@
  *
  * Elle doit dépasser ce que la recherche en direct atteint, sans quoi le livre
  * n'apporterait rien — c'est tout son intérêt d'être calculé hors ligne. En jeu,
- * l'ouverture plafonne à la profondeur 4 ; le livre vise donc **6**. Compter
- * environ 4,4 millions de positions et deux minutes par entrée sur une machine
- * de bureau, soit une à deux heures pour le livre entier.
+ * l'ouverture plafonne désormais à la profondeur **6** ; le livre vise donc
+ * **7**. Compter une dizaine de secondes par entrée sur une machine de bureau,
+ * soit une à deux heures pour le livre entier. Ce chiffre suit le moteur : à
+ * chaque fois qu'il gagne un palier en direct, le livre doit en gagner un
+ * aussi, sans quoi il ne fait plus que répéter ce que le jeu trouve seul.
  *
  * Le livre doit être engendré par **ce moteur-ci**. Un livre issu d'une autre
  * évaluation affaiblit la recherche au lieu de l'aider : mesuré sur le livre
@@ -68,15 +70,17 @@ const OPENING_LIMIT = Number(arg('--openings', 'Infinity'))
 const OUT = arg('--out', 'src/game/openingBook.data.ts')
 
 /**
- * Profondeur que la recherche en direct atteint seule en ouverture. Mesurée :
- * elle vaut 4 pendant les **cinq** premiers coups blancs, le plateau offrant
- * encore 21 à 78 coups légaux. Une entrée de livre n'a donc d'intérêt qu'au-delà
- * — en deçà, elle ne ferait que répéter ce que le jeu trouve tout seul.
+ * Profondeur que la recherche en direct atteint seule en ouverture. Mesurée sur
+ * la partie de référence : elle vaut **6** pendant les premiers coups blancs, le
+ * plateau offrant encore 62 à 95 coups légaux. Une entrée de livre n'a donc
+ * d'intérêt qu'au-delà — en deçà, elle ne ferait que répéter ce que le jeu
+ * trouve tout seul.
  *
- * Réglable par `--harvest-above` : la mesure dépend du budget de réflexion, et
- * l'abaisser permet aussi d'exercer la récolte sans payer une profondeur 8.
+ * Réglable par `--harvest-above` : la mesure dépend du budget de réflexion et du
+ * débit du moteur, et l'abaisser permet aussi d'exercer la récolte sans payer
+ * une profondeur 10.
  */
-const LIVE_OPENING_DEPTH = Number(arg('--harvest-above', '4'))
+const LIVE_OPENING_DEPTH = Number(arg('--harvest-above', '6'))
 
 const mirrorIndex = (i: number): number => {
   const x = i % N
@@ -99,9 +103,12 @@ const log = (msg: string) => process.stderr.write(`[${elapsed()}] ${msg}\n`)
  * Les K réponses adverses les plus plausibles.
  *
  * Ce classement décide quelles branches reçoivent des heures de calcul, il ne
- * doit donc pas être bâclé : il tourne à `--rank-nodes`, par défaut le budget du
- * jeu, pour refléter ce que l'adversaire jouerait vraiment. À 2 000 nœuds, ce
- * qu'il faisait auparavant, il classait presque au hasard.
+ * doit donc pas être bâclé : il tourne à `--rank-nodes`, soixante mille
+ * positions, pour refléter ce que l'adversaire jouerait vraiment. À 2 000 nœuds,
+ * ce qu'il faisait auparavant, il classait presque au hasard. C'était le budget
+ * du jeu au moment du réglage ; le moteur en examine aujourd'hui bien davantage
+ * en six secondes, mais monter ce plafond se paie une recherche par réponse
+ * légale — près de quatre-vingt-dix par entrée de premier niveau.
  */
 function plausibleReplies(position: GamePosition, k: number): LegalMove[] {
   // Sans réponse demandée, il n'y a rien à classer. Sans cette sortie, on payait
@@ -162,9 +169,9 @@ function store(
  *
  * Le gain diminue d'un demi-coup par pli parcouru, si bien que la récolte
  * s'arrête dès que la profondeur restante n'excède plus ce que le jeu atteint
- * seul. Concrètement, une racine à profondeur 6 ne donne **rien** — après deux
- * plis il ne reste que 4 —, et une racine à profondeur 8 donne le deuxième coup
- * blanc. C'est la seule raison sérieuse d'aller chercher la profondeur 8.
+ * seul. La racine doit donc dépasser `LIVE_OPENING_DEPTH` de plus de deux plis
+ * pour donner quoi que ce soit : à profondeur 6 en direct, il faut une racine à
+ * profondeur 9. C'est la seule raison sérieuse d'aller si loin.
  *
  * Elle ne couvre qu'**une** ligne, celle que le moteur juge la meilleure. Les
  * autres réponses de bleu n'ont pas été évaluées mais réfutées, et ne peuvent
