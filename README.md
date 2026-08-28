@@ -21,7 +21,7 @@ npm run dev
 | `npm run preview` | sert le build de production |
 | `node scripts/generate-icons.mjs` | régénère les icônes PNG de `public/` |
 | `node node_modules/vite-node/dist/cli.mjs scripts/duel-maitre.ts` | duel du maître contre son propre passé, hors de Vitest |
-| `node node_modules/vite-node/dist/cli.mjs scripts/generate-opening-book.ts --depth 7` | régénère le livre d'ouverture du maître (1-2 h, hors ligne) |
+| `node node_modules/vite-node/dist/cli.mjs scripts/generate-opening-book.ts --depth 7 --jobs 8` | régénère le livre d'ouverture du maître (hors ligne, ~20 min à huit lots) |
 | `node node_modules/vite-node/dist/cli.mjs scripts/audit-livre.ts` | compare chaque coup du livre à la recherche en direct |
 | `node node_modules/vite-node/dist/cli.mjs scripts/duel-livre.ts` | duel apparié avec et sans livre, à ouverture imposée |
 | `node node_modules/vite-node/dist/cli.mjs scripts/bench-moteur.ts` | coût de chaque palier de recherche, profondeur jouée, budget perdu |

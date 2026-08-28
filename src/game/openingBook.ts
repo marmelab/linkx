@@ -32,7 +32,7 @@ const INITIAL_PIECE_COUNT = SHAPE_IDS.reduce(
 )
 
 /** Un coup stocké : les indices `y * N + x` de ses cases, triés, en repère canonique. */
-type StoredMove = number[]
+export type StoredMove = number[]
 /** Chaque position (clé canonique) pointe vers ses meilleurs coups ex æquo. */
 export type OpeningBook = Record<string, StoredMove[]>
 

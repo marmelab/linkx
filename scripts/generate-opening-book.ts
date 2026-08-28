@@ -7,13 +7,20 @@
  * budget en direct au fort facteur de branchement du début de partie.
  *
  * Lancement (hors ligne, long) :
- *   node node_modules/vite-node/dist/cli.mjs scripts/generate-opening-book.ts
+ *   node node_modules/vite-node/dist/cli.mjs scripts/generate-opening-book.ts --jobs 8
  *
  * Options : --depth N (défaut 6, profondeur exigée de chaque recherche) ·
+ * --jobs N (défaut 1, processus travaillant en parallèle) ·
  * --nodes N (plafond de secours, positions examinées par recherche) ·
  * --replies K (défaut 0, réponses adverses couvertes au 2ᵈ coup) ·
  * --rank-nodes N (défaut 60 000, budget du classement de ces réponses) ·
- * --openings M (limite d'ouvertures, pour un échantillon) · --out chemin.
+ * --openings M (limite d'ouvertures, pour un échantillon) · --out chemin ·
+ * --shard i/N et --merge a.json,b.json (rouages de `--jobs`, voir plus bas).
+ *
+ * `--jobs` ne change **rien** au livre produit : à options égales, le fichier
+ * est identique octet pour octet quel que soit le nombre de lots, ce que vérifie
+ * la comparaison décrite avec `supersedes`. Mesuré, ×2,9 à quatre lots et ×3,4 à
+ * huit sur une machine à quatre cœurs de performance et quatre d'efficience.
  *
  * Deux façons de couvrir le 2ᵈ coup blanc, complémentaires. La **récolte** de la
  * variante principale est gratuite mais ne suit qu'une ligne, et n'apporte
@@ -43,7 +50,11 @@
  * Symétrie : seule la symétrie gauche-droite est une symétrie du jeu (la gravité
  * fixe un bas), donc c'est la seule par laquelle on réduit — voir openingBook.ts.
  */
-import { writeFileSync } from 'node:fs'
+import { spawn } from 'node:child_process'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { enumerateLegalMoves } from '../src/game/legalMoves'
 import type { LegalMove } from '../src/game/legalMoves'
 import { searchMasterTopMoves } from '../src/game/engineSearch'
@@ -52,7 +63,7 @@ import {
   isWithinBookRange,
   lookupOpeningMove,
 } from '../src/game/openingBook'
-import type { OpeningBook } from '../src/game/openingBook'
+import type { OpeningBook, StoredMove } from '../src/game/openingBook'
 import { createGamePosition, simulateLegalMove } from '../src/game/simulation'
 import type { GamePosition } from '../src/game/simulation'
 import { BOARD_SIZE } from '../src/game/types'
@@ -68,6 +79,30 @@ const REPLIES = Number(arg('--replies', '0'))
 const RANK_NODES = Number(arg('--rank-nodes', '60000'))
 const OPENING_LIMIT = Number(arg('--openings', 'Infinity'))
 const OUT = arg('--out', 'src/game/openingBook.data.ts')
+
+/**
+ * Parallélisme.
+ *
+ * Le travail se découpe par **racine** — le plateau vide, puis chaque ouverture
+ * de bleu — et chaque racine porte tout son sous-arbre : la recherche du premier
+ * coup blanc, le classement des réponses, et les recherches du second coup. Deux
+ * racines ne se parlent jamais. Le seul recouvrement est qu'une même position de
+ * second coup peut se rejoindre depuis deux racines ; elle est alors cherchée
+ * deux fois, ce qui coûte environ un cinquième du travail et ne change aucun
+ * résultat, la recherche étant une fonction pure de la position.
+ *
+ * Le découpage est en **processus**, pas en fils d'exécution : `engineSearch.ts`
+ * garde tout son état dans des singletons de module — table de transposition,
+ * tueurs, historique, tampons de l'évaluation —, ce qui interdit deux recherches
+ * simultanées dans une même instance. Un processus par lot leur donne chacun les
+ * siens, comme le worker du navigateur le fait déjà en jeu.
+ *
+ * `--jobs N` fait tout : il relance ce script N fois avec `--shard i/N`, attend,
+ * puis fusionne. `--shard` et `--merge` sont ses rouages, utilisables à la main.
+ */
+const JOBS = Number(arg('--jobs', '1'))
+const SHARD = arg('--shard', '')
+const MERGE = arg('--merge', '')
 
 /**
  * Profondeur que la recherche en direct atteint seule en ouverture. Mesurée sur
@@ -97,7 +132,8 @@ let searches = 0
 let harvestedEntries = 0
 const t0 = process.hrtime.bigint()
 const elapsed = () => `${(Number(process.hrtime.bigint() - t0) / 1e9).toFixed(0)}s`
-const log = (msg: string) => process.stderr.write(`[${elapsed()}] ${msg}\n`)
+const tag = SHARD ? `lot ${SHARD} ` : ''
+const log = (msg: string) => process.stderr.write(`[${tag}${elapsed()}] ${msg}\n`)
 
 /**
  * Les K réponses adverses les plus plausibles.
@@ -139,8 +175,24 @@ function plausibleReplies(position: GamePosition, k: number): LegalMove[] {
  * récolte. La première rend **tous** les ex æquo, ce qui fait varier les
  * parties ; la seconde ne connaît que le coup de la variante principale.
  */
-const storedRank = new Map<string, number>()
+type Stored = { rank: number; root: number }
+const storedRank = new Map<string, Stored>()
 const rankOf = (depth: number, full: boolean): number => depth * 2 + (full ? 1 : 0)
+
+/**
+ * Ordre de préséance entre deux entrées d'une même clé : le rang d'abord, puis
+ * la **racine la plus ancienne**. Ce second critère n'est pas cosmétique — c'est
+ * lui qui rend le livre indépendant du découpage en lots, deux racines pouvant
+ * proposer des coups différents pour une même position récoltée au même rang.
+ * Sans lui, `--jobs 4` et `--jobs 1` ne donneraient pas le même fichier.
+ */
+function supersedes(existing: Stored | undefined, rank: number, root: number): boolean {
+  if (!existing) return true
+  return rank === existing.rank ? root < existing.root : rank > existing.rank
+}
+
+/** Racine en cours de traitement, pour départager les ex æquo à la fusion. */
+let currentRoot = 0
 
 function store(
   position: GamePosition,
@@ -150,9 +202,9 @@ function store(
 ): void {
   const { key, mirror } = canonicalPosition(position)
   const rank = rankOf(depth, full)
-  if ((storedRank.get(key) ?? -1) >= rank) return
+  if (!supersedes(storedRank.get(key), rank, currentRoot)) return
   book[key] = moves.map((move) => toCanonicalCells(move, mirror))
-  storedRank.set(key, rank)
+  storedRank.set(key, { rank, root: currentRoot })
 
   // Auto-contrôle : la relecture doit retrouver un coup de l'ensemble stocké.
   // Il attrape aussi bien une erreur de miroir qu'une entrée que la garde de
@@ -230,32 +282,162 @@ function visit(position: GamePosition, whitePlayed: number): void {
   }
 }
 
-log(`génération : profondeur ${DEPTH}, ${REPLIES} réponses, limite ouvertures ${OPENING_LIMIT}`)
+// --- Racines -----------------------------------------------------------------
 
-// Racine « blanc ouvre » : plateau vide, blanc au trait.
-visit(createGamePosition('white'), 0)
-
-// Racine « blanc réplique » : chaque ouverture de bleu, puis blanc au trait.
-const blueStart = createGamePosition('blue')
-const openings = enumerateLegalMoves(blueStart.board, blueStart.inventories.blue).slice(
-  0,
-  OPENING_LIMIT,
-)
-for (const opening of openings) {
-  const after = simulateLegalMove(blueStart, opening)
-  if (after.result) continue
-  visit(after.position, 0)
+/**
+ * Les positions à traiter, dans un ordre stable : le plateau vide où blanc
+ * ouvre, puis chaque ouverture de bleu. Elles sont dédoublonnées **ici**, avant
+ * le découpage en lots, pour que deux lots ne se voient jamais confier la même
+ * racine — le dédoublonnage interne à `visit` est propre à un processus et ne
+ * pourrait pas s'en charger.
+ */
+function buildRoots(): GamePosition[] {
+  const roots = [createGamePosition('white')]
+  const blueStart = createGamePosition('blue')
+  const seenRoots = new Set(roots.map((root) => canonicalPosition(root).key))
+  const openings = enumerateLegalMoves(
+    blueStart.board,
+    blueStart.inventories.blue,
+  ).slice(0, OPENING_LIMIT)
+  for (const opening of openings) {
+    const after = simulateLegalMove(blueStart, opening)
+    if (after.result) continue
+    const { key } = canonicalPosition(after.position)
+    if (seenRoots.has(key)) continue
+    seenRoots.add(key)
+    roots.push(after.position)
+  }
+  return roots
 }
 
-const entries = Object.entries(book)
-const lines = entries.map(([key, moves]) => `  ${JSON.stringify(key)}: ${JSON.stringify(moves)},`)
-const file =
-  `import type { OpeningBook } from './openingBook'\n\n` +
-  `// Livre d'ouverture — fichier généré par scripts/generate-opening-book.ts.\n` +
-  `// Ne pas éditer à la main. depth=${DEPTH} replies=${REPLIES} entrées=${entries.length}\n` +
-  `export const OPENING_BOOK: OpeningBook = {\n${lines.join('\n')}\n}\n`
-writeFileSync(OUT, file)
-log(
-  `écrit ${entries.length} positions dans ${OUT} — ${searches} recherches, ` +
-    `${harvestedEntries} entrée(s) récoltée(s) sur les variantes principales.`,
-)
+const roots = buildRoots()
+
+/** Les mêmes arguments, moins ceux que le chef de lots impose lui-même. */
+function withoutOptions(args: string[], dropped: string[]): string[] {
+  const kept: string[] = []
+  for (let i = 0; i < args.length; i += 1) {
+    if (dropped.includes(args[i])) {
+      i += 1
+      continue
+    }
+    kept.push(args[i])
+  }
+  return kept
+}
+
+// --- Écriture ----------------------------------------------------------------
+
+/** Le fichier de données, clés triées : deux générations identiques donnent le même texte. */
+function writeBook(entries: Array<[string, StoredMove[]]>, count: number): void {
+  const lines = entries
+    .slice()
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+    .map(([key, moves]) => `  ${JSON.stringify(key)}: ${JSON.stringify(moves)},`)
+  writeFileSync(
+    OUT,
+    `import type { OpeningBook } from './openingBook'\n\n` +
+      `// Livre d'ouverture — fichier généré par scripts/generate-opening-book.ts.\n` +
+      `// Ne pas éditer à la main. depth=${DEPTH} replies=${REPLIES} entrées=${count}\n` +
+      `export const OPENING_BOOK: OpeningBook = {\n${lines.join('\n')}\n}\n`,
+  )
+}
+
+/** Un lot : ce qu'il a trouvé, avec de quoi le fusionner sans dépendre du découpage. */
+type Part = {
+  depth: number
+  replies: number
+  entries: Record<string, { moves: StoredMove[]; rank: number; root: number }>
+}
+
+// --- Fusion ------------------------------------------------------------------
+
+if (MERGE) {
+  const merged = new Map<string, { moves: StoredMove[]; rank: number; root: number }>()
+  for (const file of MERGE.split(',')) {
+    const part = JSON.parse(readFileSync(file, 'utf8')) as Part
+    if (part.depth !== DEPTH || part.replies !== REPLIES) {
+      throw new Error(
+        `${file} : profondeur ${part.depth} et ${part.replies} réponses, ` +
+          `attendu ${DEPTH} et ${REPLIES} — fusionner des lots dissemblables ferait un livre incohérent.`,
+      )
+    }
+    for (const [key, entry] of Object.entries(part.entries)) {
+      if (supersedes(merged.get(key), entry.rank, entry.root)) merged.set(key, entry)
+    }
+  }
+  const entries = [...merged].map(([key, entry]): [string, StoredMove[]] => [key, entry.moves])
+  writeBook(entries, entries.length)
+  log(`fusionné ${MERGE.split(',').length} lot(s) en ${entries.length} positions dans ${OUT}.`)
+} else if (JOBS > 1 && !SHARD) {
+  // --- Chef de lots ----------------------------------------------------------
+  // On se relance soi-même, un processus par lot, avec les mêmes options.
+  // `vite-node` retire le chemin du script de `process.argv` : il ne reste que
+  // ses propres arguments. On retrouve donc le script par son URL de module.
+  const [node, cli] = process.argv
+  const script = fileURLToPath(import.meta.url)
+  const passed = withoutOptions(process.argv.slice(2), ['--jobs', '--out'])
+  const dir = mkdtempSync(join(tmpdir(), 'linkx-livre-'))
+  const parts = Array.from({ length: JOBS }, (_, i) => join(dir, `lot-${i}.json`))
+  log(`génération en ${JOBS} lots — profondeur ${DEPTH}, ${REPLIES} réponses`)
+
+  await Promise.all(
+    parts.map(
+      (part, index) =>
+        new Promise<void>((resolve, reject) => {
+          const child = spawn(
+            node,
+            [cli, script, ...passed, '--shard', `${index}/${JOBS}`, '--out', part],
+            { stdio: ['ignore', 'inherit', 'inherit'] },
+          )
+          child.on('error', reject)
+          child.on('exit', (code) =>
+            code === 0 ? resolve() : reject(new Error(`lot ${index} : sortie ${code}`)),
+          )
+        }),
+    ),
+  )
+
+  const merge = spawn(node, [cli, script, ...passed, '--merge', parts.join(','), '--out', OUT], {
+    stdio: ['ignore', 'inherit', 'inherit'],
+  })
+  await new Promise<void>((resolve, reject) => {
+    merge.on('error', reject)
+    merge.on('exit', (code) =>
+      code === 0 ? resolve() : reject(new Error(`fusion : sortie ${code}`)),
+    )
+  })
+  rmSync(dir, { recursive: true, force: true })
+  log(`terminé en ${JOBS} lots.`)
+} else {
+  // --- Un lot, ou la totalité ------------------------------------------------
+  const [shardIndex, shardCount] = SHARD
+    ? SHARD.split('/').map(Number)
+    : [0, 1]
+  log(
+    `génération : profondeur ${DEPTH}, ${REPLIES} réponses, ` +
+      `lot ${shardIndex + 1}/${shardCount}, limite ouvertures ${OPENING_LIMIT}`,
+  )
+
+  for (let index = 0; index < roots.length; index += 1) {
+    if (index % shardCount !== shardIndex) continue
+    currentRoot = index
+    visit(roots[index], 0)
+  }
+
+  if (SHARD) {
+    const entries: Part['entries'] = {}
+    for (const [key, moves] of Object.entries(book)) {
+      const stored = storedRank.get(key)!
+      entries[key] = { moves, rank: stored.rank, root: stored.root }
+    }
+    writeFileSync(OUT, JSON.stringify({ depth: DEPTH, replies: REPLIES, entries } satisfies Part))
+    log(`lot ${shardIndex + 1}/${shardCount} : ${Object.keys(entries).length} positions dans ${OUT}.`)
+  } else {
+    const entries = Object.entries(book)
+    writeBook(entries, entries.length)
+    log(
+      `écrit ${entries.length} positions dans ${OUT} — ${searches} recherches, ` +
+        `${harvestedEntries} entrée(s) récoltée(s) sur les variantes principales.`,
+    )
+  }
+}
