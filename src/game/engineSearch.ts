@@ -908,6 +908,26 @@ export type MasterSearch = {
  * les stocke tous, pour que le livre varie les parties sans jamais concéder un
  * point d'évaluation.
  */
+/**
+ * Ce que coûte un palier, en multiples du précédent.
+ *
+ * Le maître s'en sert pour ne pas entamer un palier qu'il ne finira pas. La
+ * valeur est **mesurée** : sur les 24 positions de la partie de référence, le
+ * rapport d'un palier au suivant va de 2 à 6,4, et 4 est le seul réglage qui
+ * atteigne partout la profondeur maximale possible dans le budget — à 6 s comme
+ * à 3 s, c'est-à-dire aussi sur une machine trois fois plus lente.
+ *
+ * Une version précédente **observait** ce rapport sur les deux derniers paliers
+ * au lieu de le fixer. C'était plus savant et moins bon : le rapport observé
+ * prédit mal le suivant, si bien que la recherche renonçait à des paliers
+ * qu'elle avait le temps de finir. Mesuré sur la partie de référence, la
+ * constante gagne trois paliers — dont la profondeur 6 au premier coup, où le
+ * moteur rendait la main après 1,3 s d'un budget de 6 — pour 10 % de temps de
+ * réflexion en plus. Le prix d'un pari perdu n'est d'ailleurs pas la force mais
+ * l'attente : le coup joué reste celui du dernier palier achevé.
+ */
+export const ITERATION_GROWTH = 4
+
 export function searchMasterTopMoves(
   source: GamePosition,
   options: MasterSearchOptions = {},
@@ -948,7 +968,6 @@ export function searchMasterTopMoves(
   }
 
   let decision: MasterSearch | null = null
-  let previousSpent = 0
   for (let depth = 1; depth <= ceiling; depth += 1) {
     const iterationStart = timed ? now() : 0
     // L'itération qui atteint le nombre de demi-coups restants ne juge plus, elle
@@ -995,24 +1014,16 @@ export function searchMasterTopMoves(
       }
     }
     if (partial || exact) break
-    // Ne pas s'engager dans un palier qu'on n'a pas le temps de finir. Un palier
-    // interrompu n'étant pas retenu (voir `keepPartial`), tout ce qu'on y passe
-    // est perdu — mesuré, quatre à six secondes sur six avec la marge fixe
-    // d'avant, qui ne regardait que la parité.
-    //
-    // Le coût du palier suivant s'**observe** au lieu de se deviner : il vaut
-    // plusieurs fois celui qu'on vient de finir, et ce facteur se lit sur les
-    // deux derniers paliers. Faute de deux paliers, on prend le bas de la plage
-    // mesurée sur la partie de référence, entre trois et neuf.
+    // Ne pas s'engager dans un palier qu'on n'a pas le temps de finir : un
+    // palier interrompu n'est pas retenu (voir `keepPartial`), donc tout ce
+    // qu'on y passe est perdu.
     //
     // Sous plafond de nœuds l'horloge n'est **jamais** lue, pas même ici : c'est
     // ce qui rend le conseil reproductible. La borne y est le plafond lui-même,
     // que `exhausted` fait respecter.
     if (timed) {
       const spent = now() - iterationStart
-      const growth = previousSpent > 0 ? Math.max(2, spent / previousSpent) : 4
-      previousSpent = spent
-      if (now() + spent * growth > context.deadline) break
+      if (now() + spent * ITERATION_GROWTH > context.deadline) break
     }
   }
 

@@ -27,7 +27,11 @@
  * comparer deux versions du moteur sur exactement les mêmes positions.
  */
 import { createEnginePosition, loadPosition } from '../src/game/engineBoard'
-import { evaluate, searchMasterTopMoves } from '../src/game/engineSearch'
+import {
+  ITERATION_GROWTH,
+  evaluate,
+  searchMasterTopMoves,
+} from '../src/game/engineSearch'
 import { enumerateLegalMoves } from '../src/game/legalMoves'
 import {
   REFERENCE_GAME_LENGTH,
@@ -88,9 +92,9 @@ function profile(position: GamePosition): Step[] {
  * exactement comme le fait l'approfondissement itératif. Atteindre la
  * profondeur d coûte donc `steps[d].ms`, pas la somme des paliers.
  *
- * On reproduit ensuite la règle de `searchMasterTopMoves` : tous les paliers
- * comptent, et l'on ne s'engage dans le suivant que si le coût observé du
- * dernier, multiplié par sa croissance, tient dans ce qui reste. S'engager quand
+ * On reproduit ensuite la règle de `searchMasterTopMoves`, dont on emprunte la
+ * constante : on ne s'engage dans le palier suivant que si le coût du dernier,
+ * multiplié par `ITERATION_GROWTH`, tient dans ce qui reste. S'engager quand
  * même et ne pas finir, c'est le temps perdu.
  */
 function played(
@@ -98,7 +102,6 @@ function played(
   budgetMs: number,
 ): { step: Step | null; answeredMs: number; wasted: number; growth: number } {
   let chosen: Step | null = null
-  let previousSpent = 0
   let previousMs = 0
   let stopped = false
   for (const step of steps) {
@@ -109,10 +112,8 @@ function played(
       break
     }
     const spent = step.ms - previousMs
-    const growth = previousSpent > 0 ? Math.max(2, spent / previousSpent) : 4
-    previousSpent = spent
     previousMs = step.ms
-    if (step.ms + spent * growth > budgetMs) {
+    if (step.ms + spent * ITERATION_GROWTH > budgetMs) {
       stopped = true
       break
     }
