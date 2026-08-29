@@ -24,7 +24,7 @@
  *
  * Deux façons de couvrir le 2ᵈ coup blanc, complémentaires. La **récolte** de la
  * variante principale est gratuite mais ne suit qu'une ligne, et n'apporte
- * quelque chose qu'à partir de `--depth 8` (voir `harvest`). Les **réponses**
+ * quelque chose qu'à partir de `--depth 9` (voir `harvest`). Les **réponses**
  * (`--replies`) couvrent K lignes mais se paient une recherche chacune ; leur
  * intérêt tient à la couverture, puisqu'il faut tomber sur la réponse que
  * l'adversaire joue vraiment parmi la soixantaine qui s'offre à lui.
@@ -38,9 +38,8 @@
  * **9**, deux paliers au-dessus. Compter huit heures et demie en huit lots. Un
  * seul palier d'avance ne suffit pas : le livre engendré à profondeur 7 était
  * moins bon que le jeu direct sur 14 des 50 ouvertures. Ce chiffre suit le
- * moteur : à
- * chaque fois qu'il gagne un palier en direct, le livre doit en gagner un
- * aussi, sans quoi il ne fait plus que répéter ce que le jeu trouve seul.
+ * moteur : chaque fois qu'il gagne un palier en direct, le livre doit en gagner
+ * un aussi, sans quoi il ne fait plus que répéter ce que le jeu trouve seul.
  *
  * Le livre doit être engendré par **ce moteur-ci**. Un livre issu d'une autre
  * évaluation affaiblit la recherche au lieu de l'aider : mesuré sur le livre
@@ -224,17 +223,22 @@ function store(
  * Le gain diminue d'un demi-coup par pli parcouru, si bien que la récolte
  * s'arrête dès que la profondeur restante n'excède plus ce que le jeu atteint
  * seul. La racine doit donc dépasser `LIVE_OPENING_DEPTH` de plus de deux plis :
- * à profondeur 6 en direct, il faut une racine à profondeur 9.
+ * à profondeur 6 en direct, il faut une racine à profondeur 9. C'est la seule
+ * raison sérieuse d'aller si loin.
  *
- * **Elle ne rapporte pourtant rien à profondeur 9 non plus**, et pour une raison
- * qui n'est pas arithmétique : la variante principale n'est pas relevée pendant
- * la recherche mais **reconstruite après coup** en marchant dans la table de
- * transposition, ce qui exige d'y retrouver un nœud `EXACT` à chaque pli. À 2¹⁸
- * entrées qui se remplacent toujours, et des dizaines de millions de positions
- * visitées, ces entrées sont écrasées avant la fin : la variante rendue tombe à
- * un ou deux coups. Mesuré, zéro entrée récoltée sur les 51 racines. La débloquer
- * demanderait de relever la variante au fil de la recherche, pas d'aller plus
- * profond.
+ * Elle est longtemps restée lettre morte, pour une raison qui n'était pas
+ * arithmétique : la variante était **reconstruite après coup** en marchant dans
+ * la table de transposition, dont les nœuds `EXACT` sont écrasés bien avant la
+ * fin d'une recherche profonde. Zéro entrée récoltée sur 51 racines à
+ * profondeur 9. `engineSearch.ts` relève désormais la variante **au fil** de la
+ * recherche (voir `pvLine`), et la récolte rend une entrée par racine.
+ *
+ * Ces entrées ne sont qu'à **un** palier au-dessus du jeu direct, deux plis
+ * étant perdus depuis la racine. Elles se gardent malgré tout parce que
+ * l'alternative n'est pas un meilleur coup de livre mais aucune entrée du
+ * tout : jugées une à une contre la recherche en direct par
+ * `scripts/audit-recolte.ts`, elles sont meilleures 7 fois, à égalité 8, moins
+ * bonnes 3.
  *
  * Elle ne couvre qu'**une** ligne, celle que le moteur juge la meilleure. Les
  * autres réponses de bleu n'ont pas été évaluées mais réfutées, et ne peuvent
@@ -391,34 +395,44 @@ if (MERGE) {
   const parts = Array.from({ length: JOBS }, (_, i) => join(dir, `lot-${i}.json`))
   log(`génération en ${JOBS} lots — profondeur ${DEPTH}, ${REPLIES} réponses`)
 
-  await Promise.all(
-    parts.map(
-      (part, index) =>
-        new Promise<void>((resolve, reject) => {
-          const child = spawn(
-            node,
-            [cli, script, ...passed, '--shard', `${index}/${JOBS}`, '--out', part],
-            { stdio: ['ignore', 'inherit', 'inherit'] },
-          )
-          child.on('error', reject)
-          child.on('exit', (code) =>
-            code === 0 ? resolve() : reject(new Error(`lot ${index} : sortie ${code}`)),
-          )
-        }),
-    ),
-  )
+  // Les enfants sont suivis pour être arrêtés ensemble : sans cela, un lot qui
+  // échoue laisse les autres saturer la machine pendant des heures pour un livre
+  // que personne ne fusionnera.
+  const children: ReturnType<typeof spawn>[] = []
+  const run = (args: string[], what: string): Promise<void> =>
+    new Promise<void>((resolve, reject) => {
+      const child = spawn(node, [cli, script, ...args], {
+        stdio: ['ignore', 'inherit', 'inherit'],
+      })
+      children.push(child)
+      child.on('error', reject)
+      child.on('exit', (code, signal) => {
+        if (code === 0) resolve()
+        else reject(new Error(`${what} : sortie ${code ?? signal}`))
+      })
+    })
 
-  const merge = spawn(node, [cli, script, ...passed, '--merge', parts.join(','), '--out', OUT], {
-    stdio: ['ignore', 'inherit', 'inherit'],
-  })
-  await new Promise<void>((resolve, reject) => {
-    merge.on('error', reject)
-    merge.on('exit', (code) =>
-      code === 0 ? resolve() : reject(new Error(`fusion : sortie ${code}`)),
+  try {
+    await Promise.all(
+      parts.map((part, index) =>
+        run(
+          [...passed, '--shard', `${index}/${JOBS}`, '--out', part],
+          `lot ${index}`,
+        ),
+      ),
     )
-  })
-  rmSync(dir, { recursive: true, force: true })
-  log(`terminé en ${JOBS} lots.`)
+    await run([...passed, '--merge', parts.join(','), '--out', OUT], 'fusion')
+    rmSync(dir, { recursive: true, force: true })
+    log(`terminé en ${JOBS} lots.`)
+  } catch (error) {
+    for (const child of children) {
+      if (child.exitCode === null && child.signalCode === null) child.kill('SIGTERM')
+    }
+    // Le répertoire survit à l'échec : les lots déjà achevés valent des heures de
+    // calcul et se fusionnent à la main par `--merge`.
+    log(`échec — lots conservés dans ${dir}, fusionnables par --merge.`)
+    throw error
+  }
 } else {
   // --- Un lot, ou la totalité ------------------------------------------------
   const [shardIndex, shardCount] = SHARD

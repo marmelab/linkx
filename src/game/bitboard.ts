@@ -154,7 +154,7 @@ export function popcount(value: number): number {
  * Couches de distance d'un parcours 0-1, en plateaux de bits.
  *
  * Le décor : deux ensembles de cases franchissables, celles qui ne coûtent rien
- * (`free` valant zéro pas) et celles qui coûtent un pas ; tout le reste est
+ * (`costless`) et celles qui coûtent un pas (`stepped`) ; tout le reste est
  * infranchissable. La couche `d` est alors ce qu'on atteint en franchissant
  * exactement `d` cases à un pas, saturé par les cases gratuites. C'est le
  * résultat d'une file à deux bouts, obtenu sans file ni case à case.
@@ -171,31 +171,37 @@ export function createLayers(): Int32Array {
   return new Int32Array(MAX_LAYERS * LIMBS)
 }
 
-let free0 = 0
-let free1 = 0
-let free2 = 0
-let step0 = 0
-let step1 = 0
-let step2 = 0
+let costless0 = 0
+let costless1 = 0
+let costless2 = 0
+let stepped0 = 0
+let stepped1 = 0
+let stepped2 = 0
 
 /**
- * Fixe le terrain des parcours suivants : cases gratuites et cases à un pas.
- * Les axes d'une même position les partagent, on ne les repasse donc pas.
+ * Fixe le terrain des parcours suivants : d'abord les cases **sans coût**,
+ * ensuite celles qui coûtent **un pas** ; tout le reste est infranchissable. Les
+ * axes d'une même position partagent ce terrain, on ne le repasse donc pas.
+ *
+ * L'ordre des deux groupes est le seul piège de ce module — les intervertir
+ * compile et inverse silencieusement le modèle de coût. Aucun identifiant n'est
+ * partagé avec l'appelant pour cette raison : ici `costless` et `stepped`, chez
+ * `engineSearch.ts` les cases du joueur et les cases vides.
  */
 export function setTerrain(
-  gratis0: number,
-  gratis1: number,
-  gratis2: number,
-  paid0: number,
-  paid1: number,
-  paid2: number,
+  costless0In: number,
+  costless1In: number,
+  costless2In: number,
+  stepped0In: number,
+  stepped1In: number,
+  stepped2In: number,
 ): void {
-  free0 = gratis0
-  free1 = gratis1
-  free2 = gratis2
-  step0 = paid0
-  step1 = paid1
-  step2 = paid2
+  costless0 = costless0In
+  costless1 = costless1In
+  costless2 = costless2In
+  stepped0 = stepped0In
+  stepped1 = stepped1In
+  stepped2 = stepped2In
 }
 
 export function fillLayers(
@@ -207,9 +213,9 @@ export function fillLayers(
   const exit1 = exit[1]
   const exit2 = exit[2]
 
-  let l0 = entry[0] & free0
-  let l1 = entry[1] & free1
-  let l2 = entry[2] & free2
+  let l0 = entry[0] & costless0
+  let l1 = entry[1] & costless1
+  let l2 = entry[2] & costless2
   let v0 = l0
   let v1 = l1
   let v2 = l2
@@ -218,9 +224,9 @@ export function fillLayers(
   let f2 = l2
   while ((f0 | f1 | f2) !== 0) {
     boxOf(f0, f1, f2)
-    f0 = box0 & free0 & ~v0
-    f1 = box1 & free1 & ~v1
-    f2 = box2 & free2 & ~v2
+    f0 = box0 & costless0 & ~v0
+    f1 = box1 & costless1 & ~v1
+    f2 = box2 & costless2 & ~v2
     v0 |= f0
     v1 |= f1
     v2 |= f2
@@ -234,15 +240,15 @@ export function fillLayers(
   if (((l0 & exit0) | (l1 & exit1) | (l2 & exit2)) !== 0) return 0
 
   // Le bord d'entrée est une porte à un pas, même sans voisine gratuite.
-  let pending0 = entry[0] & step0
-  let pending1 = entry[1] & step1
-  let pending2 = entry[2] & step2
+  let pending0 = entry[0] & stepped0
+  let pending1 = entry[1] & stepped1
+  let pending2 = entry[2] & stepped2
 
   for (let depth = 1; depth < MAX_LAYERS; depth += 1) {
     boxOf(l0, l1, l2)
-    let n0 = ((box0 & step0) | pending0) & ~v0
-    let n1 = ((box1 & step1) | pending1) & ~v1
-    let n2 = ((box2 & step2) | pending2) & ~v2
+    let n0 = ((box0 & stepped0) | pending0) & ~v0
+    let n1 = ((box1 & stepped1) | pending1) & ~v1
+    let n2 = ((box2 & stepped2) | pending2) & ~v2
     pending0 = 0
     pending1 = 0
     pending2 = 0
@@ -255,9 +261,9 @@ export function fillLayers(
     f2 = n2
     while ((f0 | f1 | f2) !== 0) {
       boxOf(f0, f1, f2)
-      f0 = box0 & free0 & ~v0
-      f1 = box1 & free1 & ~v1
-      f2 = box2 & free2 & ~v2
+      f0 = box0 & costless0 & ~v0
+      f1 = box1 & costless1 & ~v1
+      f2 = box2 & costless2 & ~v2
       v0 |= f0
       v1 |= f1
       v2 |= f2

@@ -173,9 +173,9 @@ export const TEMPO = 819
  */
 
 /** Cases vides franchissables du joueur mesuré, relues par `axisWidth`. */
-let free0 = 0
-let free1 = 0
-let free2 = 0
+let empty0 = 0
+let empty1 = 0
+let empty2 = 0
 
 const horizontalLayers = createLayers()
 const verticalLayers = createLayers()
@@ -249,9 +249,9 @@ function fillMasks(position: EnginePosition, side: number, stackBudget: number):
     f2 &= reach2
   }
 
-  free0 = f0
-  free1 = f1
-  free2 = f2
+  empty0 = f0
+  empty1 = f1
+  empty2 = f2
   setTerrain(bits[base], bits[base + 1], bits[base + 2], f0, f1, f2)
 }
 
@@ -279,9 +279,9 @@ function axisWidth(
     const here = depth * LIMBS
     const back = (best + 1 - depth) * LIMBS
     width +=
-      popcount(near[here] & returnLayers[back] & free0) +
-      popcount(near[here + 1] & returnLayers[back + 1] & free1) +
-      popcount(near[here + 2] & returnLayers[back + 2] & free2)
+      popcount(near[here] & returnLayers[back] & empty0) +
+      popcount(near[here + 1] & returnLayers[back + 1] & empty1) +
+      popcount(near[here + 2] & returnLayers[back + 2] & empty2)
   }
   return width
 }
@@ -706,13 +706,6 @@ export type RootSearch = {
   moves: number[]
   score: number
   /**
-   * Coups racine dont la recherche est allée à son terme. Inférieur à leur
-   * nombre total quand le budget s'est épuisé en cours d'itération : l'appelant
-   * s'en sert pour décider si le résultat partiel vaut mieux que le palier
-   * précédent.
-   */
-  completed: number
-  /**
    * Variante principale du coup rendu en tête de `moves`, relevée au fil de la
    * recherche. Voir `pvLine` : elle peut être plus courte que la profondeur.
    */
@@ -748,7 +741,6 @@ function searchRoot(context: SearchContext, depth: number): RootSearch | null {
   let alpha = -MATE - 1
   let best = -MATE - 1
   let bestMoves: number[] = []
-  let completed = 0
   pvLength[0] = 0
 
   for (let index = 0; index < count; index += 1) {
@@ -794,7 +786,6 @@ function searchRoot(context: SearchContext, depth: number): RootSearch | null {
 
     undoMove(position, move)
     if (context.aborted) break
-    completed += 1
 
     // Un ex æquo ne remplace pas la variante : elle appartient au premier coup
     // qui a atteint ce score, c'est-à-dire à `moves[0]`, celui que l'appelant
@@ -813,7 +804,6 @@ function searchRoot(context: SearchContext, depth: number): RootSearch | null {
   return {
     moves: bestMoves,
     score: best,
-    completed,
     pv: Array.from(pvLine.subarray(0, pvLength[0])),
   }
 }
