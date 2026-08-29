@@ -8,8 +8,14 @@
  *
  *   node node_modules/vite-node/dist/cli.mjs scripts/audit-livre.ts
  *
- * Options : --nodes N (défaut 60 000) · --depth N (profondeur du livre, défaut
- * 7) · --openings M (limite, pour un échantillon).
+ * Options : --nodes N (défaut 60 000) · --depth N (défaut 9 ; l'arbitre juge à
+ * `--depth − 1`) · --openings M (limite, pour un échantillon).
+ *
+ * **L'arbitre doit voir plus loin que les deux coups qu'il départage**, sans quoi
+ * il ne fait que ratifier celui qu'il aurait joué lui-même. Mesuré : arbitré à
+ * profondeur 6, le livre engendré à profondeur 7 paraissait n'être jamais moins
+ * bon que le jeu direct ; arbitré à 8, il est moins bon sur **14** des 50
+ * ouvertures. La conclusion rassurante venait de l'arbitre, pas du livre.
  *
  * Le défaut de `--nodes` n'est **pas** le budget du jeu : c'est le seuil de
  * force mesuré (voir `plan.md`), retenu parce qu'il rend l'audit abordable. Le
@@ -30,7 +36,7 @@ const arg = (name: string, fallback: number): number => {
   return i >= 0 ? Number(process.argv[i + 1]) : fallback
 }
 const NODES = arg('--nodes', 60_000)
-const DEPTH = arg('--depth', 7)
+const DEPTH = arg('--depth', 9)
 const LIMIT = arg('--openings', Number.POSITIVE_INFINITY)
 
 const cellKey = (move: LegalMove): string =>

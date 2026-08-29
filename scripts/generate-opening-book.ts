@@ -9,7 +9,7 @@
  * Lancement (hors ligne, long) :
  *   node node_modules/vite-node/dist/cli.mjs scripts/generate-opening-book.ts --jobs 8
  *
- * Options : --depth N (défaut 6, profondeur exigée de chaque recherche) ·
+ * Options : --depth N (défaut 9, profondeur exigée de chaque recherche) ·
  * --jobs N (défaut 1, processus travaillant en parallèle) ·
  * --nodes N (plafond de secours, positions examinées par recherche) ·
  * --replies K (défaut 0, réponses adverses couvertes au 2ᵈ coup) ·
@@ -35,8 +35,10 @@
  * Elle doit dépasser ce que la recherche en direct atteint, sans quoi le livre
  * n'apporterait rien — c'est tout son intérêt d'être calculé hors ligne. En jeu,
  * l'ouverture plafonne désormais à la profondeur **6** ; le livre vise donc
- * **7**. Compter une dizaine de secondes par entrée sur une machine de bureau,
- * soit une à deux heures pour le livre entier. Ce chiffre suit le moteur : à
+ * **9**, deux paliers au-dessus. Compter huit heures et demie en huit lots. Un
+ * seul palier d'avance ne suffit pas : le livre engendré à profondeur 7 était
+ * moins bon que le jeu direct sur 14 des 50 ouvertures. Ce chiffre suit le
+ * moteur : à
  * chaque fois qu'il gagne un palier en direct, le livre doit en gagner un
  * aussi, sans quoi il ne fait plus que répéter ce que le jeu trouve seul.
  *
@@ -73,7 +75,7 @@ const arg = (name: string, fallback: string): string => {
   const i = process.argv.indexOf(name)
   return i >= 0 ? process.argv[i + 1] : fallback
 }
-const DEPTH = Number(arg('--depth', '6'))
+const DEPTH = Number(arg('--depth', '9'))
 const NODES = Number(arg('--nodes', String(Number.MAX_SAFE_INTEGER)))
 const REPLIES = Number(arg('--replies', '0'))
 const RANK_NODES = Number(arg('--rank-nodes', '60000'))
@@ -221,9 +223,18 @@ function store(
  *
  * Le gain diminue d'un demi-coup par pli parcouru, si bien que la récolte
  * s'arrête dès que la profondeur restante n'excède plus ce que le jeu atteint
- * seul. La racine doit donc dépasser `LIVE_OPENING_DEPTH` de plus de deux plis
- * pour donner quoi que ce soit : à profondeur 6 en direct, il faut une racine à
- * profondeur 9. C'est la seule raison sérieuse d'aller si loin.
+ * seul. La racine doit donc dépasser `LIVE_OPENING_DEPTH` de plus de deux plis :
+ * à profondeur 6 en direct, il faut une racine à profondeur 9.
+ *
+ * **Elle ne rapporte pourtant rien à profondeur 9 non plus**, et pour une raison
+ * qui n'est pas arithmétique : la variante principale n'est pas relevée pendant
+ * la recherche mais **reconstruite après coup** en marchant dans la table de
+ * transposition, ce qui exige d'y retrouver un nœud `EXACT` à chaque pli. À 2¹⁸
+ * entrées qui se remplacent toujours, et des dizaines de millions de positions
+ * visitées, ces entrées sont écrasées avant la fin : la variante rendue tombe à
+ * un ou deux coups. Mesuré, zéro entrée récoltée sur les 51 racines. La débloquer
+ * demanderait de relever la variante au fil de la recherche, pas d'aller plus
+ * profond.
  *
  * Elle ne couvre qu'**une** ligne, celle que le moteur juge la meilleure. Les
  * autres réponses de bleu n'ont pas été évaluées mais réfutées, et ne peuvent
