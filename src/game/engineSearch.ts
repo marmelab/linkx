@@ -549,6 +549,39 @@ function reduction(depth: number, index: number, order: number): number {
  * Une passe forcée ne change pas le trait ; la récursion se fait alors **sans**
  * négation et avec la même fenêtre, sinon les deux camps seraient confondus.
  */
+/**
+ * Variante principale, relevée **au fil** de la recherche.
+ *
+ * Une table triangulaire : la ligne du pli `ply` occupe `MAX_PLY` cases à partir
+ * de `ply * MAX_PLY`, et sa longueur vit dans `pvLength`. Quand un coup relève
+ * alpha, il devient la tête de la ligne de son pli et la ligne du pli suivant s'y
+ * recopie derrière. Une feuille laisse une ligne vide, et la remontée reconstruit
+ * la variante entière.
+ *
+ * **C'est un remplacement, pas un ajout.** La variante était auparavant relue
+ * dans la table de transposition une fois la recherche finie, ce qui exigeait d'y
+ * retrouver un nœud `EXACT` à chaque pli. À 2¹⁸ entrées à remplacement
+ * systématique et des dizaines de millions de positions visitées, ces entrées
+ * étaient écrasées bien avant la fin : la variante rendue tombait à un ou deux
+ * coups, et la récolte du livre d'ouverture ne trouvait rien à récolter.
+ *
+ * La ligne reste **rejouable** : elle s'arrête net sur une victoire immédiate et
+ * sur une passe forcée — qui n'est pas un coup et que l'appelant ne saurait pas
+ * rejouer —, plutôt que de rendre une suite qu'on ne peut pas dérouler.
+ */
+const pvLine = new Int32Array(MAX_PLY * MAX_PLY)
+const pvLength = new Int32Array(MAX_PLY)
+
+/** `move` prend la tête de la ligne du pli, suivi de la ligne du pli d'après. */
+function extendPrincipalVariation(ply: number, move: number): void {
+  const target = ply * MAX_PLY
+  const source = target + MAX_PLY
+  const inherited = Math.min(pvLength[ply + 1], MAX_PLY - 1)
+  pvLine[target] = move
+  for (let i = 0; i < inherited; i += 1) pvLine[target + 1 + i] = pvLine[source + i]
+  pvLength[ply] = inherited + 1
+}
+
 function search(
   context: SearchContext,
   depth: number,
@@ -559,6 +592,10 @@ function search(
   const position = context.position
   context.nodes += 1
   if (exhausted(context)) return 0
+
+  // Toute sortie anticipée — coupure de table, feuille — laisse donc une ligne
+  // vide, et la variante s'arrête là plutôt que de reprendre celle d'un frère.
+  pvLength[ply] = 0
 
   const alphaOrigin = alpha
   const slot = position.hashA & TT_MASK
@@ -601,6 +638,7 @@ function search(
     let score: number
     if (movePlacedWins(position, move, mover)) {
       score = MATE - ply
+      pvLength[ply + 1] = 0
     } else if (hasAnyMove(position, position.side)) {
       if (index === 0) {
         score = -search(context, depth - 1, -beta, -alpha, ply + 1)
@@ -626,6 +664,9 @@ function search(
         score = stalemateValue(position, mover, ply)
       }
       flipSide(position)
+      // La passe n'est pas un coup : la variante s'arrête ici pour rester
+      // rejouable par qui la relit.
+      pvLength[ply + 1] = 0
     }
 
     undoMove(position, move)
@@ -634,8 +675,13 @@ function search(
     if (score > best) {
       best = score
       bestMove = move
+      // Alpha ne bouge que lorsque `best` bouge : relever la variante ici est
+      // donc exactement l'ancien `if (best > alpha) alpha = best`, plus la ligne.
+      if (best > alpha) {
+        alpha = best
+        extendPrincipalVariation(ply, move)
+      }
     }
-    if (best > alpha) alpha = best
     if (alpha >= beta) {
       recordCutoff(move, ply, mover, depth)
       break
@@ -666,6 +712,11 @@ export type RootSearch = {
    * précédent.
    */
   completed: number
+  /**
+   * Variante principale du coup rendu en tête de `moves`, relevée au fil de la
+   * recherche. Voir `pvLine` : elle peut être plus courte que la profondeur.
+   */
+  pv: number[]
 }
 
 /**
@@ -698,6 +749,7 @@ function searchRoot(context: SearchContext, depth: number): RootSearch | null {
   let best = -MATE - 1
   let bestMoves: number[] = []
   let completed = 0
+  pvLength[0] = 0
 
   for (let index = 0; index < count; index += 1) {
     pickBest(moveBuffer, orderBuffer, 0, count, index)
@@ -707,6 +759,7 @@ function searchRoot(context: SearchContext, depth: number): RootSearch | null {
     let score: number
     if (movePlacedWins(position, move, mover)) {
       score = MATE
+      pvLength[1] = 0
     } else if (hasAnyMove(position, position.side)) {
       if (index === 0) {
         score = -search(context, depth - 1, -MATE - 1, -alpha, 1)
@@ -736,15 +789,20 @@ function searchRoot(context: SearchContext, depth: number): RootSearch | null {
         score = stalemateValue(position, mover, 0)
       }
       flipSide(position)
+      pvLength[1] = 0
     }
 
     undoMove(position, move)
     if (context.aborted) break
     completed += 1
 
+    // Un ex æquo ne remplace pas la variante : elle appartient au premier coup
+    // qui a atteint ce score, c'est-à-dire à `moves[0]`, celui que l'appelant
+    // rapporte et dont le livre récolte la ligne.
     if (score > best) {
       best = score
       bestMoves = [move]
+      extendPrincipalVariation(0, move)
     } else if (score === best) {
       bestMoves.push(move)
     }
@@ -752,70 +810,13 @@ function searchRoot(context: SearchContext, depth: number): RootSearch | null {
   }
 
   if (bestMoves.length === 0) return null
-  return { moves: bestMoves, score: best, completed }
-}
-
-const pvBuffer = new Int32Array(MAX_MOVES)
-
-/**
- * Variante principale de la dernière recherche, lue dans la table.
- *
- * Elle sert au livre d'ouverture : les positions qu'elle traverse ont déjà été
- * analysées par la recherche qui vient de finir, à une profondeur amputée d'un
- * demi-coup par pli parcouru. Les inscrire au livre ne coûte donc rien.
- *
- * Deux conditions rendent cette récolte **saine**, et il ne faut en relâcher
- * aucune. Seul un nœud marqué `EXACT` est retenu : un nœud `LOWER` ou `UPPER`
- * n'a pas été évalué mais seulement réfuté à fenêtre nulle, et le coup que la
- * table y garde est un coup de coupure, pas un meilleur coup prouvé. Et le coup
- * lu est vérifié légal avant d'être joué, la table pouvant rendre l'entrée d'une
- * autre position sur collision des deux empreintes.
- *
- * La variante s'arrête d'elle-même dès qu'une entrée manque — la table étant à
- * remplacement systématique, un nœud de la variante a pu être écrasé.
- */
-function collectPrincipalVariation(
-  position: EnginePosition,
-  rootMove: number,
-  limit: number,
-): LegalMove[] {
-  const line: LegalMove[] = [toLegalMove(rootMove)]
-  const played: number[] = [rootMove]
-  applyMove(position, rootMove)
-
-  while (line.length < limit) {
-    const slot = position.hashA & TT_MASK
-    if (
-      ttFilled[slot] !== 1 ||
-      ttKeyA[slot] !== position.hashA ||
-      ttKeyB[slot] !== position.hashB ||
-      ttFlag[slot] !== EXACT
-    ) {
-      break
-    }
-    const move = ttMove[slot]
-    if (move === 0) break
-
-    const count = generateMoves(position, pvBuffer, 0)
-    let legal = false
-    for (let i = 0; i < count; i += 1) {
-      if (pvBuffer[i] === move) {
-        legal = true
-        break
-      }
-    }
-    if (!legal) break
-
-    line.push(toLegalMove(move))
-    played.push(move)
-    applyMove(position, move)
+  return {
+    moves: bestMoves,
+    score: best,
+    completed,
+    pv: Array.from(pvLine.subarray(0, pvLength[0])),
   }
-
-  for (let i = played.length - 1; i >= 0; i -= 1) undoMove(position, played[i])
-  return line
 }
-
-// --- Entrée publique ---------------------------------------------------------
 
 export type MasterSearchOptions = {
   /** Horloge injectée : le domaine n'en appelle jamais une lui-même. */
@@ -1008,9 +1009,7 @@ export function searchMasterTopMoves(
         // la valeur est vraie.
         exact,
         nodes: context.nodes,
-        // Relevée maintenant : la table décrit l'itération qui vient de finir,
-        // et une itération suivante, même abandonnée, en écraserait des nœuds.
-        pv: collectPrincipalVariation(position, result.moves[0], depth),
+        pv: result.pv.map(toLegalMove),
       }
     }
     if (partial || exact) break
