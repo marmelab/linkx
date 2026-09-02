@@ -282,6 +282,17 @@
    du damier : marge du cadre, bordure et marge intérieure du plateau. La bande
    de visée s'en sert pour aligner ses neuf flèches sur les neuf colonnes. */
 .play-area { --drop-zone-height: 30px; --board-inset: 18px; display: flex; min-width: 0; flex-direction: column; align-items: center; padding: 1.1rem 1.4rem 2rem; background: #f8f7f3; }
+/* Viser au doigt, c'est **maintenir l'appui**, et un appui maintenu est aussi
+   le geste par lequel un navigateur mobile propose de sélectionner du texte :
+   iOS ouvre sa bulle « Tout sélectionner / Copier », Chrome ses poignées de
+   sélection. La bulle interromprait le geste en cours — l'appareil reprend le
+   pointeur, le navigateur envoie `pointercancel`, la pièce ne tombe pas. Toute
+   la surface de jeu est donc rendue insélectionnable, plateau et réserves
+   compris : le doigt y dérive pendant la visée. La barre du haut et le résumé
+   des règles restent sélectionnables, on y lit du texte.
+   `touch-action` ne couvre pas ce cas : il n'arbitre que le défilement. */
+.play-area,
+.piece-tray { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
 /* Au bureau, l'en-tête empile simplement le bandeau puis l'aperçu : la
    géométrie est celle des deux blocs pris séparément. */
 .play-head { display: flex; width: min(100%, 520px); flex: 0 0 auto; flex-direction: column; align-items: center; }
@@ -327,20 +338,18 @@
 .control-button--hint:hover:not(:disabled) { border-color: transparent; opacity: 1; }
 .control-button--hint:disabled { cursor: progress; opacity: 0.55; }
 
-.drop-zones { display: grid; width: min(100%, 520px); grid-template-columns: repeat(9, 1fr); gap: 3px; padding: 0 12px 6px; }
+/* `touch-action: none` est ce qui rend le geste maintenu possible : sans lui le
+   navigateur retient les événements le temps de décider s'il s'agit d'un
+   défilement, et la bande ne répond qu'au bout du geste. C'est le seul endroit
+   de la page d'où l'on ne peut plus faire défiler, et le plateau tient de toute
+   façon sans défilement. */
+.drop-zones { display: grid; width: min(100%, 520px); grid-template-columns: repeat(9, 1fr); gap: 3px; padding: 0 12px 6px; touch-action: none; }
 .drop-zones-spacer { width: min(100%, 520px); height: calc(var(--drop-zone-height) + 6px); }
-/* Bande de visée sans flèches : elle prolonge la grille vers le haut, sans rien
-   afficher ni réserver de survol propre. */
-.drop-zones--silent .drop-zone,
-.drop-zones--silent .drop-zone:hover:not(:disabled),
-.drop-zones--silent .drop-zone.is-hovered,
-.drop-zones--silent .drop-zone.is-invalid { border-color: transparent; background: transparent; }
-.drop-zone { display: flex; height: var(--drop-zone-height); align-items: center; justify-content: center; border: 1px solid transparent; border-radius: 4px 4px 0 0; background: transparent; color: #8790a0; cursor: pointer; line-height: 1; }
-.drop-zone .drop-arrow { color: var(--blue); font-size: 1rem; font-weight: 800; transition: transform 120ms ease; }
-.drop-zone:hover:not(:disabled), .drop-zone.is-hovered { border-color: #b7cae8; background: #e7effa; color: #2d5897; }
-.drop-zone:hover:not(:disabled) .drop-arrow, .drop-zone.is-hovered .drop-arrow { transform: translateY(3px); }
-.drop-zone.is-invalid { border-color: #efb0b3; background: #fbe8e8; }
-.drop-zone.is-invalid .drop-arrow { color: var(--red); }
+/* Une flèche ne porte **aucun état** : ni colonne visée, ni refus. L'aperçu de
+   chute dit les deux, sur le plateau et non sous le doigt qui couvre la bande.
+   Sans flèches, la bande prolonge simplement la grille vers le haut. */
+.drop-zone { display: flex; height: var(--drop-zone-height); align-items: center; justify-content: center; border: none; background: transparent; cursor: pointer; line-height: 1; -webkit-tap-highlight-color: transparent; }
+.drop-zone .drop-arrow { color: var(--blue); font-size: 1rem; font-weight: 800; }
 .drop-zone:disabled { cursor: default; opacity: 0.2; }
 
 .board-frame { position: relative; width: min(100%, 520px); padding: 10px; border: 1px solid #a7aeb9; background: linear-gradient(#dfe1e6, #cdd1d8); box-shadow: 0 16px 34px rgb(27 37 55 / 18%), inset 0 1px 0 rgb(255 255 255 / 65%); }

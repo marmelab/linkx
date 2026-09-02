@@ -80,7 +80,7 @@ Une pièce ne peut jamais être posée plus haut que sa position naturelle de ch
 
 ### Légalité d'une pose
 
-Une pose est légale si et seulement si les trois conditions suivantes sont réunies. Chacune correspond à un **motif de refus distinct**, qui doit être restituable et affichable au joueur.
+Une pose est légale si et seulement si les trois conditions suivantes sont réunies. Chacune correspond à un **motif de refus distinct**, qui doit être restituable au joueur.
 
 1. **Débordement latéral** — la pièce, dans son orientation courante, tient entièrement dans les neuf colonnes depuis sa colonne d'ancrage. Sinon : refus, sans même simuler la chute.
 2. **Débordement par le haut** — après la chute, aucune case de la pièce ne reste au-dessus de la ligne `0`. Une colonne trop remplie pour l'accueillir produit ce refus.
@@ -274,7 +274,9 @@ La descente obéit à une **chute libre**, ce qui veut dire une seule chose mais
 
 **Choix de cette version.** La pièce de l'ordinateur (histoire 10) tombe **exactement comme celle du joueur**. Sa mise en évidence attend la fin de la chute au lieu de la recouvrir : la chute dit où le coup a été joué, le reste laisse le temps de le lire.
 
-**Trois façons de viser, selon le support.** Là où le pointeur sait survoler, le plateau entier **et la bande qui le surmonte** deviennent la surface de visée : la pièce suit la colonne survolée et l'action la pose ; aucune rangée de commandes n'est alors affichée. La bande supérieure est indispensable, un plateau presque plein n'offrant plus de case libre à survoler. Là où le pointeur ne survole pas, neuf zones d'entrée apparaissent au-dessus du plateau, uniquement quand une pièce est sélectionnée, chacune réduite à une flèche sans numéro visible.
+**Trois façons de viser, selon le support.** Là où le pointeur sait survoler, le plateau entier **et la bande qui le surmonte** deviennent la surface de visée : la pièce suit la colonne survolée et l'action la pose ; aucune rangée de commandes n'est alors affichée. La bande supérieure est indispensable, un plateau presque plein n'offrant plus de case libre à survoler. Là où le pointeur ne survole pas, neuf zones d'entrée apparaissent au-dessus du plateau, uniquement quand une pièce est sélectionnée, chacune réduite à une flèche sans numéro visible. Ces flèches ne portent **aucun état** : ni la colonne visée, ni le refus. L'aperçu de chute dit déjà les deux, et il les dit sur le plateau, là où la pièce tombera, plutôt que sous le doigt qui couvre la bande.
+
+**Au doigt, viser et poser sont deux temps d'un même geste.** Une pièce couvre plusieurs colonnes : la flèche pressée ne dit pas à elle seule où la pièce tomberait, et c'est exactement le doute que le survol lève ailleurs. L'appui **vise et ne pose rien** — l'aperçu de chute apparaît, en rouge quand la pose est refusée ; glisser le long de la bande sans relâcher déplace la visée d'une colonne à l'autre ; **seul le relâchement pose**, sur la colonne où le doigt se trouve alors. Relâcher sur une colonne refusée ne pose rien et ne consomme rien : la pièce reste en main, son aperçu rouge sous les yeux, et le joueur la tourne, la change ou vise ailleurs. La surface de visée du geste est **la bande et le plateau qu'elle surmonte** : le doigt qui descend sur la grille continue de viser, et il dérive donc sans rien perdre. Sortir de cette surface — vers la pièce en main au-dessus, vers les réserves en dessous — **éteint l'aperçu**, et relâcher là **abandonne** le geste sans rien poser. C'est l'extinction qui rend l'abandon lisible : tant qu'un aperçu est peint, relâcher pose ; dès qu'il n'y en a plus, relâcher ne fait rien. Revenir sur la surface sans avoir relâché rétablit la visée.
 
 **Le jeu se pilote intégralement au clavier**, et c'est une exigence d'accessibilité autant qu'une commodité : un joueur qui ne peut pas se servir d'un pointeur doit pouvoir jouer une partie entière. Six fonctions doivent être atteignables sans pointeur :
 
@@ -314,6 +316,11 @@ L'attribution des touches relève de l'implémentation. À titre indicatif, cett
 - Les pièces déjà posées ne retombent pas quand une nouvelle pièce est jouée, ni au chargement d'une position depuis un lien.
 - L'aperçu et la pose définitive désignent toujours les mêmes cases.
 - Viser une colonne avec une barre de trois couvre cette colonne et ses deux voisines ; viser un bord retient la pièce contre ce bord au lieu de la faire dépasser.
+- Sur un écran tactile, appuyer sur une zone d'entrée montre l'aperçu de chute sans rien poser ; la pièce ne tombe qu'au relâchement.
+- Glisser le doigt d'une zone d'entrée à l'autre sans relâcher déplace l'aperçu, et c'est la colonne relâchée qui est jouée, non celle de l'appui.
+- Relâcher sur une colonne où la pose est refusée ne pose rien, ne change pas de tour, et laisse l'aperçu rouge affiché.
+- Le doigt descendu de la bande sur le plateau vise toujours ; sorti de l'un et de l'autre, il n'affiche plus d'aperçu et n'a plus de colonne mise en évidence.
+- Relâcher hors de la bande et du plateau n'a aucun effet : rien n'est posé, le tour ne change pas, et la pièce reste en main dans son orientation.
 - Sélectionner, tourner ou retourner ne déplace aucun autre élément à l'écran : le bord supérieur du plateau ne bouge pas.
 - Une partie entière se joue au clavier seul, sans jamais toucher un pointeur, y compris là où les zones d'entrée de colonne ne sont pas affichées.
 - Les six fonctions du tableau ci-dessus sont chacune atteignables au clavier.
@@ -328,7 +335,9 @@ L'attribution des touches relève de l'implémentation. À titre indicatif, cett
 
 **Ce que ça recouvre** — les trois motifs de refus décrits dans « Légalité d'une pose », leur restitution au joueur, et l'énumération des coups légaux qui en découle.
 
-L'aperçu distingue désormais deux états : valide, dans la couleur du joueur ; invalide, nettement différencié, accompagné d'une raison courte. Agir sur une position invalide ne change rien.
+L'aperçu distingue désormais deux états : valide, dans la couleur du joueur ; invalide, dans une teinte de refus. Agir sur une position invalide ne change rien.
+
+**Le motif du refus ne s'écrit pas à l'écran.** L'aperçu apparaît là où la pièce tomberait, dans une teinte qui dit déjà l'échec, et à l'instant même où le joueur vise : une phrase à côté redit une information qu'il a déjà lue, et le refus est de toute façon sans conséquence. Le motif reste en revanche **annoncé** — la couleur n'existe pas pour qui ne voit pas l'écran — et il reste restituable, la vérification d'une notation de partie (histoire 11) le nommant en clair.
 
 L'énumération des coups légaux d'un joueur — toutes ses formes encore en réserve, toutes leurs orientations distinctes, toutes les colonnes d'ancrage possibles, filtrées par la légalité — devient la source de vérité pour savoir si un joueur peut jouer. Elle sert aux histoires 5, 10 et 11. Sur une grille vide, elle produit **95** coups légaux ; ce nombre retombe sous 20 en fin de partie.
 
@@ -339,9 +348,9 @@ L'énumération des coups légaux d'un joueur — toutes ses formes encore en r�
 - Un `T` tige vers le bas lâché au-dessus de deux cases occupées séparées d'une case est accepté : chacun de ses appuis repose sur quelque chose.
 - Une pièce qui, dans son orientation courante, sortirait latéralement du plateau est refusée sans qu'aucune chute soit simulée.
 - Une pièce qui ne peut pas entrer entièrement dans une colonne trop remplie est refusée pour débordement par le haut.
-- Chacun de ces trois refus produit une raison distincte, restituée au joueur en clair.
+- Chacun de ces trois refus produit une raison distincte, annoncée sans voir l'écran et nommée en clair par la vérification d'une notation.
 - Une pose refusée ne modifie ni le plateau, ni les réserves, ni le joueur au trait, ni la sélection.
-- L'aperçu invalide se distingue de l'aperçu valide autrement que par la seule couleur.
+- L'aperçu invalide se distingue de l'aperçu valide au premier coup d'œil, sans qu'aucun texte ne l'accompagne.
 - Sur une grille vide, l'énumération des coups légaux d'un joueur dont la réserve est complète en produit 95.
 - Une forme dont les deux exemplaires sont joués n'apparaît jamais dans cette énumération.
 
@@ -431,7 +440,7 @@ L'échange se **joue** plutôt qu'il ne se substitue : les deux réserves parten
 
 Chaque réserve montre ses sept formes sur **deux rangées**, sans rien à faire défiler latéralement. Chaque forme y occupe la largeur de sa silhouette, plus la **même marge** que ses voisines : sept colonnes de largeur égale se régleraient sur la forme la plus large, ce qui noierait le mono dans du vide pendant que les pièces de trois cases toucheraient presque leurs voisines. La largeur ainsi rendue profite à toutes les silhouettes, qui se dessinent d'autant plus grandes. La zone tactile d'un exemplaire couvre toute sa colonne, marge comprise, et garde en hauteur la taille d'un doigt. Les exemplaires joués restent visibles en pointillé.
 
-**Bande réservée.** Une bande au-dessus du plateau est réservée en permanence à la pièce sélectionnée, à ses commandes de rotation et de retournement, aux messages de refus et, en fin de partie, à l'annonce du vainqueur. Elle est **au-dessus** et non en dessous parce que c'est par le haut que la pièce entre sur le plateau : la voir tourner là où elle va tomber, c'est le même geste des deux côtés du jeu, et c'est aussi la disposition du grand écran. Sa hauteur ne dépend pas de son contenu : **rien ne bouge quand on choisit une pièce, quand un refus s'affiche, ni quand la partie se termine**.
+**Bande réservée.** Une bande au-dessus du plateau est réservée en permanence à la pièce sélectionnée, à ses commandes de rotation et de retournement, aux messages que rien à l'écran ne dit déjà — l'attente de l'ordinateur, un tour passé — et, en fin de partie, à l'annonce du vainqueur. Elle est **au-dessus** et non en dessous parce que c'est par le haut que la pièce entre sur le plateau : la voir tourner là où elle va tomber, c'est le même geste des deux côtés du jeu, et c'est aussi la disposition du grand écran. Sa hauteur ne dépend pas de son contenu : **rien ne bouge quand on choisit une pièce, quand un refus s'affiche, ni quand la partie se termine**.
 
 Un message qui ne concerne aucune pièce en main — l'attente pendant que l'ordinateur cherche son coup, par exemple — occupe cette bande **en son milieu**, et non dans un coin : c'est alors le seul contenu qu'elle porte.
 
@@ -448,7 +457,7 @@ Sur un grand écran, la même matière se répartit en trois colonnes — une r�
 - Les sept formes d'une réserve tiennent sur deux rangées, sans défilement latéral.
 - Chaque exemplaire disponible offre une cible tactile confortable au doigt en hauteur, et déborde sa silhouette de la marge qui l'écarte de ses voisines.
 - Deux silhouettes voisines d'une même réserve sont séparées du même écart, quelles que soient leurs largeurs.
-- Sélectionner une pièce, tourner, essuyer un refus ou terminer la partie ne déplace jamais le plateau ni les réserves.
+- Sélectionner une pièce, tourner, viser une pose refusée ou terminer la partie ne déplace jamais le plateau ni les réserves.
 - En plein écran installé, aucun contenu ne passe sous l'encoche ni sous la barre de gestes.
 
 ---

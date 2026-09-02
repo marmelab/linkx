@@ -23,13 +23,24 @@ Ce que doit **montrer** l'interface est spécifié dans `plan.md` (histoires 7, 
 
 ## Chute de la pièce posée
 
-`Board` fait descendre la pièce qui vient d'être posée depuis le haut du plateau (plan.md, histoire 2). Cinq points s'y tiennent :
+`Board` fait descendre la pièce qui vient d'être posée depuis le haut du plateau (plan.md, histoire 2). Six points s'y tiennent :
 
 - **Une seule pièce tombe à la fois**, celle que désigne `lastPlacedPieceId`. L'animation étant portée par le montage de l'élément, la mettre sur `.board-piece` la ferait rejouer par toutes les pièces au chargement d'une position depuis un lien, et par n'importe quelle pièce que React déplacerait dans le DOM — déplacer un nœud le retire puis le réinsère, ce qui redémarre ses animations CSS. La classe reste posée après la chute sans rien rejouer : seul un changement de nom d'animation redémarre une animation en cours.
 - La hauteur et la durée dépendent de la ligne d'arrivée, donc de la pièce : elles sont **calculées dans le composant** et passées en variables CSS. `--fall-from` et `--fall-bounce` sont en **cases**, comme toute longueur de cette couche (voir plus haut). Un `-3px` y vaut trois cases, pas trois pixels.
 - La durée vaut `k × √hauteur`, **sans terme constant**. Le plancher ou le temps de départ qu'on est tenté d'ajouter donnent une gravité plus faible aux pièces qui s'arrêtent haut : elles flottent, et ça se voit tout de suite. Le rebond garde en revanche une part fixe de la durée, ce qui est cohérent — sa propre durée est en racine de sa hauteur, elle-même proportionnelle à la hauteur tombée.
 - Le calque des pièces déborde volontairement (`overflow: visible`) pour laisser passer les ombres portées des pièces de bord. La pièce qui tombe est donc découpée par un `clipPath` propre, qui **ne coupe qu'en haut** : sans lui elle se peindrait par-dessus la bordure et le cadre du plateau, ce qui a déjà été observé. Le ghost reste hors de ce groupe, son ombre de survol est bien plus large.
 - Le reflet suit la dalle, avec la même animation : le peindre à l'arrivée pendant que la dalle est en l'air les désolidariserait. La nappe de `plexi-sheen` défile donc sur la pièce le temps de la chute. Ce n'est pas la dérogation de l'aperçu de sélection : une translation ne fait pas tourner la lumière, sa direction reste celle de l'écran et l'état d'arrivée est exact.
+
+## Bande de visée au doigt
+
+`DropZone` vise tant que le pointeur est enfoncé et ne pose qu'au relâchement (plan.md, histoire 2). Six points s'y tiennent :
+
+- La colonne se lit sur la **géométrie de la bande**, jamais sur la flèche qui reçoit l'événement. Pendant un glissé le pointeur est capturé, donc la cible reste celle de l'appui : suivre la cible ferait viser la même colonne du début à la fin. `dropAim.ts` est la source unique de cette conversion, et il retient le doigt sorti de la bande sur la colonne de bord.
+- La surface de visée est la bande **et le plateau**, dont `App.tsx` passe le cadre en `ref` : hors de cette surface l'aperçu s'éteint et le relâchement n'y pose rien. Le prolonger au plateau n'est pas un confort — la bande fait 44px de haut, un doigt qui cherche sa colonne en sort tout le temps, et s'arrêter à ses bords ferait échouer des gestes bien visés. L'extinction est ce qui rend l'abandon lisible ; supprimer l'un rend l'autre inintelligible.
+- La capture est posée **sur la bande** et non sur la flèche pressée. Au doigt elle serait sinon implicite et attachée à cette flèche ; à la souris, il n'y en aurait aucune et un relâchement hors de la bande laisserait le geste ouvert pour toujours.
+- **Un appui maintenu est aussi le geste de sélection du navigateur** : iOS ouvre sa bulle « Tout sélectionner / Copier », Chrome ses poignées. Elle interrompt le geste — l'appareil reprend le pointeur et envoie `pointercancel`, la pièce ne tombe pas. D'où `user-select` et `-webkit-touch-callout` à `none` sur toute la surface de jeu, `App.css`, réserves et plateau compris : le doigt y dérive pendant la visée. `touch-action` ne couvre pas ce cas, il n'arbitre que le défilement.
+- `touch-action: none` sur la bande est ce qui rend le geste possible : sans lui, le navigateur retient les événements le temps de décider s'il s'agit d'un défilement, et la bande ne répond qu'à la fin du geste. C'est le seul endroit de la page d'où l'on ne peut plus faire défiler.
+- Le clic est **conservé pour la seule activation sans pointeur**, reconnue à `detail === 0` : clavier et aides techniques. Un geste au pointeur pose déjà au relâchement, et le clic qui le suit poserait une seconde fois. Même raison côté `App.tsx`, dont le raccourci `Entrée`/`Espace` s'efface quand le focus est **sur une flèche de colonne** : elle produit son propre clic, et deux poses d'affilée jouent réellement deux pièces quand la sélection est conservée après un tour passé. Ne pas élargir ce garde à tous les boutons : la pièce de réserve garde le focus après sa sélection, et c'est de là qu'on vise aux flèches puis qu'on pose à `Entrée`.
 
 ## Conseil et chemin gagnant
 

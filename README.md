@@ -77,7 +77,8 @@ src/
     queryState.ts       construction d'un état depuis la query string
   components/           affichage React — voir src/components/CLAUDE.md
     Board.tsx           grille, ghost, surlignage du chemin gagnant et du conseil
-    DropZone.tsx        entrées de colonnes pour pointeur grossier et clavier
+    DropZone.tsx        entrées de colonnes : geste maintenu au doigt, clavier
+    dropAim.ts          colonne visée par une abscisse d'écran sur la bande
     PieceShape.tsx      rendu SVG d'une orientation
     PlexiDefs.tsx       `<defs>` partagés : biseau, reflet et ombre des pièces
     PieceTray.tsx       réserve d'un joueur

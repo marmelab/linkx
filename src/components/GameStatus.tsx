@@ -3,7 +3,12 @@ import type { GameEvent, PlayerId } from '../game/types'
 type GameStatusProps = {
   activePlayer: PlayerId
   event: GameEvent
-  ghostMessage: string | null
+  /**
+   * Motif du refus que montre l'aperçu de chute. Il est **annoncé et non
+   * peint** : l'aperçu rouge le dit déjà à qui voit l'écran, et l'écrire à côté
+   * doublait une information immédiate.
+   */
+  ghostRefusal: string | null
   /** Vrai pendant que l'ordinateur cherche son coup. */
   thinking?: boolean
   /**
@@ -19,18 +24,21 @@ const NAMES: Record<PlayerId, string> = { blue: 'bleus', white: 'blancs' }
 export function GameStatus({
   activePlayer,
   event,
-  ghostMessage,
+  ghostRefusal,
   thinking = false,
   hintPending = false,
 }: GameStatusProps) {
   let message: string | null = null
+  // Ce qui se voit déjà à l'écran se dit sans s'écrire : le refus n'existe que
+  // pour l'annonce, tandis qu'un tour passé ou une attente n'ont aucune
+  // traduction visuelle et restent peints.
+  let announcement: string | null = ghostRefusal
 
   if (event?.type === 'forced-pass') {
     message = `Aucun coup pour les ${NAMES[event.player]} : tour passé automatiquement.`
-  } else if (event?.type === 'invalid') {
-    message = 'Pose refusée.'
+  } else if (event?.type === 'invalid' && !announcement) {
+    announcement = 'Pose refusée.'
   }
-  if (ghostMessage) message = ghostMessage
   if (hintPending) message = 'Recherche du meilleur coup…'
   if (thinking) message = 'L’ordinateur réfléchit…'
 
@@ -55,6 +63,7 @@ export function GameStatus({
       <p className="visually-hidden">
         Tour des {NAMES[activePlayer]} : leur réserve devient la réserve active.
       </p>
+      {announcement && <p className="visually-hidden">{announcement}</p>}
       {message && <p>{message}</p>}
     </div>
   )

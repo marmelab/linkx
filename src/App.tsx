@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useReducer, useState } from 'react'
+import { useEffect, useMemo, useReducer, useRef, useState } from 'react'
 import './App.css'
 import { Board } from './components/Board'
 import { DropZone } from './components/DropZone'
@@ -69,6 +69,9 @@ function App() {
     hint: Hint | null
   } | null>(null)
   const pointerHasHover = usePointerHasHover()
+  // La bande de visée a besoin des bords du plateau : un geste maintenu y garde
+  // sa cible, et c'est en sortant de cette surface qu'on renonce à poser.
+  const boardFrame = useRef<HTMLDivElement>(null)
   const hintPending = hintRequest === state
   const hint = hintResult?.state === state ? hintResult.hint : null
 
@@ -213,6 +216,11 @@ function App() {
         return
       }
       if ((event.key === 'Enter' || event.key === ' ') && dropColumn !== null) {
+        // La flèche de colonne pose déjà par son propre clic : poser ici en plus
+        // jouerait deux pièces d'un seul appui quand la sélection est conservée.
+        // Le garde ne vise qu'elle : ailleurs — sur la pièce de réserve qui
+        // garde le focus après sa sélection, par exemple — Entrée doit poser.
+        if (target.closest('.drop-zone')) return
         event.preventDefault()
         dispatch({ type: 'DROP_SELECTED_SHAPE', column: dropColumn })
         return
@@ -239,7 +247,9 @@ function App() {
     )
   }
 
-  const ghostMessage = ghost
+  // Le refus n'est pas peint : l'aperçu rouge le dit déjà. Il reste **annoncé**,
+  // une couleur n'existant pas pour qui ne voit pas l'écran.
+  const ghostRefusal = ghost
     ? ghost.valid
       ? null
       : DROP_MESSAGES[ghost.reason]
@@ -287,7 +297,7 @@ function App() {
                 <GameStatus
                   activePlayer={state.activePlayer}
                   event={state.lastEvent}
-                  ghostMessage={ghostMessage}
+                  ghostRefusal={ghostRefusal}
                   thinking={aiTurn}
                   hintPending={hintPending}
                 />
@@ -353,9 +363,8 @@ function App() {
           {aiming ? (
             <DropZone
               enabled
-              hoveredColumn={pointedColumn}
-              invalid={Boolean(ghost && !ghost.valid)}
               silent={pointerHasHover}
+              surface={boardFrame}
               onHover={setPointedColumn}
               onDrop={(column) => {
                 const target = columnFor(column)
@@ -368,6 +377,7 @@ function App() {
             <div className="drop-zones-spacer" aria-hidden="true" />
           )}
           <Board
+            ref={boardFrame}
             board={state.board}
             ghost={state.phase === 'playing' ? ghost : null}
             ghostPlayer={state.activePlayer}

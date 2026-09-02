@@ -1,3 +1,4 @@
+import type { Ref } from 'react'
 import { BOARD_SIZE } from '../game/types'
 import type { Board as BoardType, DropResult, PlayerId, Point } from '../game/types'
 import { Fireworks } from './Fireworks'
@@ -28,6 +29,12 @@ type BoardProps = {
   fallingPieceId?: string | null
   /** Visée au pointeur : la colonne survolée porte la pièce, le clic la pose. */
   aiming?: boolean
+  /**
+   * Cadre du plateau. Il prolonge vers le bas la surface de visée de la bande
+   * d'entrée, qui a besoin de ses bords pour savoir si un geste maintenu se
+   * termine sur le jeu ou en dehors.
+   */
+  ref?: Ref<HTMLDivElement>
   onPointColumn?: (column: number | null) => void
   onDropColumn?: (column: number) => void
 }
@@ -129,6 +136,7 @@ export function Board({
   glowPieceId = null,
   fallingPieceId = null,
   aiming = false,
+  ref,
   onPointColumn,
   onDropColumn,
 }: BoardProps) {
@@ -143,7 +151,7 @@ export function Board({
   const trail = getWinningTrail(winningPath)
 
   return (
-    <div className="board-frame">
+    <div className="board-frame" ref={ref}>
       {/* Les `url(#…)` de matière portent sur tout le document : ce jeu unique
           sert aussi la réserve et l'aperçu central, qui ont leur propre `<svg>`. */}
       <PlexiDefs />
