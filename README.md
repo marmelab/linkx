@@ -20,6 +20,8 @@ npm run dev
 | `npm run build` | `tsc -b` puis build de production |
 | `npm run preview` | sert le build de production |
 | `node scripts/generate-icons.mjs` | régénère les icônes PNG de `public/` |
+| `npx supabase start` | pile Supabase locale, dans Docker |
+| `npx supabase functions serve <nom> --no-verify-jwt` | sert une fonction edge en local |
 | `node node_modules/vite-node/dist/cli.mjs scripts/duel-maitre.ts` | duel du maître contre son propre passé, hors de Vitest |
 | `node node_modules/vite-node/dist/cli.mjs scripts/generate-opening-book.ts --depth 9 --jobs 8` | régénère le livre d'ouverture du maître (hors ligne, ~8 h 30 à huit lots) |
 | `node node_modules/vite-node/dist/cli.mjs scripts/audit-livre.ts` | compare chaque coup du livre à la recherche en direct |
@@ -48,7 +50,9 @@ Deux documents, deux périmètres disjoints. Ne pas recopier l'un dans l'autre.
 - Vite 8 demande Node `20.19+`.
 - `package-lock.json` fait foi : utiliser `npm`.
 - `scripts/*.ts` sont vérifiés au build via `tsconfig.scripts.json` (résolution bundler, types Node), et se lancent avec `vite-node` ; les `.mjs` restent du JS pur.
-- Aucune dépendance d'état, de routage ou de rendu graphique. Le jeu tient dans un reducer React et des fonctions TypeScript pures ; ne pas en ajouter sans nécessité démontrée.
+- Aucune dépendance d'état ou de rendu graphique. Le jeu tient dans un reducer React et des fonctions TypeScript pures ; ne pas en ajouter sans nécessité démontrée.
+- **Les imports relatifs de `src/game/` portent leur extension `.ts`** — et eux seuls dans tout le dépôt. Ce n'est pas une coquetterie : Deno l'exige, et c'est ce qui permet aux fonctions edge d'importer les règles sans copie (voir « Plateforme de tournoi »). `tsconfig.app.json` l'autorise déjà par `allowImportingTsExtensions`. Ne pas la retirer, et ne pas l'étendre au reste de `src/`, qui n'est jamais chargé par Deno. Le générateur du livre d'ouverture écrit lui aussi cette forme : `scripts/generate-opening-book.ts` la produit dans son en-tête.
+- Le backend vit dans `supabase/`, en Deno. L'interface en ligne de commande Supabase est une dépendance de développement : `npx supabase …`, jamais un binaire global.
 
 ## Arborescence
 
@@ -98,6 +102,12 @@ src/
   main.tsx              montage React et enregistrement du service worker
 public/                 copié tel quel : manifeste, service worker, icônes
 scripts/generate-icons.mjs · scripts/generate-opening-book.ts · scripts/duel-maitre.ts · scripts/audit-livre.ts · scripts/duel-livre.ts · scripts/bench-moteur.ts · scripts/duel-appariee.ts · scripts/pecher-bevues.ts · scripts/empreinte-evaluation.ts · fixtures/urls.md : outils de mesure et positions de test
+
+supabase/               backend de la plateforme de tournoi, en Deno
+  config.toml           configuration du projet local
+  functions/
+    _shared/            logique pure partagée, testée par le Vitest du dépôt
+    ping-regles/        fonction d'essai : prouve que src/game se charge sous Deno
 ```
 
 Les tests vivent à côté de leur module, en `*.test.ts` / `*.test.tsx`.
@@ -115,6 +125,17 @@ Les tests vivent à côté de leur module, en `*.test.ts` / `*.test.tsx`.
 - Le livre d'ouverture (`openingBook.ts`) ne guide que le **maître**, sur son premier coup, et retombe sur la recherche en dehors de son périmètre. `openingBook.data.ts` est **généré** par `scripts/generate-opening-book.ts` à `--depth 9 --jobs 8`, deux paliers au-delà de ce que le jeu atteint, en huit heures et demie ; ne pas l'éditer à la main. Cette profondeur suit le moteur : à chaque fois qu'il gagne un palier en direct, le livre doit en gagner un aussi, sinon il ne fait plus que répéter ce que le jeu trouve seul. Il doit être engendré par le moteur courant : un livre hérité d'une autre évaluation affaiblit la recherche. Engendré par le moteur qui le lit, **deux** paliers au-dessus de ce que le jeu atteint, il la renforce — mesuré au budget du jeu, arbitré à profondeur 8 : contre la recherche en direct, meilleur 34 fois sur 50, à égalité 16, jamais moins bon ; et comparé au livre de profondeur 7 sur les 26 ouvertures où ils diffèrent, **26 à 0** (p < 10⁻⁷). **Un seul palier d'avance ne suffit pas** : le livre de profondeur 7 était moins bon que le jeu direct sur 14 ouvertures sur 50. Les entrées **récoltées** ne sont qu'à un palier au-dessus du jeu direct, deux plis étant perdus depuis la racine : auditées une à une contre la recherche en direct au budget du jeu, elles sont meilleures 7 fois, à égalité 8, moins bonnes 3 (p = 0,34). C'est un petit positif sans significativité, gardé parce que l'alternative pour ces positions-là n'est pas un meilleur coup de livre mais **aucune entrée du tout**. Ne pas confondre avec la mesure du premier coup blanc, où un palier d'avance était nuisible : là, l'alternative était un livre à deux paliers. Et l'arbitre doit voir plus loin que les deux coups qu'il départage, sans quoi il ratifie celui qu'il aurait joué — c'est un arbitre trop court qui avait laissé croire ce livre-là inoffensif. Ses seules clés sont `white|`, l'ordinateur jouant toujours blanc : un duel qui alterne les couleurs le rend inerte une partie sur deux et ne peut donc pas le mesurer. C'est `scripts/duel-livre.ts` qui le mesure, apparié et à ouverture imposée, jamais `duel-maitre.ts`.
 - L'état de survol, les délais et les animations restent dans l'UI tant qu'ils n'affectent pas les règles.
 - `App.tsx` ne fait que câbler : reducer, tour de l'ordinateur, raccourcis clavier. Les invariants qu'il doit respecter sont détaillés dans les deux `CLAUDE.md` de répertoire.
+
+## Plateforme de tournoi
+
+Périmètre séparé du jeu. `plan.md`, histoires 14 à 16, fait foi pour le comportement ; cette section pour les contrats techniques.
+
+- **Les règles ne sont jamais réécrites côté serveur.** Les fonctions edge importent `src/game/*.ts` par chemin relatif (`../../../src/game/moveNotation.ts`). Ce n'est pas une hypothèse : `deno check` passe sur tout le graphe en mode strict, et le bundler de `supabase functions serve` accepte les fichiers situés hors de `supabase/`. Corollaire : ne jamais copier un module de règles dans `supabase/`, et ne jamais y redéfinir une règle.
+- **Arbitrer un coup, c'est `parseGameRecord(notation + ' ' + coup)`.** Un refus rend un `NotationError` typé — sept motifs, déjà spécifiés — qui se journalise tel quel. Ce chemin ne charge ni le livre d'ouverture ni `engineSearch` : huit modules, une quinzaine de kilo-octets.
+- **Le bot maison est le seul consommateur serveur de `chooseMoveForDifficulty`.** Deux pièges. Sans troisième argument `random`, `budgetMs` est ignoré et la recherche bascule en plafond de nœuds (`minimax.ts`). Et `engineSearch` **n'est pas réentrant** : table de transposition, tueurs et position de recherche sont des singletons de module, remis à zéro à chaque appel ; deux recherches simultanées dans le même isolate se corrompent. Les appels s'y sérialisent.
+- **Limites de l'edge runtime** : 2 s de CPU par requête — l'attente réseau n'y compte pas —, 150 s d'horloge, 256 Mio. L'arbitre y tient sans effort ; le bot maison, non, d'où un budget de recherche borné bien en deçà des 6 s du jeu.
+- **La logique pure vit dans `supabase/functions/_shared/`** et se teste avec le Vitest du dépôt, pas avec un second lanceur. Une fonction edge ne porte que du transport : lire la requête, appeler `_shared`, répondre.
+- **Le service worker ne voit pas l'API** : il rend la main sur toute requête qui n'est pas un GET de même origine (`public/sw.js`), et l'API est servie depuis un autre domaine. Ne pas lui ajouter d'exception, ce serait incrémenter `VERSION` et revalider le mode hors ligne pour rien.
 
 ## Tests et vérification
 
@@ -146,5 +167,6 @@ npm run build
 - Préférer de petits composants et des fonctions nommées aux duplications de logique.
 - **Commenter peu.** Un commentaire n'explique que ce qui n'est pas clair à la lecture du code. Ne rien redire de ce que `plan.md` ou un `CLAUDE.md` spécifie déjà : le doublon se périme. Souvent, un meilleur nom suffit.
 - Ne pas modifier les matrices des pièces, les règles de support ou la connectivité pour résoudre un problème purement visuel.
-- Ne pas introduire de backend, de jeu en réseau, de comptes, de persistance ou d'effets sonores sans demande explicite. Seule exception accordée à ce jour : le niveau de l'ordinateur, retenu dans `localStorage` par `useStoredDifficulty.ts`. Rien d'autre n'est stocké — surtout pas l'état d'une partie, dont `plan.md` exige qu'elle reparte à zéro. Tout ce qui est relu du stockage se valide avant emploi. L'adversaire ordinateur existe déjà et reste local : `minimax.ts` tourne dans le navigateur, sans appel réseau.
+- **Le jeu et la plateforme sont deux périmètres, et la frontière est la règle la plus importante du dépôt.** Le jeu reste jouable intégralement hors ligne, sans compte et sans le moindre appel réseau, adversaire maître compris : aucune de ses fonctions ne doit dépendre de `supabase/`. Comptes, persistance et service distant n'existent que pour la plateforme de tournoi (`plan.md`, histoires 14 à 16). Ne rien ajouter au jeu qui l'y rattache, et ne pas introduire de jeu en réseau entre humains ni d'effets sonores sans demande explicite.
+- Côté navigateur, le seul stockage du jeu reste le niveau de l'ordinateur, retenu dans `localStorage` par `useStoredDifficulty.ts` ; l'état d'une partie n'est jamais stocké, `plan.md` exigeant qu'elle reparte à zéro. Tout ce qui est relu du stockage se valide avant emploi.
 - Avant de terminer, examiner le diff, exécuter `git diff --check` et résumer les vérifications effectuées.
