@@ -43,7 +43,8 @@
 .text-button:hover { color: var(--blue); text-decoration: underline; }
 
 .overline,
-.status-eyebrow {
+.status-eyebrow,
+.tournament-table th {
   color: #748096;
   font-size: 0.68rem;
   font-weight: 800;
@@ -158,6 +159,202 @@
    marge intérieure lui rend une cible tactile utilisable sans lui donner une
    taille de texte à elle. */
 .setup-note select { padding: 0.45rem 0.4rem; font: inherit; }
+
+/* L'entrée du tournoi est une ancre — elle change le fragment, ce que le point
+   d'entrée écoute — et non un bouton : elle doit néanmoins se lire comme les
+   deux autres, au même rang. */
+a.mode-button { text-decoration: none; }
+
+/* Plateforme de tournoi (plan.md, histoire 16) ----------------------------
+   Quatre écrans branchés sur le fragment `#/…`, montés sur le fond et la carte
+   de l'écran d'accueil, la carte simplement élargie.
+
+   **Trois niveaux de texte, pas un de plus** : le titre `.tournament-title`,
+   l'intertitre en `.overline` — que les en-têtes de tableau reprennent, ils ne
+   créent donc pas un quatrième niveau —, et le corps à 1rem, en `--ink` ou en
+   `--muted`. Ne pas y introduire de taille supplémentaire : `small` et `code`
+   reprennent explicitement celle du corps.
+
+   **Aucun état n'est porté par la seule couleur** : chaque pastille `.badge`
+   contient son mot, et l'issue d'une partie est une phrase entière. */
+.tournament-shell {
+  --topbar-height: calc(58px + env(safe-area-inset-top, 0px));
+  --content-width: 1410px;
+
+  min-height: 100vh;
+  min-height: 100dvh;
+  background: var(--paper);
+}
+
+/* La carte se cale en haut plutôt qu'au centre : ces écrans sont longs, et un
+   tableau centré verticalement sauterait à chaque filtre. */
+.tournament-screen {
+  min-height: calc(100vh - var(--topbar-height));
+  min-height: calc(100dvh - var(--topbar-height));
+  align-content: start;
+}
+
+.tournament-card {
+  width: min(100%, 980px);
+  padding: 2rem 2.2rem 2.2rem;
+  text-align: left;
+}
+
+/* La barre du jeu masque ses liens en dessous de 620px, faute de place à côté
+   du plateau. Ici il n'y a pas de plateau : les liens restent, et la barre
+   passe à la ligne plutôt que de déborder. */
+.tournament-nav { flex-wrap: wrap; row-gap: 0.3rem; }
+/* Spécificité et non ordre : la règle qui les masque vit dans la requête média
+   du jeu, bien plus bas dans ce fichier. */
+.tournament-shell .topbar-actions .text-button { display: inline-flex; }
+.tournament-nav .text-button.is-active { color: var(--blue); text-decoration: underline; }
+a.mini-brand { text-decoration: none; }
+
+.tournament-title { margin: 0 0 0.5rem; font-size: 1.7rem; font-weight: 800; line-height: 1.15; }
+.tournament-subtitle { margin: 1.8rem 0 0.7rem; }
+.tournament-lede { max-width: 60ch; margin: 0 0 1.3rem; color: var(--muted); line-height: 1.6; }
+.tournament-note { margin: 0.8rem 0; color: var(--muted); line-height: 1.6; }
+.tournament-note .secondary-button { margin-top: 0.5rem; }
+.tournament-error { margin: 0.3rem 0 0; color: var(--red); line-height: 1.5; }
+.tournament-card a { color: var(--blue); }
+.tournament-card a.secondary-button,
+.topbar a.secondary-button { display: inline-flex; align-items: center; color: var(--ink); text-decoration: none; }
+
+.wave-banner {
+  display: grid;
+  gap: 0.15rem;
+  margin: 0 0 1.4rem;
+  padding: 0.8rem 1rem;
+  border: 1px solid #bcd4f5;
+  border-radius: 6px;
+  background: var(--blue-pale);
+  line-height: 1.5;
+}
+
+/* Filet de sécurité : le tableau se replie en cartes avant d'en avoir besoin,
+   mais un contenu inattendu défile ici plutôt que dans la page. */
+.tournament-table-frame { overflow-x: auto; }
+
+.tournament-table { width: 100%; border-collapse: collapse; }
+.tournament-table th { padding: 0.5rem 0.6rem; text-align: left; }
+.tournament-table td { padding: 0.5rem 0.6rem; border-top: 1px solid var(--line); overflow-wrap: break-word; vertical-align: top; }
+/* `break-word` et non `anywhere` : ce dernier entre dans le calcul de la
+   largeur minimale des colonnes, qui se resserrent alors jusqu'à couper les
+   mots au milieu. Seules les valeurs sans espaces — adresses, secrets — ont
+   besoin d'être coupées n'importe où. */
+.game-actions .secondary-button { white-space: nowrap; }
+.tournament-table--journal { margin: 0.3rem 0; }
+.journal-row > td { background: #f2f4f8; }
+.game-actions { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+
+/* La pastille porte son mot : la teinte ne fait que le redire. */
+.badge {
+  display: inline-block;
+  padding: 0.05rem 0.5rem;
+  border: 1px solid #b9c0cc;
+  border-radius: 999px;
+  background: #fff;
+  white-space: nowrap;
+}
+
+.badge--active { border-color: #7bb37f; background: #eef8ef; }
+.badge--en_attente { border-color: #d3a44e; background: #fdf4e3; }
+.badge--sommeil { border-color: #9aa3b2; background: #f1f2f5; }
+.badge--retiree { border-color: #d99aa0; background: #fdf0f1; }
+
+.tournament-form { display: grid; max-width: 460px; gap: 0.9rem; margin: 0 0 1rem; }
+.tournament-form .primary-button { justify-self: start; }
+.tournament-field { display: grid; gap: 0.25rem; margin: 0; }
+.tournament-field label { font-weight: 700; }
+.tournament-field input,
+.tournament-field select {
+  min-width: 0;
+  padding: 0.55rem 0.6rem;
+  border: 1px solid #b9c0cc;
+  border-radius: 6px;
+  background: #fff;
+  font: inherit;
+}
+
+/* Ni `small` ni `code` ne doivent créer un quatrième corps de texte. */
+.tournament-hint,
+.tournament-card code { font-size: inherit; }
+.tournament-hint { color: var(--muted); }
+.tournament-filters { display: flex; flex-wrap: wrap; gap: 1rem; margin: 0 0 1.2rem; }
+
+.bot-list { display: grid; gap: 0.8rem; margin: 0 0 1rem; padding: 0; list-style: none; }
+.bot-card { padding: 0.9rem 1rem; border: 1px solid var(--line); border-radius: 6px; background: #fff; }
+.bot-card__head { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem; margin: 0; }
+.bot-card__address { margin: 0.35rem 0 0; color: var(--muted); overflow-wrap: anywhere; }
+.bot-card__summary { margin: 0.35rem 0 0; color: var(--muted); line-height: 1.5; }
+.bot-card__actions { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 0.8rem 0 0; }
+
+/* Le secret ne s'affiche qu'une fois : l'encadré le dit, et le bouton de copie
+   est à côté de la valeur, pas ailleurs. */
+.secret-panel {
+  margin: 0 0 1.2rem;
+  padding: 0.9rem 1rem;
+  border: 2px solid var(--red);
+  border-radius: 6px;
+  background: #fff7f7;
+  line-height: 1.55;
+}
+
+.secret-panel p { margin: 0 0 0.5rem; }
+.secret-panel p:last-child { margin-bottom: 0; }
+.secret-panel__value { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem; }
+.secret-panel__value code { overflow-wrap: anywhere; }
+
+/* Sous 720px le tableau se **replie en cartes** : une ligne devient un bloc,
+   chaque cellule portant son intitulé. C'est ce qui évite le défilement
+   horizontal exigé par l'histoire 16 — l'en-tête devient inutile et disparaît.
+   Une cellule vide — l'état d'une IA simplement active — ne laisse pas de
+   ligne fantôme. */
+/* Sept colonnes de prose ne tiennent pas dans la carte avant 900px : la table
+   des parties se replie plus tôt que celle du classement, qui n'en a que six,
+   toutes courtes. */
+@media (max-width: 900px) {
+  .tournament-table--wide,
+  .tournament-table--wide tbody,
+  .tournament-table--wide tr,
+  .tournament-table--wide td { display: block; width: auto; }
+  .tournament-table--wide thead { display: none; }
+  .tournament-table--wide tr {
+    margin-bottom: 0.6rem;
+    padding: 0.5rem 0.7rem;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: #fff;
+  }
+  .tournament-table--wide td { display: flex; justify-content: space-between; gap: 1rem; padding: 0.2rem 0; border: 0; }
+  .tournament-table--wide td:empty { display: none; }
+  .tournament-table--wide td::before { content: attr(data-label); color: var(--muted); }
+  .tournament-table--wide .journal-row > td { padding: 0; background: transparent; }
+  .tournament-table--wide .journal-row > td::before { content: none; }
+}
+
+@media (max-width: 720px) {
+  .tournament-card { padding: 1.4rem 1.1rem 1.6rem; }
+  .tournament-table,
+  .tournament-table tbody,
+  .tournament-table tr,
+  .tournament-table td { display: block; width: auto; }
+  .tournament-table thead { display: none; }
+  .tournament-table tr {
+    margin-bottom: 0.6rem;
+    padding: 0.5rem 0.7rem;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: #fff;
+  }
+  .tournament-table td { display: flex; justify-content: space-between; gap: 1rem; padding: 0.2rem 0; border: 0; }
+  .tournament-table td:empty { display: none; }
+  .tournament-table td::before { content: attr(data-label); color: var(--muted); }
+  .journal-row > td { padding: 0; background: transparent; }
+  .journal-row > td::before { content: none; }
+  .tournament-filters { gap: 0.7rem; }
+  .tournament-filters .tournament-field { flex: 1 1 12rem; }
+}
 
 /* Game chrome */
 .game-shell {

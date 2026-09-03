@@ -52,6 +52,7 @@ Deux documents, deux périmètres disjoints. Ne pas recopier l'un dans l'autre.
 - `package-lock.json` fait foi : utiliser `npm`.
 - `scripts/*.ts` sont vérifiés au build via `tsconfig.scripts.json` (résolution bundler, types Node), et se lancent avec `vite-node` ; les `.mjs` restent du JS pur.
 - Aucune dépendance d'état ou de rendu graphique. Le jeu tient dans un reducer React et des fonctions TypeScript pures ; ne pas en ajouter sans nécessité démontrée.
+- **Deux dépendances, et deux seulement, servent la plateforme de tournoi** : `react-router` (v7, `createHashRouter`) et `@supabase/supabase-js`. Elles ne sont **jamais** chargées par le jeu — `src/Root.tsx` les tient derrière un `React.lazy`, si bien qu'elles vivent dans un morceau à part et n'entrent pas dans le bundle d'entrée. Le routage est en **mode hash** parce que GitHub Pages sert des fichiers statiques : `/linkx/classement` rendrait une 404 au rechargement. La query string reste au jeu, dont `?moves=` ouvre une partie.
 - **Les imports relatifs de `src/game/` portent leur extension `.ts`** — et eux seuls dans tout le dépôt. Ce n'est pas une coquetterie : Deno l'exige, et c'est ce qui permet aux fonctions edge d'importer les règles sans copie (voir « Plateforme de tournoi »). `tsconfig.app.json` l'autorise déjà par `allowImportingTsExtensions`. Ne pas la retirer, et ne pas l'étendre au reste de `src/`, qui n'est jamais chargé par Deno. Le générateur du livre d'ouverture écrit lui aussi cette forme : `scripts/generate-opening-book.ts` la produit dans son en-tête.
 - Le backend vit dans `supabase/`, en Deno. L'interface en ligne de commande Supabase est une dépendance de développement : `npx supabase …`, jamais un binaire global.
 
@@ -100,8 +101,23 @@ src/
     usePointerHasHover.ts  détection du survol réel du pointeur
     useStoredDifficulty.ts  niveau de l'ordinateur retenu d'une partie à l'autre
     useAiMove.ts        recherche du coup de l'ordinateur, worker et repli synchrone
+  tournament/           écrans de la plateforme de tournoi, chargés paresseusement
+    config.ts           lecture des variables de build ; sans elles, pas de tournoi
+    routes.ts           chemins du fragment, retour du lien magique, module pur
+    schedule.ts         prochaine vague du jeudi 0 h, heure de Paris, et rebours
+    outcomes.ts         vocabulaire de la base traduit en français, à un seul endroit
+    ranking.ts          ordre du classement et écart signé
+    games.ts            parties vues du côté de l'auteur, et filtres
+    botSummary.ts       bilan de la dernière vague d'une IA
+    types.ts            lignes lues de la base
+    api.ts              client Supabase, lectures et fonctions edge
+    session.ts          session de l'auteur, un seul abonnement
+    useAsync.ts, AsyncPanel.tsx  chargement, panne et reprise
+    TournamentApp.tsx   routeur de fragment, cible du React.lazy
+    TournamentLayout.tsx, LeaderboardScreen, LoginScreen, MyBotsScreen, MyGamesScreen
   aiWorker.ts           tour de l'ordinateur hors du fil principal
   App.tsx               câblage du reducer, tour de l'ordinateur, raccourcis clavier
+  Root.tsx              aiguillage jeu / tournoi sur le fragment, avant tout routeur
   App.css, index.css    toute la mise en page
   main.tsx              montage React et enregistrement du service worker
 public/                 copié tel quel : manifeste, service worker, icônes
@@ -118,9 +134,18 @@ supabase/               backend de la plateforme de tournoi, en Deno
       safeUrl.ts        contrôle pur d'une adresse d'IA, résolveur DNS injecté
       denoDns.ts        résolveur DNS de Deno, et contrôle d'adresse complet
       botClient.ts      appel signé d'une IA distante, avec délai et sans redirection
+      rest.ts           accès PostgREST des fonctions d'ordonnancement, `fetch` injecté
+      waveWindow.ts     fenêtre d'une vague : jeudi 0 h – 12 h à Paris, sans décalage en dur
+      wavePlan.ts       ouverture, qualification, clôture et mise en sommeil d'une vague
+      gameTick.ts       coup suivant d'une partie, et écriture idempotente de son issue
+      tickBudget.ts     budget d'un tour d'arbitrage, et les trois délais de la file
     ping-regles/        fonction d'essai : prouve que src/game se charge sous Deno
     register-bot/       déclaration d'une IA par son auteur, secret rendu une fois
     probe-bot/          sonde publique : appelle une IA sur une position d'essai
+    scheduler/          ouvre la vague, qualifie, remet en file, clôt à midi
+    referee-tick/       dépile la file et joue un coup par partie, sous budget d'horloge
+  migrations/           schéma, file pgmq des coups, jetons d'appel, cron des vagues
+  tests/                pgTAP : ce qui ne se prouve qu'en base — droits, file, jetons
 ```
 
 Les tests vivent à côté de leur module, en `*.test.ts` / `*.test.tsx`.
@@ -148,7 +173,11 @@ Périmètre séparé du jeu. `plan.md`, histoires 14 à 16, fait foi pour le com
 - **Le bot maison est le seul consommateur serveur de `chooseMoveForDifficulty`.** Deux pièges. Sans troisième argument `random`, `budgetMs` est ignoré et la recherche bascule en plafond de nœuds (`minimax.ts`). Et `engineSearch` **n'est pas réentrant** : table de transposition, tueurs et position de recherche sont des singletons de module, remis à zéro à chaque appel ; deux recherches simultanées dans le même isolate se corrompent. Les appels s'y sérialisent.
 - **Limites de l'edge runtime** : 2 s de CPU par requête — l'attente réseau n'y compte pas —, 150 s d'horloge, 256 Mio. L'arbitre y tient sans effort ; le bot maison, non. Son budget de recherche est de **700 ms, mesuré** : à 1000 ms, 26 réponses sur 60 étaient coupées. Et la limite de processeur est atteinte au **démarrage de l'isolate** — livre d'ouverture et moteur —, pas par la recherche : c'est le premier appel qui coûte, pas le calcul. Toute modification de ce budget se remesure.
 - **La logique pure vit dans `supabase/functions/_shared/`** et se teste avec le Vitest du dépôt, pas avec un second lanceur. Une fonction edge ne porte que du transport : lire la requête, appeler `_shared`, répondre.
-- **Le service worker ne voit pas l'API** : il rend la main sur toute requête qui n'est pas un GET de même origine (`public/sw.js`), et l'API est servie depuis un autre domaine. Ne pas lui ajouter d'exception, ce serait incrémenter `VERSION` et revalider le mode hors ligne pour rien.
+- **Le service worker ne voit pas l'API** : il rend la main sur toute requête qui n'est pas un GET de même origine (`public/sw.js`), et l'API est servie depuis un autre domaine. Ne pas lui ajouter d'exception, ce serait incrémenter `VERSION` et revalider le mode hors ligne pour rien. Il précharge en revanche le morceau du tournoi, que son balayage des fragments hachés trouve dans le bundle d'entrée : le hors-ligne emporte donc des écrans qui ne servent qu'en ligne.
+- **Les quatre écrans vivent dans `src/tournament/`**, logique pure et rendu ensemble : la règle « domaine dans `src/game/`, affichage dans `src/components/` » borne le jeu, pas la plateforme. Ce répertoire est **un morceau à part** ; rien du jeu ne doit l'importer, sauf `Root.tsx` (par `React.lazy`) et `SetupPanel.tsx` (pour `config.ts` et `routes.ts`, deux modules sans dépendance).
+- **`VITE_SUPABASE_URL` et `VITE_SUPABASE_ANON_KEY` décident de tout** : sans elles, `config.ts` rend `null`, l'entrée du tournoi disparaît de l'écran d'accueil et le fragment ne charge rien. C'est le cas par défaut d'un dépôt cloné, et il doit le rester : le jeu se joue hors ligne, sans compte et sans appel réseau.
+- **Le libellé d'une ouverture imposée vient de `supabase/functions/_shared/openings.ts`**, importé tel quel par `src/tournament/games.ts`. C'est le seul endroit du dépôt où `src/` lit `supabase/`, et c'est délibéré : recopier ces libellés en ferait une seconde vérité qui divergerait à la première ouverture ajoutée.
+- **Contrat des fonctions edge appelées par les écrans** : `register-bot` reçoit `{ name, url }`, `probe-bot` reçoit `{ url }` ; toutes deux répondent un JSON portant `ok`, `message`, et `field` (`name` ou `url`) sur un refus, que le formulaire affiche **sous le champ nommé**. Le retrait et la réactivation d'une IA passeraient de même par une fonction edge — `statut` est une colonne réservée au service —, mais **aucune ne la sert encore** : `setBotStatus` appelle `update-bot`, contrat supposé, et l'écran rend son refus tel quel.
 
 ## Tests et vérification
 
