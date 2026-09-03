@@ -109,8 +109,17 @@ scripts/generate-icons.mjs · scripts/generate-opening-book.ts · scripts/duel-m
 supabase/               backend de la plateforme de tournoi, en Deno
   config.toml           configuration du projet local
   functions/
-    _shared/            logique pure partagée, testée par le Vitest du dépôt
+    _shared/            logique partagée, testée par le Vitest du dépôt
+      referee.ts        arbitrage d'une partie entre deux IA, sans aucun appel
+      elo.ts            classement Elo et écart type des joueurs
+      schedule.ts       vagues, appariements et avancement d'un tournoi
+      openings.ts       ouvertures imposées, tirées de la partie de référence
+      safeUrl.ts        contrôle pur d'une adresse d'IA, résolveur DNS injecté
+      denoDns.ts        résolveur DNS de Deno, et contrôle d'adresse complet
+      botClient.ts      appel signé d'une IA distante, avec délai et sans redirection
     ping-regles/        fonction d'essai : prouve que src/game se charge sous Deno
+    register-bot/       déclaration d'une IA par son auteur, secret rendu une fois
+    probe-bot/          sonde publique : appelle une IA sur une position d'essai
 ```
 
 Les tests vivent à côté de leur module, en `*.test.ts` / `*.test.tsx`.

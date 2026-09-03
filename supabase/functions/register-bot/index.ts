@@ -11,8 +11,7 @@
  * La partie de qualification est déclenchée par l'ordonnanceur : l'IA reste ici
  * en `en_attente`, et la réponse le dit.
  */
-import { checkBotAddress, checkBotAddressWithDns } from '../_shared/safeUrl.ts'
-import type { AddressVerdict } from '../_shared/safeUrl.ts'
+import { checkBotAddressResolved } from '../_shared/denoDns.ts'
 
 const CORS_HEADERS = {
   'access-control-allow-origin': '*',
@@ -33,48 +32,14 @@ const MAX_NAME_LENGTH = 64
 /** Lettres, chiffres et ponctuation de nom ; ni contrôle, ni balise, ni emoji. */
 const NAME_PATTERN = /^[\p{L}\p{N}][\p{L}\p{N} '._+-]*$/u
 
-type Champ = 'nom' | 'adresse'
+type Field = 'name' | 'url'
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: JSON_HEADERS })
 }
 
-function refus(message: string, status: number, champ: Champ | null = null) {
-  return json({ ok: false, champ, message }, status)
-}
-
-/**
- * Résolution DNS du runtime, quand il l'expose. Un nom introuvable rend une
- * liste vide, que `checkBotAddressWithDns` refuse ; une résolution *impossible*
- * — permission refusée, fonction absente — lève, et l'on s'en tient alors au
- * contrôle d'écriture plutôt que de refuser toutes les adresses.
- */
-async function resolveHost(host: string): Promise<readonly string[]> {
-  const addresses: string[] = []
-  let indisponible = false
-  for (const kind of ['A', 'AAAA'] as const) {
-    try {
-      addresses.push(...(await Deno.resolveDns(host, kind)))
-    } catch (error) {
-      if (!(error instanceof Deno.errors.NotFound)) indisponible = true
-    }
-  }
-  if (addresses.length === 0 && indisponible) {
-    throw new Error('résolution DNS indisponible')
-  }
-  return addresses
-}
-
-async function checkAddress(raw: string): Promise<AddressVerdict> {
-  const verdict = checkBotAddress(raw)
-  if (!verdict.ok || typeof Deno.resolveDns !== 'function') return verdict
-  let addresses: readonly string[]
-  try {
-    addresses = await resolveHost(verdict.host)
-  } catch {
-    return verdict
-  }
-  return await checkBotAddressWithDns(raw, () => Promise.resolve(addresses))
+function refuse(message: string, status: number, field: Field | null = null) {
+  return json({ ok: false, field, message }, status)
 }
 
 /**
@@ -108,49 +73,49 @@ Deno.serve(async (request: Request): Promise<Response> => {
     return new Response(null, { status: 204, headers: CORS_HEADERS })
   }
   if (request.method !== 'POST') {
-    return refus('Utiliser POST.', 405)
+    return refuse('Utiliser POST.', 405)
   }
 
   const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? ''
   const anonKey = Deno.env.get('SUPABASE_ANON_KEY') ?? ''
   const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
   if (!supabaseUrl || !anonKey || !serviceKey) {
-    return refus('Service mal configuré.', 500)
+    return refuse('Service mal configuré.', 500)
   }
 
   const utilisateur = await currentUserId(request, supabaseUrl, anonKey)
   if (!utilisateur) {
-    return refus('Connectez-vous avant de déclarer une IA.', 401)
+    return refuse('Connectez-vous avant de déclarer une IA.', 401)
   }
 
   let payload: unknown
   try {
     payload = await request.json()
   } catch {
-    return refus('Corps JSON illisible.', 400)
+    return refuse('Corps JSON illisible.', 400)
   }
-  const champs = payload as { nom?: unknown; adresse?: unknown } | null
+  const fields = payload as { name?: unknown; url?: unknown } | null
 
-  const nom = typeof champs?.nom === 'string' ? champs.nom.trim() : ''
-  if (nom === '') return refus('Donnez un nom à votre IA.', 400, 'nom')
-  if (nom.length > MAX_NAME_LENGTH) {
-    return refus(
+  const name = typeof fields?.name === 'string' ? fields.name.trim() : ''
+  if (name === '') return refuse('Donnez un nom à votre IA.', 400, 'name')
+  if (name.length > MAX_NAME_LENGTH) {
+    return refuse(
       `Le nom ne doit pas dépasser ${MAX_NAME_LENGTH} caractères.`,
       400,
-      'nom',
+      'name',
     )
   }
-  if (!NAME_PATTERN.test(nom)) {
-    return refus(
+  if (!NAME_PATTERN.test(name)) {
+    return refuse(
       'Le nom ne peut contenir que des lettres, des chiffres, des espaces et les signes . _ + - ’',
       400,
-      'nom',
+      'name',
     )
   }
 
-  const adresseBrute = typeof champs?.adresse === 'string' ? champs.adresse : ''
-  const adresse = await checkAddress(adresseBrute)
-  if (!adresse.ok) return refus(adresse.message, 400, 'adresse')
+  const rawUrl = typeof fields?.url === 'string' ? fields.url : ''
+  const address = await checkBotAddressResolved(rawUrl)
+  if (!address.ok) return refuse(address.message, 400, 'url')
 
   const rest = `${supabaseUrl}/rest/v1/bots`
   const serviceHeaders = {
@@ -167,9 +132,9 @@ Deno.serve(async (request: Request): Promise<Response> => {
       `&cree_le=gte.${encodeURIComponent(depuis)}&limit=10`,
     { headers: serviceHeaders },
   )
-  if (!recentes.ok) return refus('Service indisponible, réessayez.', 503)
+  if (!recentes.ok) return refuse('Service indisponible, réessayez.', 503)
   if (((await recentes.json()) as unknown[]).length >= MAX_REGISTRATIONS_PER_WINDOW) {
-    return refus(
+    return refuse(
       'Trop de déclarations en peu de temps : attendez une minute.',
       429,
     )
@@ -181,8 +146,8 @@ Deno.serve(async (request: Request): Promise<Response> => {
     headers: { ...serviceHeaders, prefer: 'return=representation' },
     body: JSON.stringify({
       proprietaire: utilisateur,
-      nom,
-      adresse_service: adresse.address,
+      nom: name,
+      adresse_service: address.address,
       secret_signature: secret,
       statut: 'en_attente',
     }),
@@ -193,9 +158,9 @@ Deno.serve(async (request: Request): Promise<Response> => {
       | { code?: unknown }
       | null
     if (erreur?.code === '23505') {
-      return refus('Ce nom est déjà pris par une autre IA.', 409, 'nom')
+      return refuse('Ce nom est déjà pris par une autre IA.', 409, 'name')
     }
-    return refus('La déclaration a échoué, réessayez.', 503)
+    return refuse('La déclaration a échoué, réessayez.', 503)
   }
 
   const [bot] = (await creation.json()) as Array<Record<string, unknown>>
@@ -203,7 +168,7 @@ Deno.serve(async (request: Request): Promise<Response> => {
     ok: true,
     bot,
     secret,
-    avertissement:
+    warning:
       'Ce secret de signature n’est affiché qu’une seule fois : conservez-le maintenant, il ne sera jamais réaffiché.',
     message:
       'IA déclarée. Elle est en attente de sa partie de qualification contre l’IA de la maison ; elle entrera au classement dès qu’elle l’aura terminée sans faute technique.',

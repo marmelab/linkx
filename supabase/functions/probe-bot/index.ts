@@ -7,7 +7,7 @@
  * Publique et sortante, elle fait émettre à la plateforme une requête vers une
  * adresse choisie par l'appelant. Trois garde-fous, dans cet ordre :
  *
- * 1. `checkBotAddress`, résolution DNS comprise : https, port 443, nom public,
+ * 1. `checkBotAddressResolved`, résolution DNS comprise : https, port 443, nom public,
  *    ni IP littérale ni réseau privé. `botClient` refuse en outre les
  *    redirections, qui ramèneraient l'appel sur une machine non contrôlée.
  * 2. Débit borné par provenance **et** au total, pour que la sonde ne devienne
@@ -21,9 +21,8 @@
  *    journaux.
  */
 import { callBot, MOVE_DEADLINE_MS, toBotReply } from '../_shared/botClient.ts'
+import { checkBotAddressResolved } from '../_shared/denoDns.ts'
 import { judgeReply, openGame, REFUSAL_LABELS } from '../_shared/referee.ts'
-import { checkBotAddress, checkBotAddressWithDns } from '../_shared/safeUrl.ts'
-import type { AddressVerdict } from '../_shared/safeUrl.ts'
 
 /**
  * Position d'essai : les huit premiers coups de la partie de référence du
@@ -57,8 +56,8 @@ function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: JSON_HEADERS })
 }
 
-function refus(message: string, status: number): Response {
-  return json({ ok: false, resultat: 'refus', message }, status)
+function refuse(message: string, status: number): Response {
+  return json({ ok: false, result: 'refused', message }, status)
 }
 
 /**
@@ -90,34 +89,6 @@ function sourceOf(request: Request): string {
   return forwarded.split(',')[0].trim() || 'inconnue'
 }
 
-async function resolveHost(host: string): Promise<readonly string[]> {
-  const addresses: string[] = []
-  let indisponible = false
-  for (const kind of ['A', 'AAAA'] as const) {
-    try {
-      addresses.push(...(await Deno.resolveDns(host, kind)))
-    } catch (error) {
-      if (!(error instanceof Deno.errors.NotFound)) indisponible = true
-    }
-  }
-  if (addresses.length === 0 && indisponible) {
-    throw new Error('résolution DNS indisponible')
-  }
-  return addresses
-}
-
-async function checkAddress(raw: string): Promise<AddressVerdict> {
-  const verdict = checkBotAddress(raw)
-  if (!verdict.ok || typeof Deno.resolveDns !== 'function') return verdict
-  let addresses: readonly string[]
-  try {
-    addresses = await resolveHost(verdict.host)
-  } catch {
-    return verdict
-  }
-  return await checkBotAddressWithDns(raw, () => Promise.resolve(addresses))
-}
-
 function ephemeralSecret(): string {
   const bytes = crypto.getRandomValues(new Uint8Array(32))
   return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('')
@@ -127,40 +98,45 @@ Deno.serve(async (request: Request): Promise<Response> => {
   if (request.method === 'OPTIONS') {
     return new Response(null, { status: 204, headers: CORS_HEADERS })
   }
-  if (request.method !== 'POST') return refus('Utiliser POST.', 405)
+  if (request.method !== 'POST') return refuse('Utiliser POST.', 405)
 
   if (tooFrequent(sourceOf(request), Date.now())) {
-    return refus('Trop de sondes en peu de temps : attendez une minute.', 429)
+    return refuse('Trop de sondes en peu de temps : attendez une minute.', 429)
   }
 
   let payload: unknown
   try {
     payload = await request.json()
   } catch {
-    return refus('Corps JSON illisible.', 400)
+    return refuse('Corps JSON illisible.', 400)
   }
-  const champs = payload as { adresse?: unknown; secret?: unknown } | null
+  const fields = payload as { url?: unknown; secret?: unknown } | null
 
-  const adresse = await checkAddress(
-    typeof champs?.adresse === 'string' ? champs.adresse : '',
+  const address = await checkBotAddressResolved(
+    typeof fields?.url === 'string' ? fields.url : '',
   )
-  if (!adresse.ok) return json({ ok: false, resultat: 'refus', champ: 'adresse', message: adresse.message }, 400)
+  if (!address.ok) {
+    return json(
+      { ok: false, result: 'refused', field: 'url', message: address.message },
+      400,
+    )
+  }
 
   // Un auteur qui vérifie la signature peut donner son propre secret ; sinon la
   // sonde en tire un à usage unique, et l'annonce pour qu'un refus de signature
   // ne se prenne pas pour une panne.
   const secretFourni =
-    typeof champs?.secret === 'string' &&
-    champs.secret.length > 0 &&
-    champs.secret.length <= MAX_SECRET_LENGTH
-  const secret = secretFourni ? String(champs?.secret) : ephemeralSecret()
+    typeof fields?.secret === 'string' &&
+    fields.secret.length > 0 &&
+    fields.secret.length <= MAX_SECRET_LENGTH
+  const secret = secretFourni ? String(fields?.secret) : ephemeralSecret()
 
   const opened = openGame(PROBE_RECORD, { blue: 'sonde', white: 'adversaire' })
-  if (!opened.ok) return refus('Position d’essai invalide.', 500)
+  if (!opened.ok) return refuse('Position d’essai invalide.', 500)
 
   const result = await callBot(
     {
-      address: adresse.address,
+      address: address.address,
       secret,
       gameId: 'sonde',
       color: PROBE_COLOR,
@@ -170,10 +146,10 @@ Deno.serve(async (request: Request): Promise<Response> => {
     { fetch, now: Date.now },
   )
 
-  const commun = {
+  const common = {
     record: PROBE_RECORD,
-    couleur: PROBE_COLOR,
-    latence_ms: result.latencyMs,
+    color: PROBE_COLOR,
+    latency_ms: result.latencyMs,
     signature: secretFourni
       ? 'signée avec le secret fourni'
       : 'signée avec un secret d’essai, qu’une vérification de signature rejettera',
@@ -184,58 +160,58 @@ Deno.serve(async (request: Request): Promise<Response> => {
     // écrit `unreadable`.
     if (result.failure === 'timeout') {
       return json({
-        ...commun,
+        ...common,
         ok: false,
-        resultat: 'timeout',
+        result: 'timeout',
         message: `Hors délai — aucune réponse complète en ${MOVE_DEADLINE_MS} ms.`,
       })
     }
     if (result.failure === 'unreachable') {
       return json({
-        ...commun,
+        ...common,
         ok: false,
-        resultat: 'unreachable',
+        result: 'unreachable',
         message:
           'Injoignable — la route doit répondre 200 en https, sans redirection.',
       })
     }
     return json({
-      ...commun,
+      ...common,
       ok: false,
-      resultat: 'unreadable',
+      result: 'unreadable',
       message:
         'Réponse illisible — attendu un corps JSON { "move": "…" } portant un seul jeton.',
     })
   }
 
-  const coup = result.move.slice(0, MAX_MOVE_ECHO)
+  const move = result.move.slice(0, MAX_MOVE_ECHO)
   const verdict = judgeReply(opened.game, toBotReply(result))
   if (verdict.ok) {
     return json({
-      ...commun,
+      ...common,
       ok: true,
-      resultat: 'ok',
-      coup,
-      message: `OK — coup « ${coup} » accepté par l’arbitre, réponse en ${result.latencyMs} ms.`,
+      result: 'ok',
+      move,
+      message: `OK — coup « ${move} » accepté par l’arbitre, réponse en ${result.latencyMs} ms.`,
     })
   }
 
-  const motif = verdict.outcome.notationReason
-  if (!motif) {
+  const reason = verdict.outcome.notationReason
+  if (!reason) {
     return json({
-      ...commun,
+      ...common,
       ok: false,
-      resultat: 'unreadable',
+      result: 'unreadable',
       message:
         'Réponse illisible — attendu un seul jeton de coup, sans séparateur.',
     })
   }
   return json({
-    ...commun,
+    ...common,
     ok: false,
-    resultat: 'illegal',
-    coup,
-    motif,
-    message: `Coup refusé — « ${coup} » est illégal : ${REFUSAL_LABELS[motif]} (${motif}).`,
+    result: 'illegal',
+    move,
+    reason,
+    message: `Coup refusé — « ${move} » est illégal : ${REFUSAL_LABELS[reason]} (${reason}).`,
   })
 })
