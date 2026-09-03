@@ -31,6 +31,7 @@ npm run dev
 | `node node_modules/vite-node/dist/cli.mjs scripts/duel-appariee.ts --a X --b Y` | duel apparié entre deux réglages du moteur, 48 parties |
 | `node node_modules/vite-node/dist/cli.mjs scripts/pecher-bevues.ts` | fabrique des positions de test là où le moteur se trompe |
 | `node node_modules/vite-node/dist/cli.mjs scripts/empreinte-evaluation.ts` | empreinte et coût de l'évaluation, pour prouver qu'une réécriture ne change aucune valeur |
+| `node node_modules/vite-node/dist/cli.mjs scripts/choisir-ouvertures.ts` | mesure l'équilibre des 50 ouvertures et propose les débuts imposés aux vagues |
 
 ## Source de vérité
 
@@ -145,7 +146,7 @@ Périmètre séparé du jeu. `plan.md`, histoires 14 à 16, fait foi pour le com
 - **Les règles ne sont jamais réécrites côté serveur.** Les fonctions edge importent `src/game/*.ts` par chemin relatif (`../../../src/game/moveNotation.ts`). Ce n'est pas une hypothèse : `deno check` passe sur tout le graphe en mode strict, et le bundler de `supabase functions serve` accepte les fichiers situés hors de `supabase/`. Corollaire : ne jamais copier un module de règles dans `supabase/`, et ne jamais y redéfinir une règle.
 - **Arbitrer un coup, c'est `parseGameRecord(notation + ' ' + coup)`.** Un refus rend un `NotationError` typé — sept motifs, déjà spécifiés — qui se journalise tel quel. Ce chemin ne charge ni le livre d'ouverture ni `engineSearch` : huit modules, une quinzaine de kilo-octets.
 - **Le bot maison est le seul consommateur serveur de `chooseMoveForDifficulty`.** Deux pièges. Sans troisième argument `random`, `budgetMs` est ignoré et la recherche bascule en plafond de nœuds (`minimax.ts`). Et `engineSearch` **n'est pas réentrant** : table de transposition, tueurs et position de recherche sont des singletons de module, remis à zéro à chaque appel ; deux recherches simultanées dans le même isolate se corrompent. Les appels s'y sérialisent.
-- **Limites de l'edge runtime** : 2 s de CPU par requête — l'attente réseau n'y compte pas —, 150 s d'horloge, 256 Mio. L'arbitre y tient sans effort ; le bot maison, non, d'où un budget de recherche borné bien en deçà des 6 s du jeu.
+- **Limites de l'edge runtime** : 2 s de CPU par requête — l'attente réseau n'y compte pas —, 150 s d'horloge, 256 Mio. L'arbitre y tient sans effort ; le bot maison, non. Son budget de recherche est de **700 ms, mesuré** : à 1000 ms, 26 réponses sur 60 étaient coupées. Et la limite de processeur est atteinte au **démarrage de l'isolate** — livre d'ouverture et moteur —, pas par la recherche : c'est le premier appel qui coûte, pas le calcul. Toute modification de ce budget se remesure.
 - **La logique pure vit dans `supabase/functions/_shared/`** et se teste avec le Vitest du dépôt, pas avec un second lanceur. Une fonction edge ne porte que du transport : lire la requête, appeler `_shared`, répondre.
 - **Le service worker ne voit pas l'API** : il rend la main sur toute requête qui n'est pas un GET de même origine (`public/sw.js`), et l'API est servie depuis un autre domaine. Ne pas lui ajouter d'exception, ce serait incrémenter `VERSION` et revalider le mode hors ligne pour rien.
 
