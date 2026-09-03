@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { boardFromText, boardToText, rowsFromBoardText } from './boardText'
-import { hasWinningConnection } from './connectivity'
-import { getConnectionPotential, getConnectionScore } from './evaluation'
-import { enumerateLegalMoves } from './legalMoves'
-import { createInitialInventory } from './pieces'
-import { createEmptyBoard } from './placement'
-import type { Board, Rotation, ShapeId } from './types'
+import { boardFromText, boardToText, rowsFromBoardText } from './boardText.ts'
+import { hasWinningConnection } from './connectivity.ts'
+import { getConnectionPotential, getConnectionScore } from './evaluation.ts'
+import { enumerateLegalMoves } from './legalMoves.ts'
+import { createInitialInventory } from './pieces.ts'
+import { createEmptyBoard } from './placement.ts'
+import type { Board, Rotation, ShapeId } from './types.ts'
 
 type PlayedMove = readonly [
   shapeId: ShapeId,

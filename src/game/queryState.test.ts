@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { boardToText } from './boardText'
-import { createGameStateFromSearch } from './queryState'
+import { boardToText } from './boardText.ts'
+import { createGameStateFromSearch } from './queryState.ts'
 
 const EMPTY_ROWS = Array.from({ length: 9 }, () => '.........')
 

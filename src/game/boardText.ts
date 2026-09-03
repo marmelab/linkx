@@ -1,6 +1,6 @@
-import { createEmptyBoard } from './placement'
-import { BOARD_SIZE } from './types'
-import type { Board, PlayerId } from './types'
+import { createEmptyBoard } from './placement.ts'
+import { BOARD_SIZE } from './types.ts'
+import type { Board, PlayerId } from './types.ts'
 
 const PLAYER_BY_SYMBOL: Partial<Record<string, PlayerId>> = {
   B: 'blue',

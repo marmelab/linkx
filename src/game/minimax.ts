@@ -1,13 +1,13 @@
-import { getLargestZone } from './connectivity'
-import { chooseMasterMove } from './engineSearch'
-import { getConnectionPotential } from './evaluation'
-import { lookupOpeningMove } from './openingBook'
-import { enumerateLegalMoves } from './legalMoves'
-import type { LegalMove } from './legalMoves'
-import { getOtherPlayer, simulateLegalMove } from './simulation'
-import type { GamePosition, SimulationTransition } from './simulation'
-import { DEFAULT_DIFFICULTY, DIFFICULTY_IDS, SHAPE_IDS } from './types'
-import type { Difficulty, GameResult, PlayerId } from './types'
+import { getLargestZone } from './connectivity.ts'
+import { chooseMasterMove } from './engineSearch.ts'
+import { getConnectionPotential } from './evaluation.ts'
+import { lookupOpeningMove } from './openingBook.ts'
+import { enumerateLegalMoves } from './legalMoves.ts'
+import type { LegalMove } from './legalMoves.ts'
+import { getOtherPlayer, simulateLegalMove } from './simulation.ts'
+import type { GamePosition, SimulationTransition } from './simulation.ts'
+import { DEFAULT_DIFFICULTY, DIFFICULTY_IDS, SHAPE_IDS } from './types.ts'
+import type { Difficulty, GameResult, PlayerId } from './types.ts'
 
 /**
  * Barème d'abordabilité par niveau : pour chaque niveau, ses profondeurs en

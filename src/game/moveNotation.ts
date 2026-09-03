@@ -1,13 +1,13 @@
-import { createInitialState, firstAvailableCopy, gameReducer } from './reducer'
-import { getOrientation, getUniqueOrientations, pointsKey } from './transforms'
-import { SHAPE_IDS } from './types'
+import { createInitialState, firstAvailableCopy, gameReducer } from './reducer.ts'
+import { getOrientation, getUniqueOrientations, pointsKey } from './transforms.ts'
+import { SHAPE_IDS } from './types.ts'
 import type {
   GameState,
   PlayerId,
   RecordedMove,
   Rotation,
   ShapeId,
-} from './types'
+} from './types.ts'
 
 /**
  * Notation de partie

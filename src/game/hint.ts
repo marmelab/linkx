@@ -1,7 +1,7 @@
-import { chooseMoveForDifficulty } from './minimax'
-import type { GamePosition } from './simulation'
-import { DIFFICULTY_IDS } from './types'
-import type { Difficulty, GameState, Point, Rotation, ShapeId } from './types'
+import { chooseMoveForDifficulty } from './minimax.ts'
+import type { GamePosition } from './simulation.ts'
+import { DIFFICULTY_IDS } from './types.ts'
+import type { Difficulty, GameState, Point, Rotation, ShapeId } from './types.ts'
 
 /**
  * Force employée pour conseiller le joueur au trait.

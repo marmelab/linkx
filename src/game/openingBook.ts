@@ -1,10 +1,10 @@
-import { enumerateLegalMoves } from './legalMoves'
-import type { LegalMove } from './legalMoves'
-import { createInitialInventory } from './pieces'
-import type { GamePosition } from './simulation'
-import { BOARD_SIZE, SHAPE_IDS } from './types'
-import type { Board, PlayerId } from './types'
-import { OPENING_BOOK } from './openingBook.data'
+import { enumerateLegalMoves } from './legalMoves.ts'
+import type { LegalMove } from './legalMoves.ts'
+import { createInitialInventory } from './pieces.ts'
+import type { GamePosition } from './simulation.ts'
+import { BOARD_SIZE, SHAPE_IDS } from './types.ts'
+import type { Board, PlayerId } from './types.ts'
+import { OPENING_BOOK } from './openingBook.data.ts'
 
 /**
  * Livre d'ouverture

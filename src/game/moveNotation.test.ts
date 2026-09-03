@@ -1,15 +1,15 @@
 import { describe, expect, it } from 'vitest'
-import { boardToText } from './boardText'
+import { boardToText } from './boardText.ts'
 import {
   PASS_TOKEN,
   parseGameRecord,
   parseMove,
   serializeGameRecord,
   serializeMove,
-} from './moveNotation'
-import { getUniqueOrientations } from './transforms'
-import { SHAPE_IDS } from './types'
-import type { GameState, Inventory, ShapeId } from './types'
+} from './moveNotation.ts'
+import { getUniqueOrientations } from './transforms.ts'
+import { SHAPE_IDS } from './types.ts'
+import type { GameState, Inventory, ShapeId } from './types.ts'
 
 /** Partie gagnée par les bleus : une colonne bleue relie le haut au bas. */
 const BLUE_WIN = '4Lr32 4Ss3 4Lr32 3Ir12 3Ir13 3Ir14 2r13'

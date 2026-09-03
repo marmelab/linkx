@@ -1,4 +1,4 @@
-import type { Inventory, Point, Rotation, ShapeId } from './types'
+import type { Inventory, Point, Rotation, ShapeId } from './types.ts'
 
 export const BASE_SHAPES: Record<ShapeId, readonly (readonly number[])[]> = {
   mono: [[1]],

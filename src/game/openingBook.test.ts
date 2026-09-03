@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { enumerateLegalMoves } from './legalMoves'
-import { canonicalPosition, lookupOpeningMove } from './openingBook'
-import type { OpeningBook } from './openingBook'
-import { createGamePosition, simulateLegalMove } from './simulation'
-import type { GamePosition } from './simulation'
-import { BOARD_SIZE } from './types'
-import type { Board } from './types'
+import { enumerateLegalMoves } from './legalMoves.ts'
+import { canonicalPosition, lookupOpeningMove } from './openingBook.ts'
+import type { OpeningBook } from './openingBook.ts'
+import { createGamePosition, simulateLegalMove } from './simulation.ts'
+import type { GamePosition } from './simulation.ts'
+import { BOARD_SIZE } from './types.ts'
+import type { Board } from './types.ts'
 
 const N = BOARD_SIZE
 const mirrorIndex = (i: number) => {

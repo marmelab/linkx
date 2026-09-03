@@ -1,9 +1,9 @@
-import { getLargestZone, hasWinningConnection } from './connectivity'
-import { hasLegalMove } from './legalMoves'
-import type { LegalMove } from './legalMoves'
-import { createInitialInventory } from './pieces'
-import { calculateDrop, createEmptyBoard } from './placement'
-import type { Board, GameResult, Inventory, PlayerId } from './types'
+import { getLargestZone, hasWinningConnection } from './connectivity.ts'
+import { hasLegalMove } from './legalMoves.ts'
+import type { LegalMove } from './legalMoves.ts'
+import { createInitialInventory } from './pieces.ts'
+import { calculateDrop, createEmptyBoard } from './placement.ts'
+import type { Board, GameResult, Inventory, PlayerId } from './types.ts'
 
 export type GamePosition = {
   board: Board

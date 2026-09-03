@@ -1,4 +1,4 @@
-import type { OpeningBook } from './openingBook'
+import type { OpeningBook } from './openingBook.ts'
 
 // Livre d'ouverture — fichier généré par scripts/generate-opening-book.ts.
 // Ne pas éditer à la main. depth=9 replies=8 entrées=472

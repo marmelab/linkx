@@ -13,8 +13,8 @@ import {
   floodFrom,
   popcount,
   setTerrain,
-} from './bitboard'
-import { BOARD_SIZE } from './types'
+} from './bitboard.ts'
+import { BOARD_SIZE } from './types.ts'
 
 const N = BOARD_SIZE
 const CELLS = N * N

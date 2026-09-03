@@ -1,8 +1,8 @@
-import { hasWinningConnection } from './connectivity'
-import { boardFromText } from './boardText'
-import { parseGameRecord } from './moveNotation'
-import { createInitialState } from './reducer'
-import type { GameState, PlayerId } from './types'
+import { hasWinningConnection } from './connectivity.ts'
+import { boardFromText } from './boardText.ts'
+import { parseGameRecord } from './moveNotation.ts'
+import { createInitialState } from './reducer.ts'
+import type { GameState, PlayerId } from './types.ts'
 
 function playerFromQuery(value: string | null): PlayerId {
   if (!value || value === 'blue' || value.toUpperCase() === 'B') return 'blue'

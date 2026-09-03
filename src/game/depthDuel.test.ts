@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { enumerateLegalMoves } from './legalMoves'
-import { chooseMasterMove } from './engineSearch'
-import { lookupOpeningMove } from './openingBook'
-import { chooseMinimaxMove, chooseMoveForDifficulty } from './minimax'
-import { createGamePosition, simulateLegalMove } from './simulation'
-import type { GamePosition } from './simulation'
-import type { Difficulty, GameResult, PlayerId } from './types'
+import { enumerateLegalMoves } from './legalMoves.ts'
+import { chooseMasterMove } from './engineSearch.ts'
+import { lookupOpeningMove } from './openingBook.ts'
+import { chooseMinimaxMove, chooseMoveForDifficulty } from './minimax.ts'
+import { createGamePosition, simulateLegalMove } from './simulation.ts'
+import type { GamePosition } from './simulation.ts'
+import type { Difficulty, GameResult, PlayerId } from './types.ts'
 
 /**
  * Duel entre deux profondeurs de recherche. Une partie complète à profondeur 3

@@ -1,5 +1,5 @@
-import { BASE_SHAPES, matrixToPoints } from './pieces'
-import type { Orientation, Point, Rotation, ShapeId } from './types'
+import { BASE_SHAPES, matrixToPoints } from './pieces.ts'
+import type { Orientation, Point, Rotation, ShapeId } from './types.ts'
 
 export function normalizePoints(points: readonly Point[]): Point[] {
   const minX = Math.min(...points.map(({ x }) => x))

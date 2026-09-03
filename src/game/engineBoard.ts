@@ -1,4 +1,4 @@
-import { enumerateLegalMoves } from './legalMoves'
+import { enumerateLegalMoves } from './legalMoves.ts'
 import {
   CELL_BIT,
   CELL_LIMB,
@@ -10,12 +10,12 @@ import {
   LIMBS,
   floodFrom,
   popcount,
-} from './bitboard'
-import type { LegalMove } from './legalMoves'
-import type { GamePosition } from './simulation'
-import { getUniqueOrientations } from './transforms'
-import { BOARD_SIZE, SHAPE_IDS } from './types'
-import type { Orientation, PlayerId, ShapeId } from './types'
+} from './bitboard.ts'
+import type { LegalMove } from './legalMoves.ts'
+import type { GamePosition } from './simulation.ts'
+import { getUniqueOrientations } from './transforms.ts'
+import { BOARD_SIZE, SHAPE_IDS } from './types.ts'
+import type { Orientation, PlayerId, ShapeId } from './types.ts'
 
 /**
  * Représentation compacte d'une position, réservée à la recherche

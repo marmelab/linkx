@@ -1,9 +1,9 @@
-import { getLargestZone, hasWinningConnection } from './connectivity'
-import { hasLegalMove } from './legalMoves'
-import { createInitialInventory, INITIAL_ROTATIONS } from './pieces'
-import { calculateDrop, createEmptyBoard } from './placement'
-import { getOrientation } from './transforms'
-import { DEFAULT_DIFFICULTY } from './types'
+import { getLargestZone, hasWinningConnection } from './connectivity.ts'
+import { hasLegalMove } from './legalMoves.ts'
+import { createInitialInventory, INITIAL_ROTATIONS } from './pieces.ts'
+import { calculateDrop, createEmptyBoard } from './placement.ts'
+import { getOrientation } from './transforms.ts'
+import { DEFAULT_DIFFICULTY } from './types.ts'
 import type {
   GameAction,
   GameResult,
@@ -14,7 +14,7 @@ import type {
   Rotation,
   Selection,
   ShapeId,
-} from './types'
+} from './types.ts'
 
 export function otherPlayer(player: PlayerId): PlayerId {
   return player === 'blue' ? 'white' : 'blue'

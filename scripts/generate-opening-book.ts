@@ -350,7 +350,7 @@ function writeBook(entries: Array<[string, StoredMove[]]>, count: number): void 
     .map(([key, moves]) => `  ${JSON.stringify(key)}: ${JSON.stringify(moves)},`)
   writeFileSync(
     OUT,
-    `import type { OpeningBook } from './openingBook'\n\n` +
+    `import type { OpeningBook } from './openingBook.ts'\n\n` +
       `// Livre d'ouverture — fichier généré par scripts/generate-opening-book.ts.\n` +
       `// Ne pas éditer à la main. depth=${DEPTH} replies=${REPLIES} entrées=${count}\n` +
       `export const OPENING_BOOK: OpeningBook = {\n${lines.join('\n')}\n}\n`,

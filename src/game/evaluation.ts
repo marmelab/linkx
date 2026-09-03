@@ -1,5 +1,5 @@
-import { BOARD_SIZE } from './types'
-import type { Board, PlayerId } from './types'
+import { BOARD_SIZE } from './types.ts'
+import type { Board, PlayerId } from './types.ts'
 
 const CELL_COUNT = BOARD_SIZE * BOARD_SIZE
 const BLOCKED = Number.POSITIVE_INFINITY
