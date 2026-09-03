@@ -1,6 +1,6 @@
 import { hasWinningConnection } from './connectivity.ts'
 import { boardFromText } from './boardText.ts'
-import { parseGameRecord } from './moveNotation.ts'
+import { parseGameTimeline } from './moveNotation.ts'
 import { createInitialState } from './reducer.ts'
 import type { GameState, PlayerId } from './types.ts'
 
@@ -11,14 +11,30 @@ function playerFromQuery(value: string | null): PlayerId {
 }
 
 /**
+ * Provenance de l'état chargé, et non le seul état : une notation se déroule
+ * coup par coup, une grille non. C'est ici que la distinction est faite, une
+ * fois pour toutes ; l'interface ne relit pas la query string pour la retrouver.
+ */
+export type LoadedGame =
+  | { source: 'moves'; states: GameState[] }
+  | { source: 'board'; state: GameState }
+
+/** Position à afficher au chargement : la dernière de la notation, ou la grille. */
+export function loadedGameState(loaded: LoadedGame): GameState {
+  return loaded.source === 'moves'
+    ? loaded.states[loaded.states.length - 1]
+    : loaded.state
+}
+
+/**
  * `?moves=` rejoue une notation de partie : le plateau, les réserves, les
  * exemplaires consommés et le joueur actif sont exacts. Le paramètre `turn` ne
  * s'applique qu'à `?board=` ; une notation porte elle-même son premier joueur.
  */
-function stateFromMoves(source: string): GameState {
-  const parsed = parseGameRecord(source)
+function statesFromMoves(source: string): GameState[] {
+  const parsed = parseGameTimeline(source)
   if (!parsed.ok) throw new Error(parsed.error.message)
-  return parsed.state
+  return parsed.states
 }
 
 function stateFromBoard(source: string, turn: string | null): GameState {
@@ -41,12 +57,12 @@ function stateFromBoard(source: string, turn: string | null): GameState {
   }
 }
 
-export function createGameStateFromSearch(search: string): GameState | null {
+export function createGameStateFromSearch(search: string): LoadedGame | null {
   const params = new URLSearchParams(search)
   const moves = params.get('moves')
-  if (moves) return stateFromMoves(moves)
+  if (moves) return { source: 'moves', states: statesFromMoves(moves) }
 
   const source = params.get('board')
   if (!source) return null
-  return stateFromBoard(source, params.get('turn'))
+  return { source: 'board', state: stateFromBoard(source, params.get('turn')) }
 }

@@ -111,6 +111,10 @@ export type GameRecordParseResult =
   | { ok: true; state: GameState }
   | { ok: false; error: NotationError }
 
+export type GameTimelineParseResult =
+  | { ok: true; states: GameState[] }
+  | { ok: false; error: NotationError }
+
 function notationError(
   index: number,
   token: string,
@@ -230,10 +234,16 @@ function lastEntryIsPass(state: GameState): boolean {
 }
 
 /**
- * Rejoue une partie complète. En cas de refus, rien n'est appliqué : l'appelant
- * reçoit l'index du jeton fautif et la raison structurée du refus.
+ * Rejoue une partie en conservant **toutes** les positions traversées :
+ * `states[0]` est le plateau vide et `states[k]` la position atteinte après `k`
+ * entrées d'historique, passes comprises. Une passe forcée étant appliquée dans
+ * le même temps que le coup qui la provoque, son rang partage la position de ce
+ * coup — les deux ne diffèrent de toute façon par aucune pièce posée.
+ *
+ * C'est l'unique chemin de rejeu : `parseGameRecord` n'en garde que le dernier
+ * état. En cas de refus, rien n'est appliqué.
  */
-export function parseGameRecord(source: string): GameRecordParseResult {
+export function parseGameTimeline(source: string): GameTimelineParseResult {
   const tokens = source.trim().split(TOKEN_SEPARATOR).filter(Boolean)
   const declared = FIRST_PLAYER_TOKENS[tokens[0]?.toLowerCase() ?? '']
   const firstPlayer = declared ?? 'blue'
@@ -244,6 +254,7 @@ export function parseGameRecord(source: string): GameRecordParseResult {
     firstPlayer,
     mode: 'human',
   })
+  const states = [state]
   let pendingPass = false
 
   for (let index = offset; index < tokens.length; index += 1) {
@@ -273,11 +284,25 @@ export function parseGameRecord(source: string): GameRecordParseResult {
     }
 
     state = applied.state
+    // Un coup qui bloque l'adversaire ajoute deux entrées d'un coup, la sienne
+    // et la passe forcée : la suite en reçoit autant de rangs.
+    while (states.length <= state.history.length) states.push(state)
     // Une passe facultative dans le texte est admise ; elle sera réécrite.
     pendingPass = lastEntryIsPass(state)
   }
 
-  return { ok: true, state }
+  return { ok: true, states }
+}
+
+/**
+ * Rejoue une partie complète et n'en garde que la position finale. En cas de
+ * refus, rien n'est appliqué : l'appelant reçoit l'index du jeton fautif et la
+ * raison structurée du refus.
+ */
+export function parseGameRecord(source: string): GameRecordParseResult {
+  const replayed = parseGameTimeline(source)
+  if (!replayed.ok) return replayed
+  return { ok: true, state: replayed.states[replayed.states.length - 1] }
 }
 
 /** Écrit la partie portée par un état, dans sa forme canonique. */

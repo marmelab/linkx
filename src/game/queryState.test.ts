@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { boardToText } from './boardText.ts'
-import { createGameStateFromSearch } from './queryState.ts'
+import { createGameStateFromSearch, loadedGameState } from './queryState.ts'
 
 const EMPTY_ROWS = Array.from({ length: 9 }, () => '.........')
 
@@ -17,6 +17,12 @@ function searchForMoves(record: string): string {
   return `?${new URLSearchParams({ moves: record })}`
 }
 
+/** Position affichée au chargement, quelle que soit la provenance de l'état. */
+function stateFor(search: string) {
+  const loaded = createGameStateFromSearch(search)
+  return loaded ? loadedGameState(loaded) : null
+}
+
 describe('chargement d’une position par query string', () => {
   it('ignore une URL sans grille', () => {
     expect(createGameStateFromSearch('?turn=white')).toBeNull()
@@ -25,7 +31,7 @@ describe('chargement d’une position par query string', () => {
   it('charge directement une partie avec le joueur demandé', () => {
     const rows = [...EMPTY_ROWS]
     rows[8] = '..BB...W.'
-    const state = createGameStateFromSearch(searchFor(rows, 'white'))
+    const state = stateFor(searchFor(rows, 'white'))
 
     expect(state?.phase).toBe('playing')
     expect(state?.activePlayer).toBe('white')
@@ -36,7 +42,7 @@ describe('chargement d’une position par query string', () => {
   it('ouvre directement le panneau final et le chemin gagnant', () => {
     const rows = [...EMPTY_ROWS]
     rows[8] = 'BBBBBBBBB'
-    const state = createGameStateFromSearch(searchFor(rows))
+    const state = stateFor(searchFor(rows))
 
     expect(state?.phase).toBe('finished')
     expect(state?.result).toEqual({ winner: 'blue', reason: 'connection' })
@@ -44,13 +50,13 @@ describe('chargement d’une position par query string', () => {
 
   it('refuse un joueur inconnu ou deux vainqueurs simultanés', () => {
     expect(() =>
-      createGameStateFromSearch(searchFor(EMPTY_ROWS, 'green')),
+      stateFor(searchFor(EMPTY_ROWS, 'green')),
     ).toThrow(/Joueur actif/)
 
     const rows = [...EMPTY_ROWS]
     rows[0] = 'BBBBBBBBB'
     rows[8] = 'WWWWWWWWW'
-    expect(() => createGameStateFromSearch(searchFor(rows))).toThrow(
+    expect(() => stateFor(searchFor(rows))).toThrow(
       /deux joueurs victorieux/,
     )
   })
@@ -58,7 +64,7 @@ describe('chargement d’une position par query string', () => {
 
 describe('chargement d’une partie notée par query string', () => {
   it('rejoue la notation, réserves et exemplaires joués compris', () => {
-    const state = createGameStateFromSearch(searchForMoves(ONGOING_RECORD))
+    const state = stateFor(searchForMoves(ONGOING_RECORD))
 
     expect(state?.phase).toBe('playing')
     expect(state?.activePlayer).toBe('blue')
@@ -71,7 +77,7 @@ describe('chargement d’une partie notée par query string', () => {
   })
 
   it('ouvre le panneau final sur une partie déjà gagnée', () => {
-    const state = createGameStateFromSearch(
+    const state = stateFor(
       searchForMoves('4Lr32 4Ss3 4Lr32 3Ir12 3Ir13 3Ir14 2r13'),
     )
 
@@ -80,7 +86,7 @@ describe('chargement d’une partie notée par query string', () => {
   })
 
   it('lit le premier joueur dans la notation elle-même', () => {
-    const state = createGameStateFromSearch(searchForMoves('w 11 12'))
+    const state = stateFor(searchForMoves('w 11 12'))
 
     expect(state?.firstPlayer).toBe('white')
     expect(state?.activePlayer).toBe('white')
@@ -89,9 +95,22 @@ describe('chargement d’une partie notée par query string', () => {
   })
 
   it('signale le coup fautif d’une notation illégale', () => {
-    expect(() => createGameStateFromSearch(searchForMoves('11 12 3I1'))).toThrow(
+    expect(() => stateFor(searchForMoves('11 12 3I1'))).toThrow(
       /Coup 3 .*vide sous elle/,
     )
+  })
+
+  it('rend la provenance de l’état, seule à décider de la barre de lecture', () => {
+    const noted = createGameStateFromSearch(searchForMoves(ONGOING_RECORD))
+    expect(noted?.source).toBe('moves')
+    // Une position par entrée d'historique, plus le plateau vide : c'est la
+    // suite que déroule la barre de lecture.
+    expect(noted?.source === 'moves' && noted.states).toHaveLength(13)
+
+    const rows = [...EMPTY_ROWS]
+    rows[8] = '..BB...W.'
+    // Une grille ne porte aucune partie : rien à dérouler, donc pas de barre.
+    expect(createGameStateFromSearch(searchFor(rows))?.source).toBe('board')
   })
 
   it('ignore une notation vide et garde le comportement de board', () => {
@@ -100,7 +119,7 @@ describe('chargement d’une partie notée par query string', () => {
     const rows = [...EMPTY_ROWS]
     rows[8] = '..BB...W.'
     expect(
-      createGameStateFromSearch(searchFor(rows, 'white'))?.inventories.blue.bar3,
+      stateFor(searchFor(rows, 'white'))?.inventories.blue.bar3,
     ).toBe(2)
   })
 })

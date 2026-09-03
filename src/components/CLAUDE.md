@@ -31,6 +31,14 @@ Ce que doit **montrer** l'interface est spécifié dans `plan.md` (histoires 7, 
 - Le calque des pièces déborde volontairement (`overflow: visible`) pour laisser passer les ombres portées des pièces de bord. La pièce qui tombe est donc découpée par un `clipPath` propre, qui **ne coupe qu'en haut** : sans lui elle se peindrait par-dessus la bordure et le cadre du plateau, ce qui a déjà été observé. Le ghost reste hors de ce groupe, son ombre de survol est bien plus large.
 - Le reflet suit la dalle, avec la même animation : le peindre à l'arrivée pendant que la dalle est en l'air les désolidariserait. La nappe de `plexi-sheen` défile donc sur la pièce le temps de la chute. Ce n'est pas la dérogation de l'aperçu de sélection : une translation ne fait pas tourner la lumière, sa direction reste celle de l'écran et l'état d'arrivée est exact.
 
+## Barre de lecture
+
+`PlaybackBar` déroule une partie ouverte depuis une notation (plan.md, histoire 13). Trois points s'y tiennent :
+
+- La barre n'existe **que** si `createGameStateFromSearch` a rendu une provenance `moves` ; c'est cette provenance, et non une relecture de la query string, qui décide. Elle est donc rendue dès le premier rendu et sa hauteur est fixe, comme celle de `play-head` et pour la même raison : le bord haut du plateau est en dessous.
+- En lecture, `fallingPieceId` vient de `playback.falling`, jamais de `state.lastPlacedPieceId` : seul `stepPlayback` en désigne une. Un saut remonte les pièces sans la classe de chute — sans quoi tout le plateau retomberait à chaque déplacement du curseur.
+- `App.tsx` rend `view` et dispatche sur `state`. Les deux sont le même objet au dernier rang ; ailleurs `view` est une position passée sans sélection, ce qui suffit à fermer la pose : le ghost, la bande de visée et les raccourcis clavier de coup en dépendent tous.
+
 ## Bande de visée au doigt
 
 `DropZone` vise tant que le pointeur est enfoncé et ne pose qu'au relâchement (plan.md, histoire 2). Six points s'y tiennent :

@@ -293,6 +293,46 @@
    `touch-action` ne couvre pas ce cas : il n'arbitre que le défilement. */
 .play-area,
 .piece-tray { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+/* Barre de lecture d'une partie reçue en notation (plan.md, histoire 13).
+
+   Sa hauteur est **fixe**, comme celle de `.play-head` sur téléphone et pour la
+   même raison : le bord haut du plateau est en dessous, et le moindre
+   débordement l'abaisserait. Elle est acquise dès le chargement — ou bien la
+   partie vient d'une notation et la barre est là du premier au dernier instant,
+   ou bien elle n'existe pas. La légende change de texte à chaque déplacement du
+   curseur, jamais de nombre de lignes : d'où le `nowrap` et la troncature. */
+.playback-bar {
+  --playback-height: 58px;
+
+  display: grid;
+  width: min(100%, 520px);
+  height: var(--playback-height);
+  flex: 0 0 auto;
+  align-content: center;
+  gap: 3px;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.playback-bar__controls { display: flex; min-width: 0; align-items: center; gap: 0.3rem; }
+.playback-bar__step { min-width: 34px; padding: 0.3rem 0.4rem; line-height: 1.1; }
+.playback-bar__step:disabled { cursor: default; opacity: 0.4; }
+.playback-bar__slider { min-width: 0; flex: 1 1 auto; accent-color: var(--blue); }
+
+/* Trois niveaux de texte et pas un de plus : le rang en `overline`, le jeton de
+   notation dans la couleur du texte, l'état du plateau en gris. */
+.playback-bar__legend {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: 0.45rem;
+  margin: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.playback-bar__move { flex: 0 0 auto; color: var(--ink); font-size: 0.8rem; font-weight: 700; }
+.playback-bar__mode { min-width: 0; overflow: hidden; color: var(--muted); font-size: 0.75rem; text-overflow: ellipsis; }
+
 /* Au bureau, l'en-tête empile simplement le bandeau puis l'aperçu : la
    géométrie est celle des deux blocs pris séparément. */
 .play-head { display: flex; width: min(100%, 520px); flex: 0 0 auto; flex-direction: column; align-items: center; }
@@ -686,6 +726,13 @@
   /* Bande de visée au doigt, et cadre de plateau resserré : les flèches se
      réalignent d'elles-mêmes sur les colonnes du damier. */
   .play-area { --drop-zone-height: 44px; --board-inset: 14px; padding: 0.7rem 0.55rem 0.6rem; }
+
+  /* Même hauteur fixe, resserrée : la barre ne prend au plateau que ce qu'il
+     faut à une rangée de commandes et à sa légende. Les cibles gagnent en
+     revanche les 40px que réclame le doigt, la légende passant sous elles. */
+  .playback-bar { --playback-height: 62px; gap: 2px; }
+  .playback-bar__step { min-width: 40px; min-height: 38px; }
+  .playback-bar__mode { font-size: 0.7rem; }
   /* Plus de bandeau de tour : en une colonne, c'est la réserve du joueur actif
      qui passe en premier, et ce déplacement dit déjà à qui de jouer. Restent le
      message d'erreur, l'aperçu et le panneau de fin — et surtout l'annonce

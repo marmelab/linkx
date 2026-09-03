@@ -5,6 +5,7 @@ import { DropZone } from './components/DropZone'
 import { GameOverPanel } from './components/GameOverPanel'
 import { GameStatus } from './components/GameStatus'
 import { PieceTray } from './components/PieceTray'
+import { PlaybackBar } from './components/PlaybackBar'
 import { RulesPanel } from './components/RulesPanel'
 import { SelectedPiecePreview } from './components/SelectedPiecePreview'
 import { SetupPanel } from './components/SetupPanel'
@@ -16,7 +17,17 @@ import { createInitialState, firstAvailableCopy, gameReducer } from './game/redu
 import { canOfferHint, chooseHint } from './game/hint'
 import type { Hint } from './game/hint'
 import { getOrientation } from './game/transforms'
-import { createGameStateFromSearch } from './game/queryState'
+import { createGameStateFromSearch, loadedGameState } from './game/queryState'
+import {
+  extendPlayback,
+  isReplaying,
+  lastRank,
+  playbackState,
+  seekPlayback,
+  startPlayback,
+  stepPlayback,
+} from './components/playback'
+import type { Playback } from './components/playback'
 import { useAiMove } from './components/useAiMove'
 import { usePointerHasHover } from './components/usePointerHasHover'
 import { BOARD_SIZE, PLAYER_IDS } from './game/types'
@@ -45,14 +56,23 @@ const AI_GLOW_DURATION = 2400
 const HINT_THINKING_DELAY = 90
 
 function App() {
-  const [state, dispatch] = useReducer(gameReducer, undefined, () => {
+  const [loaded] = useState(() => {
     try {
-      return createGameStateFromSearch(window.location.search) ?? createInitialState()
+      return createGameStateFromSearch(window.location.search)
     } catch (error) {
       console.error('Impossible de charger la grille depuis l’URL.', error)
-      return createInitialState()
+      return null
     }
   })
+  const [state, dispatch] = useReducer(gameReducer, loaded, (game) =>
+    game ? loadedGameState(game) : createInitialState(),
+  )
+  // La barre de lecture n'existe **que** pour une partie venue d'une notation,
+  // et elle existe alors dès le premier rendu : sa hauteur est acquise au
+  // chargement, elle ne se montre ni ne se cache en cours de partie.
+  const [playback, setPlayback] = useState<Playback | null>(() =>
+    loaded?.source === 'moves' ? startPlayback(loaded.states) : null,
+  )
   const { request: requestAiMove, cancel: cancelAiMove } = useAiMove()
   const [pointedColumn, setPointedColumn] = useState<number | null>(null)
   const [rulesOpen, setRulesOpen] = useState(false)
@@ -73,7 +93,16 @@ function App() {
   // sa cible, et c'est en sortant de cette surface qu'on renonce à poser.
   const boardFrame = useRef<HTMLDivElement>(null)
   const hintPending = hintRequest === state
-  const hint = hintResult?.state === state ? hintResult.hint : null
+  // Hors du dernier coup, le plateau est en lecture seule : `view` est la
+  // position lue, sans pièce en main, et `state` reste la partie vivante — celle
+  // qui se poursuivra dès le retour à la fin. Les deux ne font qu'un au dernier
+  // rang, si bien que tout le rendu peut lire `view` sans rien changer au jeu.
+  const replaying = playback !== null && isReplaying(playback)
+  const view = useMemo(
+    () => (playback ? playbackState(playback, state) : state),
+    [playback, state],
+  )
+  const hint = !replaying && hintResult?.state === state ? hintResult.hint : null
 
   const startGame = (mode: GameMode, difficulty: Difficulty) =>
     dispatch({
@@ -86,13 +115,13 @@ function App() {
 
   const aiTurn =
     state.phase === 'playing' && state.activePlayer === state.aiPlayer
-  const hintAvailable = canOfferHint(state)
+  const hintAvailable = !replaying && canOfferHint(state)
 
-  const orientation = state.selection
+  const orientation = view.selection
     ? getOrientation(
-        state.selection.shapeId,
-        state.selection.rotation,
-        state.selection.flipped,
+        view.selection.shapeId,
+        view.selection.rotation,
+        view.selection.flipped,
       )
     : null
 
@@ -102,27 +131,33 @@ function App() {
   const columnFor = (pointer: number) =>
     orientation ? aimedColumn(pointer, orientation.width) : null
   const dropColumn = pointedColumn === null ? null : columnFor(pointedColumn)
-  const aiming = state.phase === 'playing' && Boolean(state.selection)
+  const aiming = view.phase === 'playing' && Boolean(view.selection)
 
   const ghost = useMemo(
     () =>
       dropColumn !== null && orientation
-        ? calculateDrop(state.board, orientation, dropColumn)
+        ? calculateDrop(view.board, orientation, dropColumn)
         : null,
-    [dropColumn, orientation, state.board],
+    [dropColumn, orientation, view.board],
   )
 
   const winningPath = useMemo(
     () =>
-      state.result?.reason === 'connection' && state.result.winner
-        ? getWinningPath(state.board, state.result.winner)
+      view.result?.reason === 'connection' && view.result.winner
+        ? getWinningPath(view.board, view.result.winner)
         : [],
-    [state.board, state.result],
+    [view.board, view.result],
   )
 
   useEffect(() => {
     setPointedColumn(null)
-  }, [state.activePlayer, state.selection?.shapeId])
+  }, [view.activePlayer, view.selection?.shapeId])
+
+  // La partie lue se poursuit au dernier coup : un coup joué allonge la suite et
+  // laisse le curseur à la fin. Une nouvelle partie, elle, sort de la lecture.
+  useEffect(() => {
+    setPlayback((current) => (current ? extendPlayback(current, state) : null))
+  }, [state])
 
   // Tour de l'ordinateur. La recherche part dans un worker quand le navigateur
   // en offre un (voir `useAiMove`), sinon elle reste synchrone et bloque
@@ -196,10 +231,32 @@ function App() {
     return () => clearTimeout(timer)
   }, [aiPlacedPieceId])
 
+  // Hors du dernier coup, aucune visée n'est possible : les flèches y pilotent
+  // donc toujours le curseur, sans conflit avec la visée de colonne. Sur la
+  // barre elle-même, le curseur porte déjà ses propres flèches.
   useEffect(() => {
-    if (state.phase !== 'playing') return
+    if (!replaying) return
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (!state.selection) return
+      const target = event.target as HTMLElement
+      if (target.matches('input, textarea, select')) return
+      if (event.key === 'ArrowLeft') {
+        event.preventDefault()
+        setPlayback((current) => current && seekPlayback(current, current.cursor - 1))
+        return
+      }
+      if (event.key === 'ArrowRight') {
+        event.preventDefault()
+        setPlayback((current) => current && stepPlayback(current))
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [replaying])
+
+  useEffect(() => {
+    if (view.phase !== 'playing') return
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (!view.selection) return
       const target = event.target as HTMLElement
       if (target.matches('input, textarea, select')) return
       const key = event.key.toLowerCase()
@@ -229,16 +286,16 @@ function App() {
         event.preventDefault()
         dispatch({ type: 'ROTATE_SELECTION' })
       }
-      if (key === 'f' && FLIPPABLE_SHAPES.includes(state.selection.shapeId)) {
+      if (key === 'f' && FLIPPABLE_SHAPES.includes(view.selection.shapeId)) {
         event.preventDefault()
         dispatch({ type: 'FLIP_SELECTION' })
       }
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [dropColumn, state.phase, state.selection])
+  }, [dropColumn, view.phase, view.selection])
 
-  if (state.phase === 'setup') {
+  if (view.phase === 'setup') {
     return (
       <>
         <SetupPanel onStart={startGame} onShowRules={() => setRulesOpen(true)} />
@@ -255,13 +312,13 @@ function App() {
       : DROP_MESSAGES[ghost.reason]
     : null
   const canFlip =
-    state.selection && FLIPPABLE_SHAPES.includes(state.selection.shapeId)
+    view.selection && FLIPPABLE_SHAPES.includes(view.selection.shapeId)
   // La réserve du joueur actif est rendue en premier. En une seule colonne elle
   // se place donc juste sous le plateau et l'alternance des deux réserves
   // signale le changement de tour ; l'ordre du DOM reste celui qu'on lit à
   // l'écran. Sur bureau, `grid-column` les repose à gauche et à droite.
   const trayOrder: PlayerId[] =
-    state.activePlayer === 'white' ? ['white', 'blue'] : ['blue', 'white']
+    view.activePlayer === 'white' ? ['white', 'blue'] : ['blue', 'white']
   // La réserve met en évidence l'exemplaire qui sera effectivement consommé,
   // celui-là même que la pose choisirait pour la forme conseillée.
   const hintCopy = hint
@@ -285,18 +342,31 @@ function App() {
 
       <div className="game-layout">
         <section className="play-area">
+          {/* Au-dessus de la bande réservée à la pièce en main, jamais en
+              dessous : le bord haut du plateau ne doit pas bouger d'un pixel
+              quand le curseur se déplace. */}
+          {playback && (
+            <PlaybackBar
+              entries={playback.states[lastRank(playback)].history}
+              cursor={playback.cursor}
+              onSeek={(cursor) =>
+                setPlayback((current) => current && seekPlayback(current, cursor))
+              }
+              onStep={() => setPlayback((current) => current && stepPlayback(current))}
+            />
+          )}
           {/* Bandeau et aperçu de sélection sont empilés au bureau et côte à
               côte en une colonne : ce conteneur laisse la mise en page choisir
               sans changer l'ordre, qui reste celui du geste — la pièce en main
               se montre au-dessus du plateau, du côté par lequel elle tombe. */}
           <div className="play-head">
             <div className="play-banner">
-              {state.phase === 'finished' && state.result ? (
-                <GameOverPanel result={state.result} onReset={() => dispatch({ type: 'RESET_GAME' })} />
+              {view.phase === 'finished' && view.result ? (
+                <GameOverPanel result={view.result} onReset={() => dispatch({ type: 'RESET_GAME' })} />
               ) : (
                 <GameStatus
-                  activePlayer={state.activePlayer}
-                  event={state.lastEvent}
+                  activePlayer={view.activePlayer}
+                  event={view.lastEvent}
                   ghostRefusal={ghostRefusal}
                   thinking={aiTurn}
                   hintPending={hintPending}
@@ -322,15 +392,15 @@ function App() {
                   <span aria-hidden="true">💡</span>
                 </button>
               )}
-              {state.phase === 'playing' && state.selection && (
+              {view.phase === 'playing' && view.selection && (
                 <>
                   {/* Raccourci de proximité : la pièce elle-même tourne au clic
                       et se retourne au clic droit, sans aller jusqu'aux boutons.
                       Ceux-ci restent la commande découvrable. */}
                   <SelectedPiecePreview
-                    selection={state.selection}
+                    selection={view.selection}
                     orientation={orientation!}
-                    player={state.activePlayer}
+                    player={view.activePlayer}
                     onRotate={() => dispatch({ type: 'ROTATE_SELECTION' })}
                     onFlip={() => {
                       if (canFlip) dispatch({ type: 'FLIP_SELECTION' })
@@ -376,16 +446,18 @@ function App() {
           ) : (
             <div className="drop-zones-spacer" aria-hidden="true" />
           )}
+          {/* En lecture, seul le pas en avant fait tomber une pièce : tout autre
+              déplacement du curseur substitue la position. */}
           <Board
             ref={boardFrame}
-            board={state.board}
-            ghost={state.phase === 'playing' ? ghost : null}
-            ghostPlayer={state.activePlayer}
+            board={view.board}
+            ghost={view.phase === 'playing' ? ghost : null}
+            ghostPlayer={view.activePlayer}
             winningPath={winningPath}
-            celebrate={state.phase === 'finished' && Boolean(state.result?.winner)}
+            celebrate={view.phase === 'finished' && Boolean(view.result?.winner)}
             hintCells={hint?.cells ?? []}
             glowPieceId={glowPieceId}
-            fallingPieceId={state.lastPlacedPieceId}
+            fallingPieceId={playback ? playback.falling : state.lastPlacedPieceId}
             aiming={aiming && pointerHasHover}
             onPointColumn={setPointedColumn}
             onDropColumn={(column) => {
@@ -401,11 +473,11 @@ function App() {
           <PieceTray
             key={player}
             player={player}
-            inventory={state.inventories[player]}
-            playedCopies={state.playedCopies[player]}
-            active={state.phase === 'playing' && state.activePlayer === player && !aiTurn}
-            selection={state.activePlayer === player ? state.selection : null}
-            hint={state.activePlayer === player ? trayHint : null}
+            inventory={view.inventories[player]}
+            playedCopies={view.playedCopies[player]}
+            active={view.phase === 'playing' && view.activePlayer === player && !aiTurn && !replaying}
+            selection={view.activePlayer === player ? view.selection : null}
+            hint={view.activePlayer === player ? trayHint : null}
             onSelect={(shapeId, copy) => dispatch({ type: 'SELECT_SHAPE', player, shapeId, copy })}
           />
         ))}

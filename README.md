@@ -78,7 +78,8 @@ src/
     reducer.ts          état initial et transitions du jeu
     boardText.ts        parseur/sérialiseur du format B/W/.
     moveNotation.ts     grammaire, parse et sérialisation d'une notation de partie
-    queryState.ts       construction d'un état depuis la query string
+                        `parseGameTimeline` rend toutes les positions traversées
+    queryState.ts       état **et provenance** depuis la query string (`LoadedGame`)
   components/           affichage React — voir src/components/CLAUDE.md
     Board.tsx           grille, ghost, surlignage du chemin gagnant et du conseil
     DropZone.tsx        entrées de colonnes : geste maintenu au doigt, clavier
@@ -91,6 +92,8 @@ src/
     pieceTurn.ts        mouvement déduit de la différence entre deux sélections
     SetupPanel, RulesPanel, GameOverPanel, Fireworks : écrans et panneaux
     SharePositionButton.tsx  copie un lien ?moves= de la position courante
+    PlaybackBar.tsx     barre de lecture d'une partie ouverte depuis une notation
+    playback.ts         curseur de lecture : rangs, lecture seule, pas animé
     winningTrail.ts     reconstruction du tracé du chemin gagnant
     pieceGeometry.ts    getCellsOutlinePath, contour de l'union des cases
     usePointerHasHover.ts  détection du survol réel du pointeur
@@ -160,6 +163,14 @@ npm run build
 - `public/sw.js` applique **réseau d'abord** pour les documents, **cache d'abord** pour `assets/…` dont le nom est haché, **cache puis revalidation** pour le reste. Ne pas passer le HTML en cache d'abord : il porte les noms hachés du build courant. À l'installation le worker relit le document pour y trouver les assets à précharger, plutôt qu'une liste de noms hachés codée en dur. Il **balaie aussi les scripts trouvés** : le fragment du worker de recherche n'est cité que par le bundle d'entrée, sous son seul nom haché résolu relativement à ce bundle, donc il n'apparaît ni dans le HTML ni sous la forme `assets/…`. Sans ce second balayage, qui déclencherait un tour d'ordinateur en ligne oublierait le worker et perdrait l'adversaire fort hors ligne. Toute modification des stratégies ou du contenu préchargé impose d'incrémenter `VERSION`, qui purge les anciens caches à l'activation.
 - `main.tsx` n'enregistre le worker que si `import.meta.env.PROD`, pour ne pas masquer le rechargement à chaud en développement. `index.html` porte le lien vers le manifeste, `theme-color`, et les balises `apple-touch-icon` et `apple-mobile-web-app-*` qu'iOS exige faute d'implémenter le manifeste.
 - Vérification manuelle après `npm run build` : servir `dist/` depuis un sous-répertoire (`…/linkx/`), contrôler que le worker atteint `activated`, puis recharger serveur arrêté.
+
+### Déploiement du backend
+
+Le même workflow porte un job `backend` — type-vérification Deno et tests pgTAP sur une base neuve — et un job `deploy-backend` qui, au seul `push` vers `main`, applique les migrations puis déploie les fonctions.
+
+Il faut pour cela une **variable** de dépôt `SUPABASE_PROJECT_REF` et deux **secrets**, `SUPABASE_ACCESS_TOKEN` et `SUPABASE_DB_PASSWORD`. Sans la variable, le job réussit sans rien faire : le dépôt reste utilisable par qui n'a pas de projet Supabase.
+
+`VITE_SUPABASE_URL` et `VITE_SUPABASE_ANON_KEY` sont des **variables**, pas des secrets : elles partent dans le bundle, où n'importe qui les lit. La clé « anon » est publique par construction — c'est RLS qui protège les données, et les tests pgTAP qui le prouvent. En leur absence, le jeu se construit à l'identique et les écrans du tournoi ne s'affichent pas.
 
 ## Discipline de modification
 
