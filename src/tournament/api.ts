@@ -25,10 +25,6 @@ const BOT_COLUMNS =
 const GAME_COLUMNS =
   'id, vague_id, ouverture, bot_bleu, bot_blanc, notation, statut, resultat, motif_fin, motif_refus, bot_fautif, nombre_coups, cree_le'
 
-/** Trois clés étrangères vers `bots` : la jointure doit nommer laquelle. */
-const GAME_EMBEDS =
-  'bleu:bots!parties_bot_bleu_fkey(nom), blanc:bots!parties_bot_blanc_fkey(nom)'
-
 let client: SupabaseClient | null = null
 
 export function tournamentClient(): SupabaseClient {
@@ -80,9 +76,10 @@ export async function fetchWaves(limit = 12): Promise<WaveRow[]> {
 
 /**
  * Avancement de la vague en cours. Les parties ne sont lisibles que de leurs
- * deux participants : leur décompte ne peut donc venir que de `vagues`, si
- * cette table le porte. Tant qu'elle ne le porte pas, l'écran affiche la
- * fenêtre de la vague sans sa part jouée, plutôt qu'un chiffre inventé.
+ * deux participants : leur décompte vient donc de `vagues`, où un déclencheur
+ * le tient (migration `plateforme_tournoi_avancement_vague`). Une vague sans
+ * compteurs lisibles rend `null`, et l'écran affiche alors sa fenêtre sans la
+ * part jouée, plutôt qu'un chiffre inventé.
  */
 export type WaveProgressRow = { jouees: number; total: number } | null
 
@@ -123,27 +120,58 @@ export async function fetchBotHistory(
 }
 
 /**
+ * Nom des IA désignées par leur identifiant, adversaires compris.
+ *
+ * `bots` n'est lisible que de son propriétaire : l'adversaire n'y a pas de nom
+ * pour nous. La vue `noms_bots` est faite pour cela, et ne porte que ces deux
+ * colonnes (migration `plateforme_tournoi_noms_publics`).
+ */
+export async function fetchBotNames(
+  botIds: readonly string[],
+): Promise<Map<string, string>> {
+  if (botIds.length === 0) return new Map()
+  const rows = unwrap<Array<{ id: string; nom: string }>>(
+    await tournamentClient()
+      .from('noms_bots')
+      .select('id, nom')
+      .in('id', [...new Set(botIds)]),
+  )
+  return new Map(rows.map((row) => [row.id, row.nom]))
+}
+
+/**
  * Les parties de l'auteur. La politique de `parties` les borne déjà à ses deux
- * participants : il n'y a rien à filtrer côté client. La jointure sur les noms
- * est tentée puis abandonnée si elle échoue — l'adversaire est alors écrit
- * « non divulgué », ce que `games.ts` sait faire.
+ * participants : il n'y a rien à filtrer côté client.
+ *
+ * Les noms sont résolus par une seconde requête plutôt que par une jointure :
+ * ils viennent d'une vue, qui n'a pas de clé étrangère à emprunter. Un seul
+ * chemin, donc, et l'adversaire est nommé aussi bien que la sienne — c'est
+ * `games.ts` qui bascule ensuite du point de vue de l'auteur.
  */
 export async function fetchMyGames(limit = 400): Promise<GameRow[]> {
-  const query = (columns: string) =>
-    tournamentClient()
+  const rows = unwrap<GameRow[]>(
+    (await tournamentClient()
       .from('parties')
-      .select(columns)
+      .select(GAME_COLUMNS)
       .order('cree_le', { ascending: false })
-      .limit(limit)
-
-  const joined = await query(`${GAME_COLUMNS}, ${GAME_EMBEDS}`)
-  if (!joined.error) return (joined.data ?? []) as unknown as GameRow[]
-  return unwrap<GameRow[]>(
-    (await query(GAME_COLUMNS)) as unknown as {
+      .limit(limit)) as unknown as {
       data: GameRow[] | null
       error: { message: string } | null
     },
   )
+
+  const names = await fetchBotNames(
+    rows.flatMap((row) => [row.bot_bleu, row.bot_blanc]),
+  )
+  const named = (botId: string) => {
+    const nom = names.get(botId)
+    return nom === undefined ? null : { nom }
+  }
+  return rows.map((row) => ({
+    ...row,
+    bleu: named(row.bot_bleu),
+    blanc: named(row.bot_blanc),
+  }))
 }
 
 export async function fetchGameEvents(gameId: string): Promise<GameEventRow[]> {
@@ -238,9 +266,10 @@ export function probeBot(url: string): Promise<ProbeReply> {
 /**
  * Retrait et réactivation. `statut` est une colonne réservée au service — un
  * déclencheur refuse toute écriture cliente (migration
- * `plateforme_tournoi_colonnes_reservees`) —, l'action passe donc par une
- * fonction edge. **Contrat supposé** : aucune fonction ne la sert encore, et
- * l'écran rend son refus tel quel plutôt que de faire croire au succès.
+ * `plateforme_tournoi_colonnes_reservees`) —, l'action passe donc par
+ * `supabase/functions/update-bot`, qui seule arbitre les transitions permises :
+ * une IA se retire tant qu'elle vit, se réactive depuis le sommeil, et ne
+ * revient pas d'un retrait.
  */
 export function setBotStatus(
   botId: string,

@@ -14,9 +14,11 @@ type Payload = {
   bots: BotRow[]
   waves: WaveRow[]
   games: MyGame[]
+  /** Nom des IA des deux camps, pour le journal d'une partie. */
+  names: Map<string, string>
 }
 
-const EMPTY: Payload = { bots: [], waves: [], games: [] }
+const EMPTY: Payload = { bots: [], waves: [], games: [], names: new Map() }
 
 async function loadMyGames(): Promise<Payload> {
   const bots = await fetchMyBots()
@@ -25,7 +27,14 @@ async function loadMyGames(): Promise<Payload> {
     ids.length === 0 ? Promise.resolve([]) : fetchMyGames(),
     fetchWaves(24),
   ])
-  return { bots, waves, games: toMyGames(rows, ids) }
+  // Les noms viennent déjà résolus des deux côtés (`api.ts`) : le journal n'a
+  // pas à les redemander pour nommer l'IA qui a répondu.
+  const names = new Map(bots.map((bot) => [bot.id, bot.nom]))
+  for (const row of rows) {
+    if (row.bleu) names.set(row.bot_bleu, row.bleu.nom)
+    if (row.blanc) names.set(row.bot_blanc, row.blanc.nom)
+  }
+  return { bots, waves, games: toMyGames(rows, ids), names }
 }
 
 const dateFormat = new Intl.DateTimeFormat('fr-FR', {
@@ -106,7 +115,7 @@ function GameRows({
         <td data-label="Date">{dateFormat.format(Date.parse(game.playedAt))}</td>
         <td data-label="Ouverture">{game.openingLabel}</td>
         <td data-label="Couleur tenue">{COLOR_LABELS[game.color]}</td>
-        <td data-label="Adversaire">{game.opponent ?? 'non divulgué'}</td>
+        <td data-label="Adversaire">{game.opponent ?? 'nom inconnu'}</td>
         <td data-label="Issue">{game.outcomeText}</td>
         <td data-label="Coups">{game.moveCount}</td>
         <td data-label="Actions" className="game-actions">
@@ -164,7 +173,7 @@ export function MyGamesScreen() {
 
       <AsyncPanel state={state}>
         {(payload) => {
-          const names = new Map(payload.bots.map((row) => [row.id, row.nom]))
+          const names = payload.names
           const shown = filterGames(payload.games, filters)
 
           return (

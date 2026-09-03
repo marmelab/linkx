@@ -24,7 +24,7 @@
  * donc la portée du site publié sous un sous-chemin (`/linkx/`) reste correcte.
  */
 
-const VERSION = 'v2'
+const VERSION = 'v3'
 const SHELL_CACHE = `linkx-shell-${VERSION}`
 const ASSET_CACHE = `linkx-assets-${VERSION}`
 const CURRENT_CACHES = [SHELL_CACHE, ASSET_CACHE]
@@ -56,20 +56,29 @@ function findAssetUrls(html) {
 }
 
 /**
- * Fragments cités par un script plutôt que par le document — le worker de
- * recherche du coup de l'ordinateur, notamment.
+ * Le worker de recherche du coup de l'ordinateur, cité par un script plutôt que
+ * par le document.
  *
  * Le bundle d'entrée le désigne par son seul nom haché (`aiWorker-XXXX.js`),
  * résolu par le navigateur relativement au script lui-même : il n'apparaît donc
  * ni dans le HTML, ni sous la forme `assets/…`. Sans ce second balayage, un
  * joueur qui installe le jeu puis passe hors ligne sans avoir déclenché un tour
- * d'ordinateur n'aurait jamais le worker en cache.
+ * d'ordinateur n'aurait jamais le worker en cache, et perdrait l'adversaire
+ * fort hors ligne.
  *
- * Le repérage est volontairement large — tout nom de fichier haché cité entre
- * guillemets — et les mises en cache sont au mieux : une fausse piste échoue
- * sans conséquence.
+ * Le motif nomme ce fragment-là et lui seul. Un repérage large — tout nom haché
+ * cité entre guillemets — embarquerait aussi le morceau paresseux de la
+ * plateforme de tournoi, que le bundle d'entrée cite de la même façon : une
+ * centaine de kilo-octets pour une destination qui, elle, exige le réseau et un
+ * compte, alors que **le jeu ne doit rien devoir à la plateforme** (plan.md,
+ * « Hors périmètre »). Ce morceau se met en cache à l'usage, comme n'importe
+ * quel asset haché, jamais à l'installation.
+ *
+ * Le préfixe suit le nom du module source, `src/aiWorker.ts`, dont Vite tire le
+ * nom du fragment. Les mises en cache restent au mieux : un fragment introuvable
+ * échoue sans faire échouer l'installation.
  */
-const CHUNK_REFERENCE = /["'`]([\w.-]+-[\w]{8,}\.js)["'`]/g
+const CHUNK_REFERENCE = /["'`](?:\.?\/)?(aiWorker-[\w-]+\.js)["'`]/g
 
 async function findScriptChunkUrls(scriptUrls) {
   const found = new Set()

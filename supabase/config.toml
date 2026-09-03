@@ -390,6 +390,15 @@ deno_version = 2
 enabled = true
 verify_jwt = true
 
+# Retrait et réactivation d'une IA par son auteur. Même exigence que ci-dessus :
+# `verify_jwt` ne dit que « ce jeton est signé », et la clé publique en est un ;
+# la fonction revérifie donc l'identité auprès de /auth/v1/user, puis n'agit que
+# sur une IA de l'appelant. Elle écrit avec la clé de service, `statut` étant
+# réservé au service par un déclencheur.
+[functions.update-bot]
+enabled = true
+verify_jwt = true
+
 # Sonde de mise au point : publique à dessein, on l'essaie avant d'avoir un
 # compte. Ses garde-fous sont dans la fonction, pas dans cette configuration.
 [functions.probe-bot]

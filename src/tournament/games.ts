@@ -28,9 +28,10 @@ export type MyGame = {
 }
 
 /**
- * Nom de l'adversaire, quand les politiques d'accès le rendent. `bots` n'est
- * lisible que de son propriétaire : la jointure rend donc `null` pour l'IA d'en
- * face, et l'écran l'écrit alors en toutes lettres plutôt que d'inventer.
+ * Nom de l'adversaire. `bots` n'est lisible que de son propriétaire, mais le
+ * nom d'une IA est public : `api.ts` le résout par la vue `noms_bots`. Reste
+ * `null` si la vue ne connaît pas cette ligne, et l'écran l'écrit alors en
+ * toutes lettres plutôt que d'inventer.
  */
 function opponentName(row: GameRow, color: PlayerId): string | null {
   const other = color === 'blue' ? row.blanc : row.bleu

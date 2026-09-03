@@ -135,7 +135,9 @@ function BotCard({
         >
           Voir ses parties
         </Link>
-        {bot.statut === 'sommeil' || bot.statut === 'retiree' ? (
+        {/* Une IA retirée ne revient pas : ne rien lui proposer vaut mieux
+            qu'un bouton dont le service refusera la demande. */}
+        {bot.statut === 'sommeil' ? (
           <button
             type="button"
             className="secondary-button secondary-button--small"
@@ -144,7 +146,7 @@ function BotCard({
           >
             Réactiver
           </button>
-        ) : (
+        ) : bot.statut === 'retiree' ? null : (
           <button
             type="button"
             className="secondary-button secondary-button--small"
