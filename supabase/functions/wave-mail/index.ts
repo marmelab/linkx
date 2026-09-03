@@ -15,6 +15,7 @@
  * **Aucune adresse électronique n'est journalisée ni rendue** : le compte rendu
  * ne nomme les destinataires que par leur identifiant.
  */
+import { TOURNAMENT_PATHS } from '../../../src/tournament/routes.ts'
 import { UNIQUE_VIOLATION, createRest } from '../_shared/rest.ts'
 import type { Rest } from '../_shared/rest.ts'
 import { sendWaveMails } from '../_shared/waveMailDelivery.ts'
@@ -36,12 +37,17 @@ import type { NotationErrorReason } from '../../../src/game/moveNotation.ts'
 const JSON_HEADERS = { 'content-type': 'application/json; charset=utf-8' }
 
 /**
- * Chemins des écrans de l'histoire 16, à tenir d'accord avec le routeur de la
- * SPA : ce sont les seuls liens que le courriel propose.
+ * Les chemins viennent du routeur lui-même, jamais d'une copie : un courriel
+ * qui enverrait sur des pages introuvables serait pire que pas de courriel, et
+ * une liste recopiée ici se serait périmée à la première route renommée.
+ *
+ * Le `#` n'est pas décoratif : le routeur est en **mode hash**, GitHub Pages
+ * servant des fichiers statiques. `…/linkx/classement` rendrait une 404 ;
+ * `…/linkx/#/classement` retombe toujours sur `index.html`.
  */
-const RANKING_PATH = 'classement'
-const GAMES_PATH = 'mes-parties'
-const MY_BOTS_PATH = 'mes-ias'
+const RANKING_PATH = `#${TOURNAMENT_PATHS.leaderboard}`
+const GAMES_PATH = `#${TOURNAMENT_PATHS.games}`
+const MY_BOTS_PATH = `#${TOURNAMENT_PATHS.bots}`
 
 /**
  * File des bilans à envoyer. `envoye_le` y est la marque d'envoi, et la
