@@ -403,6 +403,28 @@ verify_jwt = false
 enabled = true
 verify_jwt = false
 
+# Courriel hebdomadaire de fin de vague. Appelée par un cron, jamais par un
+# navigateur : `verify_jwt` ne conviendrait pas, la clé publique étant elle
+# aussi un jeton valide, et la fonction exige donc elle-même la clé de service.
+# Secrets attendus : RESEND_API_KEY, WAVE_MAIL_FROM, WAVE_MAIL_SITE_URL. Sans
+# les deux premiers, la fonction compose, journalise et n'envoie rien.
+[functions.wave-mail]
+enabled = true
+verify_jwt = false
+
+# Ordonnanceur des vagues et arbitre des parties. Réveillés chaque minute du
+# jeudi par pg_cron (migration 20260904100300), qui présente la clé de service.
+# Même raison que ci-dessus de ne pas s'en remettre à `verify_jwt` : il ne
+# vérifie qu'une signature, et le jeton d'un simple visiteur en porte une. Les
+# deux fonctions exigent donc la clé de service, et se taisent hors fenêtre.
+[functions.scheduler]
+enabled = true
+verify_jwt = false
+
+[functions.referee-tick]
+enabled = true
+verify_jwt = false
+
 [analytics]
 enabled = true
 port = 54327
