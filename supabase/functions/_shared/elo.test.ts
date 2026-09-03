@@ -1,190 +1,194 @@
 import { describe, expect, it } from 'vitest'
 import {
-  CLASSEMENT_INITIAL,
-  COEFFICIENT_ETABLI,
-  COEFFICIENT_RODAGE,
-  PARTIES_DE_RODAGE,
-  appliquerVague,
-  coefficient,
-  ecartEcrit,
-  esperance,
+  ESTABLISHED_K_FACTOR,
+  INITIAL_RATING,
+  PROVISIONAL_GAMES,
+  PROVISIONAL_K_FACTOR,
+  applyWave,
+  expectedScore,
+  formatDelta,
+  kFactor,
 } from './elo.ts'
-import type { ClassementBot, PartieClassee } from './elo.ts'
+import type { BotRating, RatedGame } from './elo.ts'
 
-function depart(
-  entrees: Record<string, [classement: number, parties: number]>,
-): Map<string, ClassementBot> {
+function start(
+  entries: Record<string, [rating: number, games: number]>,
+): Map<string, BotRating> {
   return new Map(
-    Object.entries(entrees).map(([bot, [classement, partiesClassees]]) => [
+    Object.entries(entries).map(([bot, [rating, ratedGames]]) => [
       bot,
-      { classement, partiesClassees },
+      { rating, ratedGames },
     ]),
   )
 }
 
-function partie(
-  bleu: string,
-  blanc: string,
-  vainqueur: PartieClassee['vainqueur'],
-): PartieClassee {
-  return { bleu, blanc, vainqueur }
+function game(
+  blue: string,
+  white: string,
+  winner: RatedGame['winner'],
+): RatedGame {
+  return { blue, white, winner }
 }
 
-function bilan(resultat: ReturnType<typeof appliquerVague>, bot: string) {
-  const trouve = resultat.bilans.find((entree) => entree.bot === bot)
-  if (!trouve) throw new Error(`Bilan manquant pour ${bot}.`)
-  return trouve
+function summary(result: ReturnType<typeof applyWave>, bot: string) {
+  const found = result.summaries.find((entry) => entry.bot === bot)
+  if (!found) throw new Error(`Bilan manquant pour ${bot}.`)
+  return found
 }
 
 describe('barème', () => {
   it('part à 1200 et applique 40 puis 20', () => {
-    expect(CLASSEMENT_INITIAL).toBe(1200)
-    expect(PARTIES_DE_RODAGE).toBe(10)
-    expect(coefficient(0)).toBe(COEFFICIENT_RODAGE)
-    expect(coefficient(9)).toBe(COEFFICIENT_RODAGE)
-    expect(coefficient(10)).toBe(COEFFICIENT_ETABLI)
-    expect(coefficient(500)).toBe(COEFFICIENT_ETABLI)
-    expect(COEFFICIENT_RODAGE).toBeGreaterThan(COEFFICIENT_ETABLI)
+    expect(INITIAL_RATING).toBe(1200)
+    expect(PROVISIONAL_GAMES).toBe(10)
+    expect(kFactor(0)).toBe(PROVISIONAL_K_FACTOR)
+    expect(kFactor(9)).toBe(PROVISIONAL_K_FACTOR)
+    expect(kFactor(10)).toBe(ESTABLISHED_K_FACTOR)
+    expect(kFactor(500)).toBe(ESTABLISHED_K_FACTOR)
+    expect(PROVISIONAL_K_FACTOR).toBeGreaterThan(ESTABLISHED_K_FACTOR)
   })
 
   it('donne une espérance d’une demie entre égaux', () => {
-    expect(esperance(1200, 1200)).toBe(0.5)
-    expect(esperance(1400, 1000)).toBeCloseTo(0.909, 3)
+    expect(expectedScore(1200, 1200)).toBe(0.5)
+    expect(expectedScore(1400, 1000)).toBeCloseTo(0.909, 3)
   })
 
   it('écrit l’écart avec son signe', () => {
-    expect(ecartEcrit(18)).toBe('+18')
-    expect(ecartEcrit(-7)).toBe('−7')
-    expect(ecartEcrit(0)).toBe('=')
+    expect(formatDelta(18)).toBe('+18')
+    expect(formatDelta(-7)).toBe('−7')
+    expect(formatDelta(0)).toBe('=')
   })
 })
 
 describe('application d’une vague', () => {
   it('classe une IA inconnue à 1200', () => {
-    const resultat = appliquerVague(new Map(), [partie('a', 'b', 'blue')])
-    expect(bilan(resultat, 'a').avant).toBe(1200)
-    expect(bilan(resultat, 'a').apres).toBe(1220)
-    expect(bilan(resultat, 'b').apres).toBe(1180)
+    const result = applyWave(new Map(), [game('a', 'b', 'blue')])
+    expect(summary(result, 'a').before).toBe(1200)
+    expect(summary(result, 'a').after).toBe(1220)
+    expect(summary(result, 'b').after).toBe(1180)
   })
 
   it('compte un nul pour une demi-victoire de chacun', () => {
-    const resultat = appliquerVague(new Map(), [partie('a', 'b', null)])
-    expect(bilan(resultat, 'a').ecart).toBe(0)
-    expect(bilan(resultat, 'b').ecart).toBe(0)
-    expect(bilan(resultat, 'a').nuls).toBe(1)
-    expect(bilan(resultat, 'b').nuls).toBe(1)
+    const result = applyWave(new Map(), [game('a', 'b', null)])
+    expect(summary(result, 'a').delta).toBe(0)
+    expect(summary(result, 'b').delta).toBe(0)
+    expect(summary(result, 'a').draws).toBe(1)
+    expect(summary(result, 'b').draws).toBe(1)
   })
 
   it('applique le coefficient établi à une IA rodée', () => {
-    const resultat = appliquerVague(depart({ a: [1200, 30], b: [1200, 30] }), [
-      partie('a', 'b', 'blue'),
+    const result = applyWave(start({ a: [1200, 30], b: [1200, 30] }), [
+      game('a', 'b', 'blue'),
     ])
-    expect(bilan(resultat, 'a').apres).toBe(1210)
-    expect(bilan(resultat, 'b').apres).toBe(1190)
+    expect(summary(result, 'a').after).toBe(1210)
+    expect(summary(result, 'b').after).toBe(1190)
   })
 
   it('lit le coefficient à l’ouverture de la vague, pas sur un compteur qui monte', () => {
-    const parties = [
-      partie('jeune', 'rodee', 'blue'),
-      partie('rodee', 'jeune', 'blue'),
-      partie('jeune', 'rodee', 'blue'),
-      partie('rodee', 'jeune', 'blue'),
-      partie('jeune', 'rodee', 'blue'),
+    const games = [
+      game('jeune', 'rodee', 'blue'),
+      game('rodee', 'jeune', 'blue'),
+      game('jeune', 'rodee', 'blue'),
+      game('rodee', 'jeune', 'blue'),
+      game('jeune', 'rodee', 'blue'),
     ]
-    const resultat = appliquerVague(
-      depart({ jeune: [1200, 9], rodee: [1200, 40] }),
-      parties,
+    const result = applyWave(
+      start({ jeune: [1200, 9], rodee: [1200, 40] }),
+      games,
     )
 
     // Référence : coefficient figé sur tout la vague, 40 pour la jeune IA.
-    let noteJeune = 1200
-    let noteRodee = 1200
-    for (const jeu of parties) {
-      const jeuneEnBleu = jeu.bleu === 'jeune'
-      const attenduJeune = esperance(noteJeune, noteRodee)
-      const obtenuJeune =
-        jeu.vainqueur === null ? 0.5 : (jeu.vainqueur === 'blue') === jeuneEnBleu ? 1 : 0
-      noteJeune += COEFFICIENT_RODAGE * (obtenuJeune - attenduJeune)
-      noteRodee += COEFFICIENT_ETABLI * (attenduJeune - obtenuJeune)
+    let youngRating = 1200
+    let seasonedRating = 1200
+    for (const played of games) {
+      const youngIsBlue = played.blue === 'jeune'
+      const youngExpected = expectedScore(youngRating, seasonedRating)
+      const youngObtained =
+        played.winner === null
+          ? 0.5
+          : (played.winner === 'blue') === youngIsBlue
+            ? 1
+            : 0
+      youngRating += PROVISIONAL_K_FACTOR * (youngObtained - youngExpected)
+      seasonedRating += ESTABLISHED_K_FACTOR * (youngExpected - youngObtained)
     }
 
-    expect(bilan(resultat, 'jeune').apres).toBe(Math.round(noteJeune))
-    expect(bilan(resultat, 'rodee').apres).toBe(Math.round(noteRodee))
-    expect(bilan(resultat, 'jeune').partiesClassees).toBe(14)
+    expect(summary(result, 'jeune').after).toBe(Math.round(youngRating))
+    expect(summary(result, 'rodee').after).toBe(Math.round(seasonedRating))
+    expect(summary(result, 'jeune').ratedGames).toBe(14)
   })
 
   it('tient le compte des victoires, nuls et défaites', () => {
-    const resultat = appliquerVague(new Map(), [
-      partie('a', 'b', 'blue'),
-      partie('b', 'a', 'blue'),
-      partie('a', 'b', null),
-      partie('a', 'b', 'white'),
+    const result = applyWave(new Map(), [
+      game('a', 'b', 'blue'),
+      game('b', 'a', 'blue'),
+      game('a', 'b', null),
+      game('a', 'b', 'white'),
     ])
-    const a = bilan(resultat, 'a')
-    expect([a.victoires, a.nuls, a.defaites]).toEqual([1, 1, 2])
-    const b = bilan(resultat, 'b')
-    expect([b.victoires, b.nuls, b.defaites]).toEqual([2, 1, 1])
-    expect(a.partiesClassees).toBe(4)
+    const a = summary(result, 'a')
+    expect([a.wins, a.draws, a.losses]).toEqual([1, 1, 2])
+    const b = summary(result, 'b')
+    expect([b.wins, b.draws, b.losses]).toEqual([2, 1, 1])
+    expect(a.ratedGames).toBe(4)
   })
 
   it('prend les parties dans leur ordre chronologique', () => {
-    const parties = [
-      partie('a', 'b', 'blue'),
-      partie('a', 'c', 'white'),
-      partie('b', 'c', 'blue'),
+    const games = [
+      game('a', 'b', 'blue'),
+      game('a', 'c', 'white'),
+      game('b', 'c', 'blue'),
     ]
-    const direct = appliquerVague(new Map(), parties)
-    const permute = appliquerVague(new Map(), [parties[2], parties[0], parties[1]])
-    expect(bilan(permute, 'c').apres).not.toBe(bilan(direct, 'c').apres)
+    const direct = applyWave(new Map(), games)
+    const shuffled = applyWave(new Map(), [games[2], games[0], games[1]])
+    expect(summary(shuffled, 'c').after).not.toBe(summary(direct, 'c').after)
   })
 
   it('rend exactement les mêmes valeurs à la relecture', () => {
-    const parties = [
-      partie('a', 'b', 'blue'),
-      partie('b', 'c', null),
-      partie('c', 'a', 'blue'),
-      partie('a', 'b', 'white'),
-      partie('c', 'b', null),
+    const games = [
+      game('a', 'b', 'blue'),
+      game('b', 'c', null),
+      game('c', 'a', 'blue'),
+      game('a', 'b', 'white'),
+      game('c', 'b', null),
     ]
-    const debut = depart({ a: [1250, 12], b: [1180, 3], c: [1200, 0] })
-    const premier = appliquerVague(debut, parties)
-    const second = appliquerVague(debut, parties)
-    expect(second.bilans).toEqual(premier.bilans)
-    expect([...second.classements]).toEqual([...premier.classements])
+    const initial = start({ a: [1250, 12], b: [1180, 3], c: [1200, 0] })
+    const first = applyWave(initial, games)
+    const second = applyWave(initial, games)
+    expect(second.summaries).toEqual(first.summaries)
+    expect([...second.ratings]).toEqual([...first.ratings])
     // Le calcul ne consomme pas ses entrées.
-    expect([...debut]).toEqual([
-      ['a', { classement: 1250, partiesClassees: 12 }],
-      ['b', { classement: 1180, partiesClassees: 3 }],
-      ['c', { classement: 1200, partiesClassees: 0 }],
+    expect([...initial]).toEqual([
+      ['a', { rating: 1250, ratedGames: 12 }],
+      ['b', { rating: 1180, ratedGames: 3 }],
+      ['c', { rating: 1200, ratedGames: 0 }],
     ])
   })
 
   it('rend des classements entiers', () => {
-    const resultat = appliquerVague(depart({ a: [1250, 12], b: [1180, 3] }), [
-      partie('a', 'b', 'blue'),
-      partie('b', 'a', null),
+    const result = applyWave(start({ a: [1250, 12], b: [1180, 3] }), [
+      game('a', 'b', 'blue'),
+      game('b', 'a', null),
     ])
-    for (const { classement } of resultat.classements.values()) {
-      expect(Number.isInteger(classement)).toBe(true)
+    for (const { rating } of result.ratings.values()) {
+      expect(Number.isInteger(rating)).toBe(true)
     }
   })
 
   it('laisse intacts les classements des IA qui n’ont pas joué', () => {
-    const resultat = appliquerVague(
-      depart({ a: [1250, 12], b: [1180, 3], absente: [1300, 40] }),
-      [partie('a', 'b', 'blue')],
+    const result = applyWave(
+      start({ a: [1250, 12], b: [1180, 3], absente: [1300, 40] }),
+      [game('a', 'b', 'blue')],
     )
-    expect(resultat.classements.get('absente')).toEqual({
-      classement: 1300,
-      partiesClassees: 40,
+    expect(result.ratings.get('absente')).toEqual({
+      rating: 1300,
+      ratedGames: 40,
     })
-    expect(resultat.bilans.map((entree) => entree.bot)).toEqual(['a', 'b'])
+    expect(result.summaries.map((entry) => entry.bot)).toEqual(['a', 'b'])
   })
 
   it('ne change rien sur une vague sans rencontre', () => {
-    const debut = depart({ solo: [1234, 20] })
-    const resultat = appliquerVague(debut, [])
-    expect(resultat.bilans).toEqual([])
-    expect([...resultat.classements]).toEqual([...debut])
+    const initial = start({ solo: [1234, 20] })
+    const result = applyWave(initial, [])
+    expect(result.summaries).toEqual([])
+    expect([...result.ratings]).toEqual([...initial])
   })
 })

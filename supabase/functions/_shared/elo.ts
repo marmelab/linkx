@@ -7,41 +7,41 @@
  */
 import type { PlayerId } from '../../../src/game/types.ts'
 
-export const CLASSEMENT_INITIAL = 1200
-export const PARTIES_DE_RODAGE = 10
-export const COEFFICIENT_RODAGE = 40
-export const COEFFICIENT_ETABLI = 20
+export const INITIAL_RATING = 1200
+export const PROVISIONAL_GAMES = 10
+export const PROVISIONAL_K_FACTOR = 40
+export const ESTABLISHED_K_FACTOR = 20
 
-export type ClassementBot = {
-  classement: number
+export type BotRating = {
+  rating: number
   /** Parties déjà classées avant la vague : c'est elle qui fixe le coefficient. */
-  partiesClassees: number
+  ratedGames: number
 }
 
-export type PartieClassee = {
-  bleu: string
-  blanc: string
-  vainqueur: PlayerId | null
+export type RatedGame = {
+  blue: string
+  white: string
+  winner: PlayerId | null
 }
 
-export type BilanBot = {
+export type BotSummary = {
   bot: string
-  avant: number
-  apres: number
-  ecart: number
-  victoires: number
-  nuls: number
-  defaites: number
-  partiesClassees: number
+  before: number
+  after: number
+  delta: number
+  wins: number
+  draws: number
+  losses: number
+  ratedGames: number
 }
 
-export type ResultatVague = {
-  classements: Map<string, ClassementBot>
-  bilans: BilanBot[]
+export type WaveResult = {
+  ratings: Map<string, BotRating>
+  summaries: BotSummary[]
 }
 
-export function esperance(classement: number, adverse: number): number {
-  return 1 / (1 + 10 ** ((adverse - classement) / 400))
+export function expectedScore(rating: number, opponentRating: number): number {
+  return 1 / (1 + 10 ** ((opponentRating - rating) / 400))
 }
 
 /**
@@ -50,34 +50,31 @@ export function esperance(classement: number, adverse: number): number {
  * calcul. C'est ce qui rend le résultat indépendant de l'ordre interne d'une
  * vague, et donc reproductible.
  */
-export function coefficient(partiesClasseesAvantLaVague: number): number {
-  return partiesClasseesAvantLaVague < PARTIES_DE_RODAGE
-    ? COEFFICIENT_RODAGE
-    : COEFFICIENT_ETABLI
+export function kFactor(ratedGamesBeforeWave: number): number {
+  return ratedGamesBeforeWave < PROVISIONAL_GAMES
+    ? PROVISIONAL_K_FACTOR
+    : ESTABLISHED_K_FACTOR
 }
 
-type Compte = { victoires: number; nuls: number; defaites: number }
+type Tally = { wins: number; draws: number; losses: number }
 
-function requis<T>(table: ReadonlyMap<string, T>, cle: string): T {
-  const valeur = table.get(cle)
-  if (valeur === undefined) throw new Error(`IA inconnue : ${cle}.`)
-  return valeur
+function required<T>(table: ReadonlyMap<string, T>, key: string): T {
+  const value = table.get(key)
+  if (value === undefined) throw new Error(`IA inconnue : ${key}.`)
+  return value
 }
 
-function classementDeDepart(
-  depart: ReadonlyMap<string, ClassementBot>,
+function startingRating(
+  start: ReadonlyMap<string, BotRating>,
   bot: string,
-): ClassementBot {
-  return depart.get(bot) ?? {
-    classement: CLASSEMENT_INITIAL,
-    partiesClassees: 0,
-  }
+): BotRating {
+  return start.get(bot) ?? { rating: INITIAL_RATING, ratedGames: 0 }
 }
 
 /** Score du joueur bleu : 1 victoire, 0,5 nul, 0 défaite. */
-function scoreBleu(vainqueur: PlayerId | null): number {
-  if (vainqueur === 'blue') return 1
-  if (vainqueur === 'white') return 0
+function blueScore(winner: PlayerId | null): number {
+  if (winner === 'blue') return 1
+  if (winner === 'white') return 0
   return 0.5
 }
 
@@ -85,83 +82,83 @@ function scoreBleu(vainqueur: PlayerId | null): number {
  * Applique une vague entière, parties prises dans l'ordre chronologique reçu.
  * Fonction pure : deux appels sur les mêmes entrées rendent les mêmes valeurs.
  */
-export function appliquerVague(
-  depart: ReadonlyMap<string, ClassementBot>,
-  parties: readonly PartieClassee[],
-): ResultatVague {
+export function applyWave(
+  start: ReadonlyMap<string, BotRating>,
+  games: readonly RatedGame[],
+): WaveResult {
   const bots = new Set<string>()
-  for (const partie of parties) {
-    bots.add(partie.bleu)
-    bots.add(partie.blanc)
+  for (const game of games) {
+    bots.add(game.blue)
+    bots.add(game.white)
   }
 
-  const avant = new Map<string, ClassementBot>()
-  const courant = new Map<string, number>()
-  const coefficients = new Map<string, number>()
-  const compte = new Map<string, Compte>()
+  const before = new Map<string, BotRating>()
+  const current = new Map<string, number>()
+  const kFactors = new Map<string, number>()
+  const tally = new Map<string, Tally>()
   for (const bot of bots) {
-    const initial = classementDeDepart(depart, bot)
-    avant.set(bot, initial)
-    courant.set(bot, initial.classement)
-    coefficients.set(bot, coefficient(initial.partiesClassees))
-    compte.set(bot, { victoires: 0, nuls: 0, defaites: 0 })
+    const initial = startingRating(start, bot)
+    before.set(bot, initial)
+    current.set(bot, initial.rating)
+    kFactors.set(bot, kFactor(initial.ratedGames))
+    tally.set(bot, { wins: 0, draws: 0, losses: 0 })
   }
 
-  for (const partie of parties) {
-    const noteBleu = requis(courant, partie.bleu)
-    const noteBlanc = requis(courant, partie.blanc)
-    const attenduBleu = esperance(noteBleu, noteBlanc)
-    const obtenuBleu = scoreBleu(partie.vainqueur)
+  for (const game of games) {
+    const blueRating = required(current, game.blue)
+    const whiteRating = required(current, game.white)
+    const blueExpected = expectedScore(blueRating, whiteRating)
+    const blueObtained = blueScore(game.winner)
 
-    courant.set(
-      partie.bleu,
-      noteBleu + requis(coefficients, partie.bleu) * (obtenuBleu - attenduBleu),
+    current.set(
+      game.blue,
+      blueRating + required(kFactors, game.blue) * (blueObtained - blueExpected),
     )
-    courant.set(
-      partie.blanc,
-      noteBlanc + requis(coefficients, partie.blanc) * (attenduBleu - obtenuBleu),
+    current.set(
+      game.white,
+      whiteRating + required(kFactors, game.white) * (blueExpected - blueObtained),
     )
 
-    const bilanBleu = requis(compte, partie.bleu)
-    const bilanBlanc = requis(compte, partie.blanc)
-    if (partie.vainqueur === 'blue') {
-      bilanBleu.victoires += 1
-      bilanBlanc.defaites += 1
-    } else if (partie.vainqueur === 'white') {
-      bilanBleu.defaites += 1
-      bilanBlanc.victoires += 1
+    const blueTally = required(tally, game.blue)
+    const whiteTally = required(tally, game.white)
+    if (game.winner === 'blue') {
+      blueTally.wins += 1
+      whiteTally.losses += 1
+    } else if (game.winner === 'white') {
+      blueTally.losses += 1
+      whiteTally.wins += 1
     } else {
-      bilanBleu.nuls += 1
-      bilanBlanc.nuls += 1
+      blueTally.draws += 1
+      whiteTally.draws += 1
     }
   }
 
-  const classements = new Map<string, ClassementBot>(depart)
-  const bilans: BilanBot[] = []
+  const ratings = new Map<string, BotRating>(start)
+  const summaries: BotSummary[] = []
   for (const bot of [...bots].sort()) {
-    const initial = requis(avant, bot)
-    const joue = requis(compte, bot)
-    const parties = joue.victoires + joue.nuls + joue.defaites
-    const apres = Math.round(requis(courant, bot))
-    const partiesClassees = initial.partiesClassees + parties
-    classements.set(bot, { classement: apres, partiesClassees })
-    bilans.push({
+    const initial = required(before, bot)
+    const played = required(tally, bot)
+    const total = played.wins + played.draws + played.losses
+    const after = Math.round(required(current, bot))
+    const ratedGames = initial.ratedGames + total
+    ratings.set(bot, { rating: after, ratedGames })
+    summaries.push({
       bot,
-      avant: initial.classement,
-      apres,
-      ecart: apres - initial.classement,
-      victoires: joue.victoires,
-      nuls: joue.nuls,
-      defaites: joue.defaites,
-      partiesClassees,
+      before: initial.rating,
+      after,
+      delta: after - initial.rating,
+      wins: played.wins,
+      draws: played.draws,
+      losses: played.losses,
+      ratedGames,
     })
   }
 
-  return { classements, bilans }
+  return { ratings, summaries }
 }
 
 /** Écart signé, écrit comme le classement public l'exige : `+18`, `−7`, `=`. */
-export function ecartEcrit(ecart: number): string {
-  if (ecart === 0) return '='
-  return ecart > 0 ? `+${ecart}` : `−${Math.abs(ecart)}`
+export function formatDelta(delta: number): string {
+  if (delta === 0) return '='
+  return delta > 0 ? `+${delta}` : `−${Math.abs(delta)}`
 }
