@@ -1,0 +1,211 @@
+/**
+ * Déclaration d'une IA par son auteur, depuis la SPA (histoire 14).
+ *
+ * La session est déjà ouverte : le clic sur le lien magique vaut confirmation de
+ * l'adresse électronique, il n'y a pas d'autre étape ici. La fonction écrit avec
+ * la clé de service — le déclencheur des colonnes réservées interdit à un client
+ * d'écrire `statut` et `secret_signature` — mais elle ne fait jamais confiance
+ * au corps de la requête pour savoir **qui** déclare : le propriétaire vient du
+ * jeton, validé par le service d'authentification.
+ *
+ * La partie de qualification est déclenchée par l'ordonnanceur : l'IA reste ici
+ * en `en_attente`, et la réponse le dit.
+ */
+import { checkBotAddress, checkBotAddressWithDns } from '../_shared/safeUrl.ts'
+import type { AddressVerdict } from '../_shared/safeUrl.ts'
+
+const CORS_HEADERS = {
+  'access-control-allow-origin': '*',
+  'access-control-allow-headers': 'authorization, content-type, apikey',
+  'access-control-allow-methods': 'POST, OPTIONS',
+}
+
+const JSON_HEADERS = {
+  ...CORS_HEADERS,
+  'content-type': 'application/json; charset=utf-8',
+}
+
+/** Deux déclarations par minute : au-delà, ce n'est plus un auteur qui essaie. */
+const REGISTRATION_WINDOW_MS = 60_000
+const MAX_REGISTRATIONS_PER_WINDOW = 2
+
+const MAX_NAME_LENGTH = 64
+/** Lettres, chiffres et ponctuation de nom ; ni contrôle, ni balise, ni emoji. */
+const NAME_PATTERN = /^[\p{L}\p{N}][\p{L}\p{N} '._+-]*$/u
+
+type Champ = 'nom' | 'adresse'
+
+function json(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), { status, headers: JSON_HEADERS })
+}
+
+function refus(message: string, status: number, champ: Champ | null = null) {
+  return json({ ok: false, champ, message }, status)
+}
+
+/**
+ * Résolution DNS du runtime, quand il l'expose. Un nom introuvable rend une
+ * liste vide, que `checkBotAddressWithDns` refuse ; une résolution *impossible*
+ * — permission refusée, fonction absente — lève, et l'on s'en tient alors au
+ * contrôle d'écriture plutôt que de refuser toutes les adresses.
+ */
+async function resolveHost(host: string): Promise<readonly string[]> {
+  const addresses: string[] = []
+  let indisponible = false
+  for (const kind of ['A', 'AAAA'] as const) {
+    try {
+      addresses.push(...(await Deno.resolveDns(host, kind)))
+    } catch (error) {
+      if (!(error instanceof Deno.errors.NotFound)) indisponible = true
+    }
+  }
+  if (addresses.length === 0 && indisponible) {
+    throw new Error('résolution DNS indisponible')
+  }
+  return addresses
+}
+
+async function checkAddress(raw: string): Promise<AddressVerdict> {
+  const verdict = checkBotAddress(raw)
+  if (!verdict.ok || typeof Deno.resolveDns !== 'function') return verdict
+  let addresses: readonly string[]
+  try {
+    addresses = await resolveHost(verdict.host)
+  } catch {
+    return verdict
+  }
+  return await checkBotAddressWithDns(raw, () => Promise.resolve(addresses))
+}
+
+/**
+ * Identité de l'appelant, telle que le service d'authentification la confirme.
+ * Le jeton n'est jamais décodé ici : seul `/auth/v1/user` sait s'il est signé,
+ * non révoqué et non expiré.
+ */
+async function currentUserId(
+  request: Request,
+  supabaseUrl: string,
+  anonKey: string,
+): Promise<string | null> {
+  const authorization = request.headers.get('authorization') ?? ''
+  if (!/^Bearer\s+\S+$/i.test(authorization)) return null
+
+  const response = await fetch(`${supabaseUrl}/auth/v1/user`, {
+    headers: { authorization, apikey: anonKey },
+  })
+  if (!response.ok) return null
+  const user = (await response.json()) as { id?: unknown }
+  return typeof user.id === 'string' ? user.id : null
+}
+
+function newSecret(): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(32))
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('')
+}
+
+Deno.serve(async (request: Request): Promise<Response> => {
+  if (request.method === 'OPTIONS') {
+    return new Response(null, { status: 204, headers: CORS_HEADERS })
+  }
+  if (request.method !== 'POST') {
+    return refus('Utiliser POST.', 405)
+  }
+
+  const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? ''
+  const anonKey = Deno.env.get('SUPABASE_ANON_KEY') ?? ''
+  const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+  if (!supabaseUrl || !anonKey || !serviceKey) {
+    return refus('Service mal configuré.', 500)
+  }
+
+  const utilisateur = await currentUserId(request, supabaseUrl, anonKey)
+  if (!utilisateur) {
+    return refus('Connectez-vous avant de déclarer une IA.', 401)
+  }
+
+  let payload: unknown
+  try {
+    payload = await request.json()
+  } catch {
+    return refus('Corps JSON illisible.', 400)
+  }
+  const champs = payload as { nom?: unknown; adresse?: unknown } | null
+
+  const nom = typeof champs?.nom === 'string' ? champs.nom.trim() : ''
+  if (nom === '') return refus('Donnez un nom à votre IA.', 400, 'nom')
+  if (nom.length > MAX_NAME_LENGTH) {
+    return refus(
+      `Le nom ne doit pas dépasser ${MAX_NAME_LENGTH} caractères.`,
+      400,
+      'nom',
+    )
+  }
+  if (!NAME_PATTERN.test(nom)) {
+    return refus(
+      'Le nom ne peut contenir que des lettres, des chiffres, des espaces et les signes . _ + - ’',
+      400,
+      'nom',
+    )
+  }
+
+  const adresseBrute = typeof champs?.adresse === 'string' ? champs.adresse : ''
+  const adresse = await checkAddress(adresseBrute)
+  if (!adresse.ok) return refus(adresse.message, 400, 'adresse')
+
+  const rest = `${supabaseUrl}/rest/v1/bots`
+  const serviceHeaders = {
+    apikey: serviceKey,
+    authorization: `Bearer ${serviceKey}`,
+    'content-type': 'application/json',
+  }
+
+  // Débit compté en base, sur les déclarations elles-mêmes : une mémoire
+  // d'isolate ne survivrait ni à un redémarrage ni à une seconde instance.
+  const depuis = new Date(Date.now() - REGISTRATION_WINDOW_MS).toISOString()
+  const recentes = await fetch(
+    `${rest}?select=id&proprietaire=eq.${utilisateur}` +
+      `&cree_le=gte.${encodeURIComponent(depuis)}&limit=10`,
+    { headers: serviceHeaders },
+  )
+  if (!recentes.ok) return refus('Service indisponible, réessayez.', 503)
+  if (((await recentes.json()) as unknown[]).length >= MAX_REGISTRATIONS_PER_WINDOW) {
+    return refus(
+      'Trop de déclarations en peu de temps : attendez une minute.',
+      429,
+    )
+  }
+
+  const secret = newSecret()
+  const creation = await fetch(`${rest}?select=id,nom,adresse_service,statut,cree_le`, {
+    method: 'POST',
+    headers: { ...serviceHeaders, prefer: 'return=representation' },
+    body: JSON.stringify({
+      proprietaire: utilisateur,
+      nom,
+      adresse_service: adresse.address,
+      secret_signature: secret,
+      statut: 'en_attente',
+    }),
+  })
+
+  if (!creation.ok) {
+    const erreur = (await creation.json().catch(() => null)) as
+      | { code?: unknown }
+      | null
+    if (erreur?.code === '23505') {
+      return refus('Ce nom est déjà pris par une autre IA.', 409, 'nom')
+    }
+    return refus('La déclaration a échoué, réessayez.', 503)
+  }
+
+  const [bot] = (await creation.json()) as Array<Record<string, unknown>>
+  return json({
+    ok: true,
+    bot,
+    secret,
+    avertissement:
+      'Ce secret de signature n’est affiché qu’une seule fois : conservez-le maintenant, il ne sera jamais réaffiché.',
+    message:
+      'IA déclarée. Elle est en attente de sa partie de qualification contre l’IA de la maison ; elle entrera au classement dès qu’elle l’aura terminée sans faute technique.',
+  }, 201)
+})

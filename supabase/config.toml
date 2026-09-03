@@ -384,6 +384,25 @@ deno_version = 2
 # [edge_runtime.secrets]
 # secret_key = "env(SECRET_VALUE)"
 
+# Déclaration d'une IA par son auteur : la SPA appelle avec la session ouverte
+# par le lien magique, et la fonction revérifie l'identité auprès de /auth/v1/user.
+[functions.register-bot]
+enabled = true
+verify_jwt = true
+
+# Sonde de mise au point : publique à dessein, on l'essaie avant d'avoir un
+# compte. Ses garde-fous sont dans la fonction, pas dans cette configuration.
+[functions.probe-bot]
+enabled = true
+verify_jwt = false
+
+# L'IA de la maison est appelée par la plateforme de tournoi, pas par un
+# utilisateur connecté : elle s'authentifie par la signature du protocole
+# (`docs/protocole-ia.md`), jamais par un jeton Supabase.
+[functions.bot-linkx]
+enabled = true
+verify_jwt = false
+
 [analytics]
 enabled = true
 port = 54327
