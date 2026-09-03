@@ -40,8 +40,18 @@ jobs:
         run: npm test
 
       # `npm run build` enchaîne `tsc -b` puis le build Vite.
+      #
+      # Les deux variables du tournoi sont des *variables* de dépôt et non des
+      # secrets : elles partent dans le bundle, où n'importe qui les lit. La clé
+      # « anon » est publique par construction, c'est RLS qui protège les
+      # données. Les traiter en secrets ne masquerait rien et ferait croire à
+      # une confidentialité qui n'existe pas. Absentes, le jeu se construit
+      # comme avant et les écrans du tournoi se taisent.
       - name: Build
         run: npm run build
+        env:
+          VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY }}
 
       - name: Upload dist
         uses: actions/upload-artifact@v4
@@ -51,6 +61,96 @@ jobs:
           retention-days: 1
           # Sans cette option, `.nojekyll` (fichier caché) serait exclu.
           include-hidden-files: true
+
+  # Le backend a ses propres garde-fous, qu'aucun outil du front n'exerce :
+  # Deno type-vérifie en mode strict, plus sévèrement que `tsc -b` ici, et les
+  # politiques d'accès ne se prouvent que sur une vraie base.
+  backend:
+    name: Fonctions edge et politiques d'accès
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Setup Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      # `find` plutôt qu'un glob : `**` ne récurse pas sans `globstar`, et le
+      # silence d'un glob non développé passerait pour un succès.
+      - name: Type-check des fonctions edge
+        run: deno check $(find supabase/functions -name '*.ts' ! -name '*.test.ts')
+
+      - name: Pile Supabase locale
+        run: npx supabase start -x realtime,storage-api,imgproxy,studio,inbucket,logflare,vector
+
+      # `db reset` rejoue les migrations depuis zéro : c'est ce qui vérifie
+      # qu'elles s'appliquent dans l'ordre sur une base neuve.
+      - name: Migrations
+        run: npx supabase db reset
+
+      - name: Tests pgTAP
+        run: npx supabase test db
+
+      - name: Arrêt de la pile
+        if: always()
+        run: npx supabase stop
+
+  deploy-backend:
+    name: Déploiement du backend
+    needs: [quality, backend]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      # Le dépôt doit rester utilisable sans projet Supabase : sans la variable,
+      # les étapes suivantes ne s'exécutent pas et le job réussit sans rien
+      # faire, plutôt que d'échouer sur une configuration absente.
+      - name: Projet configuré ?
+        id: projet
+        run: echo "present=${{ vars.SUPABASE_PROJECT_REF != '' }}" >> "$GITHUB_OUTPUT"
+
+      - name: Lien vers le projet
+        if: steps.projet.outputs.present == 'true'
+        run: npx supabase link --project-ref "${{ vars.SUPABASE_PROJECT_REF }}"
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+
+      # Les migrations d'abord : une fonction déployée contre un schéma qui ne
+      # l'attend pas échouerait au premier appel, et le cron appelle vite.
+      - name: Migrations
+        if: steps.projet.outputs.present == 'true'
+        run: npx supabase db push
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+
+      - name: Fonctions edge
+        if: steps.projet.outputs.present == 'true'
+        run: npx supabase functions deploy
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
 
   deploy:
     name: Publication sur gh-pages
