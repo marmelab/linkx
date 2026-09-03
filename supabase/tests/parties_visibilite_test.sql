@@ -28,13 +28,13 @@ insert into public.vagues (id, debut, fin, graine, statut) values
 insert into public.parties (id, vague_id, bot_bleu, bot_blanc, statut, resultat, motif_fin, nombre_coups) values
   ('e0000000-0000-0000-0000-000000000001', 'dddddddd-dddd-dddd-dddd-dddddddddddd',
    'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'cccccccc-cccc-cccc-cccc-cccccccccccc',
-   'terminee', 'bleu', 'connexion', 21),
+   'terminee', 'blue', 'connection', 21),
   ('e0000000-0000-0000-0000-000000000002', 'dddddddd-dddd-dddd-dddd-dddddddddddd',
    'cccccccc-cccc-cccc-cccc-cccccccccccc', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
-   'terminee', 'nul', 'blocage', 40),
+   'terminee', 'draw', 'stalemate', 40),
   ('e0000000-0000-0000-0000-000000000003', 'dddddddd-dddd-dddd-dddd-dddddddddddd',
    'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 'cccccccc-cccc-cccc-cccc-cccccccccccc',
-   'terminee', 'blanc', 'hors_delai', 14);
+   'terminee', 'white', 'timeout', 14);
 
 insert into public.evenements_partie (partie_id, rang_coup, bot_id, latence_ms, statut_http, coup) values
   ('e0000000-0000-0000-0000-000000000001', 0, 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 120, 200, '3Ir13'),
