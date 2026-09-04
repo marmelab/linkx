@@ -263,20 +263,41 @@ export async function fetchQueue(): Promise<QueueRow[]> {
 }
 
 /**
- * IA qui attendent leur qualification, c'est-à-dire tout le travail que
- * l'ordonnanceur a devant lui hors de la fenêtre du jeudi. Sans ce chiffre, un
- * réveil qui ne fait rien ne se distingue pas d'un réveil en panne.
+ * Où en sont les qualifications en attente.
  *
- * Réservé de fait aux administrateurs : la politique de `bots` n'ouvre la table
- * entière qu'à eux, un auteur ordinaire ne compterait que les siennes.
+ * Une qualification se joue en deux temps : un réveil l'ouvre, l'arbitrage la
+ * joue, et c'est le réveil **suivant** qui la valide. Entre les deux, l'IA reste
+ * « en qualification » alors que sa partie est finie — sans le distinguer,
+ * l'auteur croit à un blocage et l'administrateur ne sait pas qu'il lui reste un
+ * clic.
+ *
+ * Réservé de fait aux administrateurs : les politiques de `bots` et `parties`
+ * n'ouvrent ces tables entières qu'à eux.
  */
-export async function countAwaitingQualification(): Promise<number> {
-  const { count, error } = await tournamentClient()
-    .from('bots')
-    .select('id', { count: 'exact', head: true })
-    .eq('statut', 'en_attente')
-  if (error) throw new Error(error.message)
-  return count ?? 0
+export type QualificationState = {
+  awaiting: number
+  /** Parmi elles, celles dont la partie est terminée et n'attend qu'un réveil. */
+  played: number
+}
+
+export async function fetchQualificationState(): Promise<QualificationState> {
+  const bots = unwrap<Array<{ id: string }>>(
+    await tournamentClient().from('bots').select('id').eq('statut', 'en_attente'),
+  )
+  if (bots.length === 0) return { awaiting: 0, played: 0 }
+
+  const games = unwrap<Array<{ bot_bleu: string }>>(
+    await tournamentClient()
+      .from('parties')
+      .select('bot_bleu')
+      .is('vague_id', null)
+      .eq('statut', 'terminee')
+      .in('bot_bleu', bots.map((bot) => bot.id)),
+  )
+  return {
+    awaiting: bots.length,
+    played: new Set(games.map((game) => game.bot_bleu)).size,
+  }
 }
 
 /* Authentification ------------------------------------------------------- */

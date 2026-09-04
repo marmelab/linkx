@@ -96,24 +96,26 @@ describe('application d’une vague', () => {
       games,
     )
 
-    // Référence : coefficient figé sur tout la vague, 40 pour la jeune IA.
-    let youngRating = 1200
-    let seasonedRating = 1200
+    // Référence : coefficients **et** classements figés sur toute la vague — 40
+    // pour la jeune IA, 20 pour la rodée, et une espérance d'une demie partout,
+    // les deux partant de 1200.
+    let youngDelta = 0
+    let seasonedDelta = 0
     for (const played of games) {
       const youngIsBlue = played.blue === 'jeune'
-      const youngExpected = expectedScore(youngRating, seasonedRating)
+      const youngExpected = expectedScore(1200, 1200)
       const youngObtained =
         played.winner === null
           ? 0.5
           : (played.winner === 'blue') === youngIsBlue
             ? 1
             : 0
-      youngRating += PROVISIONAL_K_FACTOR * (youngObtained - youngExpected)
-      seasonedRating += ESTABLISHED_K_FACTOR * (youngExpected - youngObtained)
+      youngDelta += PROVISIONAL_K_FACTOR * (youngObtained - youngExpected)
+      seasonedDelta += ESTABLISHED_K_FACTOR * (youngExpected - youngObtained)
     }
 
-    expect(summary(result, 'jeune').after).toBe(Math.round(youngRating))
-    expect(summary(result, 'rodee').after).toBe(Math.round(seasonedRating))
+    expect(summary(result, 'jeune').after).toBe(Math.round(1200 + youngDelta))
+    expect(summary(result, 'rodee').after).toBe(Math.round(1200 + seasonedDelta))
     expect(summary(result, 'jeune').ratedGames).toBe(14)
   })
 
@@ -131,7 +133,7 @@ describe('application d’une vague', () => {
     expect(a.ratedGames).toBe(4)
   })
 
-  it('prend les parties dans leur ordre chronologique', () => {
+  it('rend le même classement quel que soit l’ordre des parties', () => {
     const games = [
       game('a', 'b', 'blue'),
       game('a', 'c', 'white'),
@@ -139,7 +141,32 @@ describe('application d’une vague', () => {
     ]
     const direct = applyWave(new Map(), games)
     const shuffled = applyWave(new Map(), [games[2], games[0], games[1]])
-    expect(summary(shuffled, 'c').after).not.toBe(summary(direct, 'c').after)
+    for (const bot of ['a', 'b', 'c']) {
+      expect(summary(shuffled, bot).after).toBe(summary(direct, bot).after)
+    }
+  })
+
+  it('ne rend pas un écart négatif à qui gagne la majorité de ses parties', () => {
+    // Le cas mesuré sur une vague réelle : deux IA, trente-quatre rencontres,
+    // victoires groupées au milieu. Le classement mis à jour partie après partie
+    // enflait puis s'effondrait, et rendait −2 à dix-neuf victoires sur trente-
+    // quatre. Les classements figés sur la vague l'interdisent.
+    const suite = 'VDDNVDVNDVVVVDVDVVVDVVVVDDVVDVDVDD'
+    const games = [...suite].map((issue, index) => {
+      const aEstBleu = index % 2 === 0
+      const winner = issue === 'N'
+        ? null
+        : (issue === 'V') === aEstBleu
+          ? 'blue'
+          : 'white'
+      return aEstBleu ? game('a', 'b', winner) : game('b', 'a', winner)
+    })
+
+    const result = applyWave(new Map(), games)
+    const a = summary(result, 'a')
+    expect(a.wins).toBeGreaterThan(a.losses)
+    expect(a.delta).toBeGreaterThan(0)
+    expect(summary(result, 'b').delta).toBe(-a.delta)
   })
 
   it('rend exactement les mêmes valeurs à la relecture', () => {

@@ -1,12 +1,12 @@
 import { useState } from "react";
 import { Navigate, useOutletContext } from "react-router";
 import {
-  countAwaitingQualification,
+  fetchQualificationState,
   fetchQueue,
   fetchWaves,
   runCron,
 } from "./api";
-import type { CronFunction, EdgeReply } from "./api";
+import type { CronFunction, EdgeReply, QualificationState } from "./api";
 import { summarizeQueue } from "./queue";
 import type { QueueRow } from "./queue";
 import { formatParisDate } from "./schedule";
@@ -14,6 +14,7 @@ import type { WaveRow } from "./types";
 import { useAsync } from "./useAsync";
 import type { Async } from "./useAsync";
 import { TOURNAMENT_PATHS } from "./routes";
+import { useSession } from "./session";
 import type { TournamentContext } from "./TournamentLayout";
 
 /**
@@ -72,10 +73,37 @@ function formatIdle(ms: number): string {
   return `${heures} h ${String(minutes % 60).padStart(2, "0")}`;
 }
 
+/**
+ * Une qualification jouée mais pas encore validée se dit à part : c'est le seul
+ * cas où l'IA paraît bloquée alors qu'il ne manque qu'un réveil.
+ */
+function QualificationLine({ state }: { state: QualificationState }) {
+  const { awaiting, played } = state;
+  if (awaiting === 0) return <>Aucune IA n’attend sa qualification.</>;
+
+  const pending = awaiting - played;
+  const parts: string[] = [];
+  if (played > 0) {
+    parts.push(
+      played === 1
+        ? "1 qualification est jouée et n’attend qu’un réveil pour être validée"
+        : `${played} qualifications sont jouées et n’attendent qu’un réveil pour être validées`,
+    );
+  }
+  if (pending > 0) {
+    parts.push(
+      pending === 1
+        ? "1 qualification reste à ouvrir"
+        : `${pending} qualifications restent à ouvrir`,
+    );
+  }
+  return <>{parts.join(", ")}.</>;
+}
+
 type QueuePayload = {
   rows: QueueRow[];
   waves: WaveRow[];
-  awaiting: number;
+  qualifications: QualificationState;
 };
 
 /**
@@ -142,11 +170,7 @@ function QueueState({ state }: { state: Async<QueuePayload> }) {
       {/* Ce que l'ordonnanceur a devant lui. Sans ces deux lignes, un réveil
           qui ne fait rien passe pour un réveil en panne. */}
       <p className="bot-card__summary">
-        {state.data.awaiting === 0
-          ? "Aucune IA n’attend sa qualification."
-          : state.data.awaiting === 1
-            ? "1 IA attend sa qualification : le prochain ordonnancement l’ouvrira."
-            : `${state.data.awaiting} IA attendent leur qualification : le prochain ordonnancement les ouvrira.`}
+        <QualificationLine state={state.data.qualifications} />
       </p>
       <p className="bot-card__summary">
         {wave === undefined
@@ -180,12 +204,12 @@ function CronPanel() {
 
   const queue = useAsync<QueuePayload>(
     async () => {
-      const [rows, waves, awaiting] = await Promise.all([
+      const [rows, waves, qualifications] = await Promise.all([
         fetchQueue(),
         fetchWaves(1),
-        countAwaitingQualification(),
+        fetchQualificationState(),
       ]);
-      return { rows, waves, awaiting };
+      return { rows, waves, qualifications };
     },
     [],
   );
@@ -267,9 +291,17 @@ function CronPanel() {
  * toute façon côté serveur, les deux fonctions vérifiant elles-mêmes l'appelant.
  */
 export function AdminScreen() {
+  const { session, ready } = useSession();
   // Le droit est déjà établi par la mise en page, qui s'en sert pour son
   // entrée de navigation : le redemander ici doublerait la requête.
   const { admin } = useOutletContext<TournamentContext>();
+
+  // **Avant** de regarder le droit : sans session, sa lecture reste suspendue
+  // pour toujours — c'est ce que `PENDING` veut dire — et l'écran afficherait
+  // « Chargement… » sans fin. C'est le cas d'une déconnexion faite d'ici.
+  if (ready && !session) {
+    return <Navigate to={TOURNAMENT_PATHS.login} replace />;
+  }
 
   if (admin.status === "loading") {
     return (

@@ -28,8 +28,21 @@ type Payload = {
   summaries: Map<string, WaveSummary | null>;
 };
 
+/**
+ * Les IA retirées passent en dernier : elles ne jouent plus, et l'auteur vient
+ * d'abord voir celles qui vivent. Une IA en sommeil reste parmi elles — elle se
+ * réactive, quand un retrait est définitif.
+ *
+ * Le tri est stable, si bien que l'ordre de déclaration rendu par la requête est
+ * conservé à l'intérieur de chaque groupe.
+ */
+function withdrawnLast(bots: readonly BotRow[]): BotRow[] {
+  const withdrawn = (bot: BotRow) => (bot.statut === "retiree" ? 1 : 0);
+  return [...bots].sort((a, b) => withdrawn(a) - withdrawn(b));
+}
+
 async function loadMyBots(): Promise<Payload> {
-  const bots = await fetchMyBots();
+  const bots = withdrawnLast(await fetchMyBots());
   const ids = bots.map((bot) => bot.id);
   const [history, rows] = await Promise.all([
     fetchBotHistory(ids),

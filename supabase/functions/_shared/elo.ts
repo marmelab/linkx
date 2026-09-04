@@ -47,8 +47,8 @@ export function expectedScore(rating: number, opponentRating: number): number {
 /**
  * Coefficient d'une partie : il se lit sur le nombre de parties classées **à
  * l'ouverture de la vague**, jamais sur un compteur qui monterait en cours de
- * calcul. C'est ce qui rend le résultat indépendant de l'ordre interne d'une
- * vague, et donc reproductible.
+ * calcul — comme les classements eux-mêmes (`applyWave`). Une IA garde donc son
+ * coefficient de début de vague jusqu'à la clôture.
  */
 export function kFactor(ratedGamesBeforeWave: number): number {
   return ratedGamesBeforeWave < PROVISIONAL_GAMES
@@ -79,8 +79,25 @@ function blueScore(winner: PlayerId | null): number {
 }
 
 /**
- * Applique une vague entière, parties prises dans l'ordre chronologique reçu.
- * Fonction pure : deux appels sur les mêmes entrées rendent les mêmes valeurs.
+ * Applique une vague entière, **en un seul coup**.
+ *
+ * Chaque partie se juge sur les classements d'**avant la vague** : l'espérance
+ * de victoire s'y lit, les écarts s'accumulent, et la somme ne s'applique qu'à
+ * la fin. Un tournoi n'est pas une suite de parties isolées, c'est une ronde ;
+ * on la classe une fois qu'elle est jouée.
+ *
+ * Mettre à jour le classement après chaque partie rendait le résultat dépendant
+ * de **l'ordre** des rencontres, et de façon massive : une vague fait jouer deux
+ * IA des dizaines de fois d'affilée, si bien qu'à K = 40 leurs classements
+ * s'écartaient de plusieurs centaines de points **à l'intérieur d'une même
+ * vague**. Une IA ayant gagné tôt voyait ensuite chaque défaite lui coûter près
+ * de 40 points, contre un adversaire artificiellement effondré — au point que
+ * 19 victoires sur 34 pouvaient rendre un écart **négatif**. Mesuré sur une
+ * vague réelle, pas supposé.
+ *
+ * Fonction pure, et désormais **commutative** : l'ordre des parties ne change
+ * plus rien, ce que le coefficient promettait déjà sans que les classements le
+ * tiennent.
  */
 export function applyWave(
   start: ReadonlyMap<string, BotRating>,
@@ -93,30 +110,32 @@ export function applyWave(
   }
 
   const before = new Map<string, BotRating>()
-  const current = new Map<string, number>()
+  const deltas = new Map<string, number>()
   const kFactors = new Map<string, number>()
   const tally = new Map<string, Tally>()
   for (const bot of bots) {
     const initial = startingRating(start, bot)
     before.set(bot, initial)
-    current.set(bot, initial.rating)
+    deltas.set(bot, 0)
     kFactors.set(bot, kFactor(initial.ratedGames))
     tally.set(bot, { wins: 0, draws: 0, losses: 0 })
   }
 
   for (const game of games) {
-    const blueRating = required(current, game.blue)
-    const whiteRating = required(current, game.white)
+    const blueRating = required(before, game.blue).rating
+    const whiteRating = required(before, game.white).rating
     const blueExpected = expectedScore(blueRating, whiteRating)
     const blueObtained = blueScore(game.winner)
 
-    current.set(
+    deltas.set(
       game.blue,
-      blueRating + required(kFactors, game.blue) * (blueObtained - blueExpected),
+      required(deltas, game.blue) +
+        required(kFactors, game.blue) * (blueObtained - blueExpected),
     )
-    current.set(
+    deltas.set(
       game.white,
-      whiteRating + required(kFactors, game.white) * (blueExpected - blueObtained),
+      required(deltas, game.white) +
+        required(kFactors, game.white) * (blueExpected - blueObtained),
     )
 
     const blueTally = required(tally, game.blue)
@@ -139,7 +158,7 @@ export function applyWave(
     const initial = required(before, bot)
     const played = required(tally, bot)
     const total = played.wins + played.draws + played.losses
-    const after = Math.round(required(current, bot))
+    const after = Math.round(initial.rating + required(deltas, bot))
     const ratedGames = initial.ratedGames + total
     ratings.set(bot, { rating: after, ratedGames })
     summaries.push({

@@ -44,16 +44,26 @@ export function TournamentLayout() {
           <NavLink className={navClass} to={TOURNAMENT_PATHS.leaderboard}>
             Classement
           </NavLink>
-          <NavLink className={navClass} to={TOURNAMENT_PATHS.bots}>
-            Mes IA
-          </NavLink>
-          <NavLink className={navClass} to={TOURNAMENT_PATHS.games}>
-            Mes parties
-          </NavLink>
-          {admin.data === true && (
-            <NavLink className={navClass} to={TOURNAMENT_PATHS.admin}>
-              Admin
-            </NavLink>
+          {/* Des écrans qui n'ont rien à montrer sans session : les proposer ne
+              mènerait qu'à l'écran de connexion. Ils apparaissent une fois la
+              session lue, plutôt que de s'afficher puis de disparaître.
+              Le droit d'administration est lié à la même condition : une
+              relecture garde sa valeur précédente le temps de répondre, si bien
+              qu'à la déconnexion l'entrée « Admin » survivrait à la session. */}
+          {session && (
+            <>
+              <NavLink className={navClass} to={TOURNAMENT_PATHS.bots}>
+                Mes IA
+              </NavLink>
+              <NavLink className={navClass} to={TOURNAMENT_PATHS.games}>
+                Mes parties
+              </NavLink>
+              {admin.data === true && (
+                <NavLink className={navClass} to={TOURNAMENT_PATHS.admin}>
+                  Admin
+                </NavLink>
+              )}
+            </>
           )}
           {session ? (
             <button

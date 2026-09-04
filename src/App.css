@@ -193,6 +193,10 @@
   min-height: calc(100vh - var(--topbar-height));
   min-height: calc(100dvh - var(--topbar-height));
   align-content: start;
+  /* Pas de photo du plateau derrière ces écrans : ce sont des pages qu'on lit —
+     un classement, des formulaires, un journal —, là où l'accueil du jeu est une
+     vitrine. Le fond uni du cadre suffit, et ces pages sont longues. */
+  background: none;
 }
 
 .tournament-card {
