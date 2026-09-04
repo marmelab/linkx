@@ -217,6 +217,7 @@ a.mini-brand { text-decoration: none; }
 .tournament-note { margin: 0.8rem 0; color: var(--muted); line-height: 1.6; }
 .tournament-note .secondary-button { margin-top: 0.5rem; }
 .tournament-error { margin: 0.3rem 0 0; color: var(--red); line-height: 1.5; }
+.tournament-error--standalone { margin: 0 0 1.3rem; }
 .tournament-card a { color: var(--blue); }
 .tournament-card a.secondary-button,
 .topbar a.secondary-button { display: inline-flex; align-items: center; color: var(--ink); text-decoration: none; }
@@ -265,6 +266,7 @@ a.mini-brand { text-decoration: none; }
 
 .tournament-form { display: grid; max-width: 460px; gap: 0.9rem; margin: 0 0 1rem; }
 .tournament-form .primary-button { justify-self: start; }
+.tournament-form__actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
 .tournament-field { display: grid; gap: 0.25rem; margin: 0; }
 .tournament-field label { font-weight: 700; }
 .tournament-field input,
@@ -319,6 +321,7 @@ a.mini-brand { text-decoration: none; }
 .admin-panel { margin-top: 1.6rem; padding-top: 0.6rem; border-top: 1px solid var(--line); }
 .admin-panel__force { margin: 0.7rem 0 0; color: var(--muted); }
 .admin-panel__force label { display: inline-flex; align-items: center; gap: 0.15rem; }
+.probe-report,
 .admin-panel__report {
   margin: 0.8rem 0 0;
   padding: 0.7rem 0.8rem;

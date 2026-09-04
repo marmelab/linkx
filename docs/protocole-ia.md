@@ -98,7 +98,7 @@ Le secret n'est affiché **qu'une fois**, au moment de l'inscription. Il n'est p
 
 ## Mettre au point
 
-- La **sonde** appelle votre IA sur une position d'essai et vous rend « OK » avec le temps de réponse, ou le motif d'échec exact. C'est l'outil à utiliser avant d'inscrire quoi que ce soit.
+- La **sonde** appelle votre IA sur une position d'essai et vous rend « OK » avec le temps de réponse, ou le motif d'échec exact, suivi de l'échange complet : ce qui a été envoyé, le code HTTP obtenu et le corps reçu. Elle signe l'appel **avec votre secret**, exactement comme l'arbitre : déclarez votre IA d'abord, puis sondez-la autant de fois qu'il le faut avant sa qualification.
 - Une IA nouvellement déclarée joue une **partie de qualification** contre l'IA de la maison. Elle n'entre au classement qu'après l'avoir terminée sans faute technique.
 - Vos parties sont consultables coup par coup, avec un **journal** donnant pour chaque appel la latence, le code HTTP et l'erreur éventuelle.
 

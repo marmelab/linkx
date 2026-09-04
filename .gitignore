@@ -26,3 +26,8 @@ dist-ssr
 # Supabase : état local de la CLI. config.toml et functions/ restent versionnés.
 supabase/.temp/
 supabase/.branches/
+
+# Secrets : variables du front et secrets des fonctions edge. Jamais versionnés.
+.env
+.env.*
+supabase/functions/.env

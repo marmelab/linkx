@@ -147,6 +147,8 @@ function unreachable(detail: string): BotCallResult {
     latencyMs: 0,
     status: null,
     snippet: '',
+    // Rien n'est parti : l'adresse a été refusée avant tout appel.
+    headers: null,
     detail,
   }
 }

@@ -46,6 +46,17 @@ export type BotCallRequest = {
   deadlineMs?: number
 }
 
+/**
+ * En-têtes tels qu'ils sont partis. Rendus avec le résultat plutôt que
+ * reconstruits par l'appelant : les recalculer ailleurs dupliquerait la
+ * signature, et la copie finirait par mentir sur l'appel réel.
+ *
+ * `null` quand **rien n'est parti** — un échec constaté avant l'appel. Le
+ * distinguer d'un jeu d'en-têtes vide oblige chaque construction à dire lequel
+ * des deux elle est.
+ */
+export type SentHeaders = Record<string, string>
+
 export type BotCallResult =
   | {
     ok: true
@@ -54,6 +65,7 @@ export type BotCallResult =
     latencyMs: number
     status: number
     snippet: string
+    headers: SentHeaders
   }
   | {
     ok: false
@@ -62,6 +74,7 @@ export type BotCallResult =
     /** Code HTTP obtenu, ou `null` si la connexion n'a rien rendu. */
     status: number | null
     snippet: string
+    headers: SentHeaders | null
     /** Motif technique, destiné au journal de la partie. */
     detail: string
   }
@@ -179,6 +192,13 @@ export async function callBot(
   const signature = await signPayload(request.secret, timestamp, body)
   const elapsed = () => Math.max(0, Math.round(deps.now() - startedAt))
 
+  const sentHeaders: SentHeaders = {
+    'content-type': 'application/json; charset=utf-8',
+    accept: 'application/json',
+    'X-Linkx-Timestamp': String(timestamp),
+    'X-Linkx-Signature': `sha256=${signature}`,
+  }
+
   const signal = AbortSignal.timeout(deadlineMs)
   const failed = (
     failure: BotCallFailure,
@@ -191,6 +211,7 @@ export async function callBot(
     latencyMs: elapsed(),
     status,
     snippet,
+    headers: sentHeaders,
     detail,
   })
 
@@ -198,12 +219,7 @@ export async function callBot(
   try {
     response = await deps.fetch(request.address, {
       method: 'POST',
-      headers: {
-        'content-type': 'application/json; charset=utf-8',
-        accept: 'application/json',
-        'X-Linkx-Timestamp': String(timestamp),
-        'X-Linkx-Signature': `sha256=${signature}`,
-      },
+      headers: sentHeaders,
       body,
       signal,
       // Une redirection contournerait le contrôle d'adresse : elle ramènerait
@@ -270,6 +286,7 @@ export async function callBot(
     latencyMs: elapsed(),
     status: response.status,
     snippet,
+    headers: sentHeaders,
   }
 }
 

@@ -4,7 +4,9 @@ import {
   authRedirectUrl,
   isTournamentLocation,
   normalizeAuthCallbackUrl,
+  normalizeAuthErrorUrl,
   pathFromHash,
+  readAuthError,
   urlWithoutAuthCode,
 } from './routes'
 
@@ -24,6 +26,71 @@ describe('adresse d’un écran de tournoi', () => {
 
   it('traite le retour du lien magique comme une adresse de tournoi', () => {
     expect(isTournamentLocation('', '?code=abc123')).toBe(true)
+  })
+
+  it('traite un refus de lien comme une adresse de tournoi', () => {
+    // Sans cela, le jeu s'afficherait et l'échec resterait muet.
+    expect(
+      isTournamentLocation('#error=access_denied', '?error_code=otp_expired'),
+    ).toBe(true)
+    expect(isTournamentLocation('#error=access_denied&sb=', '')).toBe(true)
+  })
+})
+
+describe('refus d’un lien magique', () => {
+  it('lit le motif de la query string comme du fragment', () => {
+    expect(readAuthError('?error_code=otp_expired', '')).toBe('otp_expired')
+    expect(readAuthError('', '#error_code=otp_expired&sb=')).toBe('otp_expired')
+  })
+
+  it('préfère le motif précis à la famille', () => {
+    expect(readAuthError('?error=access_denied&error_code=otp_expired', '')).toBe(
+      'otp_expired',
+    )
+  })
+
+  it('retombe sur la famille quand elle est seule', () => {
+    expect(readAuthError('?error=access_denied', '')).toBe('access_denied')
+  })
+
+  it('ne voit pas de refus là où il n’y en a pas', () => {
+    expect(readAuthError('', '#/connexion')).toBeNull()
+    expect(readAuthError('?moves=15%203Ir13', '#/')).toBeNull()
+  })
+
+  it('ne relit pas le motif qu’il a lui-même posé', () => {
+    // Sans quoi la remise en forme se rejouerait sans fin sur son résultat.
+    expect(readAuthError('', '#/connexion?erreur=otp_expired')).toBeNull()
+  })
+
+  it('ramène le refus sur l’écran de connexion, motif conservé', () => {
+    const url = new URL(
+      normalizeAuthErrorUrl(
+        'https://exemple.fr/linkx/?error=access_denied&error_code=otp_expired' +
+          '&error_description=Email+link+is+invalid+or+has+expired' +
+          '#error=access_denied&error_code=otp_expired&sb=',
+      ),
+    )
+    expect(url.hash).toBe('#/connexion?erreur=otp_expired')
+    expect(url.search).toBe('')
+  })
+
+  it('conserve les paramètres étrangers au refus', () => {
+    const url = new URL(
+      normalizeAuthErrorUrl('https://exemple.fr/?moves=15%203Ir13&error_code=otp_expired'),
+    )
+    expect(url.searchParams.get('moves')).toBe('15 3Ir13')
+    expect(url.hash).toBe('#/connexion?erreur=otp_expired')
+  })
+
+  it('ne touche pas à une adresse sans refus', () => {
+    const href = 'https://exemple.fr/linkx/#/mes-ia'
+    expect(normalizeAuthErrorUrl(href)).toBe(href)
+  })
+
+  it('est stable : remettre en forme deux fois ne change rien', () => {
+    const une = normalizeAuthErrorUrl('https://exemple.fr/?error_code=otp_expired')
+    expect(normalizeAuthErrorUrl(une)).toBe(une)
   })
 })
 

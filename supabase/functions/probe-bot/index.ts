@@ -1,28 +1,42 @@
 /**
- * Sonde de mise au point (histoire 14) : on donne une adresse, la plateforme y
- * appelle l'IA sur une position d'essai et rend « OK » avec la latence, ou le
- * motif d'échec exact. Publique, `verify_jwt = false` : c'est l'outil qu'on
- * essaie **avant** d'ouvrir un compte.
+ * Sonde de mise au point (histoire 14) : l'auteur désigne **son** IA, la
+ * plateforme l'appelle sur une position d'essai avec **son vrai secret**, et
+ * rend le verdict ainsi que l'échange complet.
  *
- * Publique et sortante, elle fait émettre à la plateforme une requête vers une
- * adresse choisie par l'appelant. Trois garde-fous, dans cet ordre :
+ * **Authentifiée** (`verify_jwt = true`) et bornée à une IA de l'appelant. Ce
+ * n'est pas une précaution de plus : c'est ce qui rend la sonde utile. Publique,
+ * elle ne connaissait aucun secret, signait donc avec un jeton d'essai — que
+ * toute IA conforme au protocole rejette. Elle échouait sur ce qu'elle était
+ * censée vérifier, et son verdict ne disait rien du vrai appel. En signant comme
+ * l'arbitre signera, elle éprouve enfin le chemin réel.
  *
- * 1. `checkBotAddressResolved`, résolution DNS comprise : https, port 443, nom public,
- *    ni IP littérale ni réseau privé. `botClient` refuse en outre les
+ * L'appelant étant le propriétaire de l'IA appelée, la réponse porte le code
+ * HTTP et le corps reçu sans rien divulguer à personne : c'est déjà le critère
+ * retenu pour `reponse_brute` dans le journal des parties. Et l'adresse n'étant
+ * plus choisie dans la requête mais lue en base, la sonde ne peut plus servir à
+ * balayer des adresses arbitraires.
+ *
+ * Deux garde-fous demeurent :
+ *
+ * 1. `checkBotAddressResolved` à **chaque** appel — https, port 443, nom public,
+ *    ni IP littérale ni réseau privé : une adresse déclarée hier peut résoudre
+ *    aujourd'hui vers un réseau interne. `botClient` refuse en outre les
  *    redirections, qui ramèneraient l'appel sur une machine non contrôlée.
- * 2. Débit borné par provenance **et** au total, pour que la sonde ne devienne
- *    pas une source d'appels gratuite.
- * 3. Rien dans la réponse qui en ferait un scanner : ni code HTTP, ni en-tête,
- *    ni adresse résolue, ni **le moindre extrait du corps reçu**. Un service
- *    quelconque ne rend donc jamais qu'« injoignable » ou « illisible », ce qui
- *    ne dit rien de plus que ce que l'appelant savait déjà. Ce qui est rendu —
- *    le motif, la latence, le coup et son refus par l'arbitre — est exactement
- *    ce dont l'auteur d'une IA a besoin, et il l'a déjà dans ses propres
- *    journaux.
+ * 2. Un débit borné par compte et au total : la sonde fait émettre un appel
+ *    sortant, et un compte ne doit pas en faire une source gratuite. Il est
+ *    compté sur l'identifiant du compte, que l'appelant ne choisit pas, et non
+ *    sur un en-tête qu'il écrirait lui-même.
  */
-import { callBot, MOVE_DEADLINE_MS, toBotReply } from '../_shared/botClient.ts'
+import {
+  buildRequestBody,
+  callBot,
+  MOVE_DEADLINE_MS,
+  toBotReply,
+} from '../_shared/botClient.ts'
+import type { BotCallRequest } from '../_shared/botClient.ts'
 import { checkBotAddressResolved } from '../_shared/denoDns.ts'
 import { judgeReply, openGame, REFUSAL_LABELS } from '../_shared/referee.ts'
+import { currentUserId } from '../_shared/platformAuth.ts'
 
 /**
  * Position d'essai : les huit premiers coups de la partie de référence du
@@ -33,12 +47,11 @@ import { judgeReply, openGame, REFUSAL_LABELS } from '../_shared/referee.ts'
 const PROBE_RECORD = '4Lsr21 4Ss3 3Ir11 3Ir11 4Ss3 3Ir13 3Ir14 3Lr13'
 const PROBE_COLOR = 'blue'
 
-/** Cinq sondes par minute et par provenance, soixante au total. */
+/** Cinq sondes par minute et par compte, soixante au total. */
 const RATE_WINDOW_MS = 60_000
-const MAX_PROBES_PER_SOURCE = 5
+const MAX_PROBES_PER_ACCOUNT = 5
 const MAX_PROBES_TOTAL = 60
 
-const MAX_SECRET_LENGTH = 256
 const MAX_MOVE_ECHO = 32
 
 const CORS_HEADERS = {
@@ -76,39 +89,11 @@ function tooFrequent(source: string, now: number): boolean {
     total += kept.length
   }
   const mine = recentProbes.get(source) ?? []
-  if (total >= MAX_PROBES_TOTAL || mine.length >= MAX_PROBES_PER_SOURCE) {
+  if (total >= MAX_PROBES_TOTAL || mine.length >= MAX_PROBES_PER_ACCOUNT) {
     return true
   }
   recentProbes.set(source, [...mine, now])
   return false
-}
-
-/**
- * Provenance de l'appel, telle qu'on peut la connaître.
- *
- * `x-forwarded-for` est une liste que chaque relais **complète à droite** : le
- * premier élément est celui que l'appelant a écrit lui-même, donc ce qu'il veut.
- * Compter dessus donnait un compteur par valeur inventée, c'est-à-dire aucun
- * compteur. Le dernier élément est celui qu'a posé le relais le plus proche de
- * nous, le seul de la liste que l'appelant ne choisit pas.
- *
- * Ce n'en est pas une identité pour autant : deux appelants derrière le même
- * relais partagent la valeur, et une infrastructure qui n'ajouterait rien
- * laisserait passer celle de l'appelant. **Aucun en-tête HTTP ne borne un
- * abus** ; ce qui le borne est le plafond total ci-dessus, qui ne dépend
- * d'aucune provenance.
- */
-function sourceOf(request: Request): string {
-  const forwarded = (request.headers.get('x-forwarded-for') ?? '')
-    .split(',')
-    .map((part) => part.trim())
-    .filter((part) => part !== '')
-  return forwarded[forwarded.length - 1] ?? 'inconnue'
-}
-
-function ephemeralSecret(): string {
-  const bytes = crypto.getRandomValues(new Uint8Array(32))
-  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('')
 }
 
 Deno.serve(async (request: Request): Promise<Response> => {
@@ -117,7 +102,17 @@ Deno.serve(async (request: Request): Promise<Response> => {
   }
   if (request.method !== 'POST') return refuse('Utiliser POST.', 405)
 
-  if (tooFrequent(sourceOf(request), Date.now())) {
+  const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? ''
+  const anonKey = Deno.env.get('SUPABASE_ANON_KEY') ?? ''
+  const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+  if (!supabaseUrl || !anonKey || !serviceKey) {
+    return refuse('Service mal configuré.', 500)
+  }
+
+  const utilisateur = await currentUserId(request, supabaseUrl, anonKey)
+  if (!utilisateur) return refuse('Connectez-vous pour sonder une IA.', 401)
+
+  if (tooFrequent(utilisateur, Date.now())) {
     return refuse('Trop de sondes en peu de temps : attendez une minute.', 429)
   }
 
@@ -127,10 +122,40 @@ Deno.serve(async (request: Request): Promise<Response> => {
   } catch {
     return refuse('Corps JSON illisible.', 400)
   }
-  const fields = payload as { url?: unknown; secret?: unknown } | null
+  const fields = payload as { bot?: unknown } | null
+  const botId = typeof fields?.bot === 'string' ? fields.bot : ''
+  if (botId === '') return refuse('Désignez l’IA à sonder.', 400)
 
+  // Lecture par la clé de service : `secret_signature` est réservé au service,
+  // aucun client ne le lit. Le filtre porte sur le propriétaire, si bien qu'une
+  // IA qui n'est pas la sienne est introuvable plutôt que refusée — l'appelant
+  // n'apprend pas qu'elle existe.
+  const lecture = await fetch(
+    `${supabaseUrl}/rest/v1/bots?select=adresse_service,secret_signature` +
+      `&id=eq.${encodeURIComponent(botId)}` +
+      `&proprietaire=eq.${encodeURIComponent(utilisateur)}&limit=1`,
+    {
+      headers: {
+        apikey: serviceKey,
+        authorization: `Bearer ${serviceKey}`,
+      },
+    },
+  )
+  if (!lecture.ok) return refuse('Service indisponible, réessayez.', 503)
+  const [ligne] = (await lecture.json()) as Array<{
+    adresse_service?: unknown
+    secret_signature?: unknown
+  }>
+  if (!ligne) return refuse('IA introuvable.', 404)
+  const secret = typeof ligne.secret_signature === 'string'
+    ? ligne.secret_signature
+    : ''
+  if (secret === '') return refuse('Service mal configuré.', 500)
+
+  // Revérifié à chaque appel : une adresse déclarée hier peut résoudre
+  // aujourd'hui vers un réseau interne.
   const address = await checkBotAddressResolved(
-    typeof fields?.url === 'string' ? fields.url : '',
+    typeof ligne.adresse_service === 'string' ? ligne.adresse_service : '',
   )
   if (!address.ok) {
     return json(
@@ -139,37 +164,35 @@ Deno.serve(async (request: Request): Promise<Response> => {
     )
   }
 
-  // Un auteur qui vérifie la signature peut donner son propre secret ; sinon la
-  // sonde en tire un à usage unique, et l'annonce pour qu'un refus de signature
-  // ne se prenne pas pour une panne.
-  const secretFourni =
-    typeof fields?.secret === 'string' &&
-    fields.secret.length > 0 &&
-    fields.secret.length <= MAX_SECRET_LENGTH
-  const secret = secretFourni ? String(fields?.secret) : ephemeralSecret()
-
   const opened = openGame(PROBE_RECORD, { blue: 'sonde', white: 'adversaire' })
   if (!opened.ok) return refuse('Position d’essai invalide.', 500)
 
-  const result = await callBot(
-    {
-      address: address.address,
-      secret,
-      gameId: 'sonde',
-      color: PROBE_COLOR,
-      record: PROBE_RECORD,
-      deadlineMs: MOVE_DEADLINE_MS,
-    },
-    { fetch, now: Date.now },
-  )
+  const appel: BotCallRequest = {
+    address: address.address,
+    secret,
+    gameId: 'sonde',
+    color: PROBE_COLOR,
+    record: PROBE_RECORD,
+    deadlineMs: MOVE_DEADLINE_MS,
+  }
+  const result = await callBot(appel, { fetch, now: Date.now })
 
   const common = {
+    // L'adresse **après** contrôle et normalisation, et non celle qui a été
+    // saisie : c'est elle que la plateforme appelle, et c'est donc elle qu'il
+    // faut lire quand la réponse déçoit.
+    url: address.address,
+    // L'envoi et la réponse, tels quels. Un verdict seul ne se déboguerait pas :
+    // il ne distingue pas une signature refusée d'une route absente, quand le
+    // code HTTP et le corps rendu le disent d'un coup d'œil.
+    request: buildRequestBody(appel, MOVE_DEADLINE_MS),
+    status: result.status,
+    snippet: result.snippet,
+    detail: result.ok ? null : result.detail,
     record: PROBE_RECORD,
     color: PROBE_COLOR,
     latency_ms: result.latencyMs,
-    signature: secretFourni
-      ? 'signée avec le secret fourni'
-      : 'signée avec un secret d’essai, qu’une vérification de signature rejettera',
+    headers: result.headers,
   }
 
   if (!result.ok) {

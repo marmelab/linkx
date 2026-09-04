@@ -3,8 +3,16 @@ import { LeaderboardScreen } from './LeaderboardScreen'
 import { LoginScreen } from './LoginScreen'
 import { MyBotsScreen } from './MyBotsScreen'
 import { MyGamesScreen } from './MyGamesScreen'
-import { TOURNAMENT_PATHS } from './routes'
+import { normalizeAuthErrorUrl, TOURNAMENT_PATHS } from './routes'
 import { TournamentLayout } from './TournamentLayout'
+
+// Avant la création du routeur, qui lit l'adresse aussitôt : un lien magique
+// refusé revient sur un fragment qui ne désigne aucune route, et retomberait
+// donc sur le classement, sans un mot sur l'échec.
+const normalized = normalizeAuthErrorUrl(window.location.href)
+if (normalized !== window.location.href) {
+  window.history.replaceState(null, '', normalized)
+}
 
 /**
  * Routeur **de fragment** : GitHub Pages sert des fichiers statiques, et

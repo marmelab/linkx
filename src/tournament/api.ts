@@ -224,13 +224,18 @@ export async function fetchGameEvents(gameId: string): Promise<GameEventRow[]> {
  * `administrateurs` ne rend une ligne qu'à un administrateur, si bien que la
  * réponse **est** le droit. Un utilisateur ordinaire reçoit une liste vide, pas
  * un refus, et n'apprend rien de plus.
+ *
+ * Une panne se **propage** au lieu de se déguiser en « pas administrateur » :
+ * répondre `false` à une lecture qui n'a pas abouti escamoterait les commandes
+ * sans un mot, et l'administrateur croirait avoir perdu ses droits. C'est à
+ * l'écran de dire qu'il n'a pas pu savoir.
  */
 export async function isAdministrator(): Promise<boolean> {
   const { data, error } = await tournamentClient()
     .from('administrateurs')
     .select('utilisateur_id')
     .limit(1)
-  if (error) return false
+  if (error) throw new Error(error.message)
   return (data ?? []).length > 0
 }
 
@@ -307,10 +312,23 @@ export type ProbeReply = EdgeReply & {
   result?: string
   latency_ms?: number
   move?: string
+  /** L'appel tel qu'il est parti, et ce qui est revenu : de quoi déboguer. */
+  url?: string
+  headers?: Record<string, string> | null
+  request?: string
+  status?: number | null
+  snippet?: string
+  detail?: string | null
 }
 
-export function probeBot(url: string): Promise<ProbeReply> {
-  return callFunction('probe-bot', { url })
+/**
+ * Sonde d'une IA de l'appelant. On désigne l'**IA**, pas son adresse : la
+ * plateforme lit l'adresse et le secret en base, et signe l'appel comme
+ * l'arbitre le fera. Une sonde qui recevait une simple adresse ne pouvait que
+ * signer avec un jeton d'essai, que toute IA conforme rejette.
+ */
+export function probeBot(botId: string): Promise<ProbeReply> {
+  return callFunction('probe-bot', { bot: botId })
 }
 
 /**

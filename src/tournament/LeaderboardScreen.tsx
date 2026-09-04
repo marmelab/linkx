@@ -12,12 +12,10 @@ import {
   WAVE_START_LABEL,
   waveProgress,
 } from './schedule'
+import { PROTOCOL_URL } from './protocol'
 import { useAsync } from './useAsync'
 import type { WaveProgressRow } from './api'
 import type { LeaderboardRow, WaveRow } from './types'
-
-const PROTOCOL_URL =
-  'https://github.com/marmelab/linkx/blob/main/docs/protocole-ia.md'
 
 type Payload = {
   rows: LeaderboardRow[]

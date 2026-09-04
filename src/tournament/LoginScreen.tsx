@@ -1,11 +1,23 @@
 import { useState } from 'react'
 import type { FormEvent } from 'react'
-import { Navigate } from 'react-router'
+import { Navigate, useSearchParams } from 'react-router'
 import { sendMagicLink } from './api'
 import { useSession } from './session'
-import { TOURNAMENT_PATHS } from './routes'
+import { AUTH_ERROR_PARAM, TOURNAMENT_PATHS } from './routes'
 
 type Sending = 'idle' | 'sending' | 'sent' | 'failed'
+
+/**
+ * Motifs de refus d'un lien, traduits ici parce que c'est le seul écran qui les
+ * montre. Un motif inconnu ne bloque rien : la phrase de repli dit ce qui compte
+ * — le lien n'a pas marché, il en faut un autre.
+ */
+const AUTH_ERRORS: Record<string, string> = {
+  otp_expired:
+    'Ce lien de connexion a expiré, ou il a déjà servi : il ne fonctionne qu’une fois. Demandez-en un nouveau ci-dessous.',
+  access_denied:
+    'Ce lien de connexion a été refusé. Demandez-en un nouveau ci-dessous.',
+}
 
 /**
  * Connexion par lien à usage unique. **Aucun mot de passe**, nulle part : ni
@@ -15,6 +27,8 @@ type Sending = 'idle' | 'sending' | 'sent' | 'failed'
  */
 export function LoginScreen() {
   const { session, ready } = useSession()
+  const [params] = useSearchParams()
+  const refusal = params.get(AUTH_ERROR_PARAM)
   const [email, setEmail] = useState('')
   const [status, setStatus] = useState<Sending>('idle')
   const [error, setError] = useState<string | null>(null)
@@ -42,6 +56,13 @@ export function LoginScreen() {
         Donnez votre adresse électronique : un lien de connexion vous y attend.
         Il n’y a pas de mot de passe à choisir, ni à retenir.
       </p>
+
+      {refusal !== null && status === 'idle' && (
+        <p className="tournament-error tournament-error--standalone" role="alert">
+          {AUTH_ERRORS[refusal] ??
+            'La connexion par lien n’a pas abouti. Demandez-en un nouveau ci-dessous.'}
+        </p>
+      )}
 
       {status === 'sent' ? (
         <p className="tournament-note" role="status">
