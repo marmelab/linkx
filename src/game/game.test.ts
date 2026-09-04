@@ -4,14 +4,14 @@ import {
   getLargestZone,
   getWinningPath,
   hasWinningConnection,
-} from './connectivity'
-import { enumerateLegalMoves } from './legalMoves'
-import { BASE_SHAPES, createInitialInventory, matrixToPoints } from './pieces'
-import { aimedColumn, calculateDrop, createEmptyBoard } from './placement'
-import { createInitialState, gameReducer } from './reducer'
-import { getOrientation, getUniqueOrientations, pointsKey } from './transforms'
-import { DEFAULT_DIFFICULTY, SHAPE_IDS } from './types'
-import type { Board, PlayerId, ShapeId } from './types'
+} from './connectivity.ts'
+import { enumerateLegalMoves } from './legalMoves.ts'
+import { BASE_SHAPES, createInitialInventory, matrixToPoints } from './pieces.ts'
+import { aimedColumn, calculateDrop, createEmptyBoard } from './placement.ts'
+import { createInitialState, gameReducer } from './reducer.ts'
+import { getOrientation, getUniqueOrientations, pointsKey } from './transforms.ts'
+import { DEFAULT_DIFFICULTY, SHAPE_IDS } from './types.ts'
+import type { Board, PlayerId, ShapeId } from './types.ts'
 
 function occupy(
   board: Board,

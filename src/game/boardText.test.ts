@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { boardFromText, boardToText, rowsFromBoardText } from './boardText'
+import { boardFromText, boardToText, rowsFromBoardText } from './boardText.ts'
 
 const EMPTY_ROWS = [
   '.........',

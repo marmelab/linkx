@@ -1,4 +1,6 @@
 import type { Difficulty, GameMode } from "../game/types";
+import { tournamentEnabled } from "../tournament/config";
+import { TOURNAMENT_PATHS } from "../tournament/routes";
 import { useStoredDifficulty } from "./useStoredDifficulty";
 
 type SetupPanelProps = {
@@ -64,6 +66,30 @@ export function SetupPanel({ onStart, onShowRules }: SetupPanelProps) {
               </span>
             </button>
           ))}
+          {/* Troisième entrée au même rang que les deux modes de jeu, et non un
+              lien discret en pied de carte : un développeur doit voir qu'il peut
+              brancher un programme sans le savoir d'avance (histoire 16). Elle
+              disparaît quand la plateforme n'est pas configurée — le jeu, lui,
+              n'en dépend en rien. */}
+          {tournamentEnabled && (
+            <a
+              className="mode-button mode-button--tournament"
+              href={`#${TOURNAMENT_PATHS.leaderboard}`}
+            >
+              <span className="mode-icon" aria-hidden="true">
+                🏆
+              </span>
+              <span className="mode-text">
+                <strong>Tournoi des IA</strong>
+                <small>
+                  Inscrivez votre programme et suivez le classement.
+                </small>
+              </span>
+              <span className="mode-arrow" aria-hidden="true">
+                →
+              </span>
+            </a>
+          )}
         </div>
         {/* Le niveau n'est lu qu'au lancement d'une partie contre l'ordinateur :
             le choix reste donc à côté des deux modes, sans écran intermédiaire. */}

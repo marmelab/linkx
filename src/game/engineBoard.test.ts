@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { getLargestZone, hasWinningConnection } from './connectivity'
+import { getLargestZone, hasWinningConnection } from './connectivity.ts'
 import {
   BLUE,
   WHITE,
@@ -18,11 +18,11 @@ import {
   toLegalMove,
   undoMove,
   MAX_MOVES,
-} from './engineBoard'
-import { enumerateLegalMoves } from './legalMoves'
-import { createGamePosition, simulateLegalMove } from './simulation'
-import type { GamePosition } from './simulation'
-import { BOARD_SIZE } from './types'
+} from './engineBoard.ts'
+import { enumerateLegalMoves } from './legalMoves.ts'
+import { createGamePosition, simulateLegalMove } from './simulation.ts'
+import type { GamePosition } from './simulation.ts'
+import { BOARD_SIZE } from './types.ts'
 
 function randomForSeed(seed: number): () => number {
   let state = seed >>> 0

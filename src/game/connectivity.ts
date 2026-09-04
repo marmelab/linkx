@@ -1,5 +1,5 @@
-import { BOARD_SIZE } from './types'
-import type { Board, PlayerId, Point } from './types'
+import { BOARD_SIZE } from './types.ts'
+import type { Board, PlayerId, Point } from './types.ts'
 
 type Component = {
   cells: Point[]

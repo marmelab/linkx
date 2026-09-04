@@ -647,15 +647,221 @@ La dernière version est servie dès que le réseau revient : le joueur ne doit 
 
 - Le jeu est proposé à l'installation et se lance en plein écran, avec son icône et son nom.
 - Après une première visite complète, le jeu se lance et se joue entièrement sans connexion, partie contre l'ordinateur comprise.
-- Aucun compte n'est demandé à aucun moment.
+- Aucun compte n'est demandé à aucun moment pour jouer.
 - Une version plus récente est prise en compte dès le retour du réseau, sans intervention du joueur.
 - Une coupure réseau en cours de partie n'interrompt pas la partie.
 - L'état de la partie n'est pas restauré après fermeture ; le jeu redémarre sur son écran de départ. Seul le niveau de l'ordinateur y est retrouvé.
 
 ---
 
+### Histoire 13 — Dérouler une partie coup par coup
+
+*Lié au support pour l'entrée par lien ; la lecture pas à pas ne suppose qu'une notation et vaut donc partout.*
+
+**Pour qui, pourquoi** — pour qui reçoit une partie et veut comprendre comment elle s'est jouée. Un lien de notation (histoire 6) restitue une **position** : on voit où la partie en est, jamais comment elle y est arrivée. Le coup qui a tout décidé se devine au mieux, et une partie de vingt-cinq coups reçue en un seul jeton de position ne s'étudie pas.
+
+**Ce que ça recouvre** — une barre de lecture sur l'écran de jeu, présente **uniquement** quand la partie affichée vient d'une notation, et le déplacement d'un curseur le long des coups de cette partie.
+
+**État par défaut : la fin, sans animation.** Ouvrir un lien de notation affiche la **dernière** position, d'emblée, sans qu'aucune pièce ne tombe — c'est le comportement d'aujourd'hui et il ne change pas. Le curseur de la barre est alors sur le dernier coup, et rien ne distingue cette position de la même position atteinte en jouant.
+
+**Commandes.** Aller au début, coup précédent, coup suivant, aller à la fin ; un curseur qui se déplace le long de la partie et qui **dit toujours son rang**, « coup 7 sur 23 » ; et le libellé du coup courant dans la notation du document (voir « Notation d'une partie »), `4Lsr27` plutôt qu'une paraphrase — c'est le même vocabulaire que le lien qu'on vient d'ouvrir. Le début de la partie est une position à part entière : le plateau y est vide, et la barre affiche « coup 0 sur 23 ».
+
+**Le pas en avant anime une seule pièce.** Avancer d'un coup fait tomber **la pièce de ce coup-là**, depuis le bord haut du plateau, exactement comme un coup joué (histoire 2). Toute autre façon de déplacer le curseur — reculer, aller au début, aller à la fin, sauter à un coup éloigné — arrive à sa position **sans animation aucune** : la position s'y substitue. La raison est immédiate à voir : animer un saut ferait retomber toutes les pièces à chaque déplacement du curseur, et déplacer le curseur est justement ce qu'on fait sans cesse. Un tour passé se franchit comme un coup : il avance le curseur et n'anime rien, puisque rien n'est posé.
+
+**Hors du dernier coup, le plateau est en lecture seule.** Aucune pièce ne se sélectionne, aucune pose n'est possible, aucun conseil n'est rendu, et la barre **le dit en toutes lettres** plutôt que de laisser le joueur découvrir que rien ne répond. Revenu au dernier coup, tout se comporte exactement comme aujourd'hui : la réserve du joueur au trait redevient interactive, et la partie peut se poursuivre.
+
+**Ce n'est pas une annulation de coup.** On ne repart jamais d'une position intermédiaire pour jouer autre chose : reculer puis poser est impossible, et c'est délibéré. La barre donne à **lire** une partie, elle n'ouvre aucune bifurcation. Le principe de l'histoire 2 reste entier — une pièce posée ne se reprend pas —, et la section « Hors périmètre », qui exclut l'annulation, n'est pas amendée par cette histoire.
+
+**Continuer une partie lue.** Au dernier coup, poser ajoute un coup à la partie affichée : le curseur reste à la fin et le total augmente d'une unité — « coup 24 sur 24 ». C'est la seule façon dont le total change.
+
+**Mise en page.** La contrainte de l'histoire 7 vaut ici sans atténuation : **le bord haut du plateau ne bouge jamais**. La barre est donc placée au-dessus de la bande réservée à la pièce en main, et sa hauteur est acquise **dès le chargement**. **Choix de cette version** — elle ne se montre ni ne se cache en cours de partie : ou bien la partie vient d'une notation et la barre est là du premier au dernier instant, ou bien elle n'en vient pas et la barre n'existe pas. Une barre qui apparaîtrait au premier recul redimensionnerait le plateau sous le doigt, ce que l'histoire 7 interdit.
+
+**Clavier.** Le jeu se pilote intégralement au clavier (histoire 2) et la barre ne fait pas exception : ses cinq fonctions — début, précédent, suivant, fin, et la lecture du rang courant — sont atteignables sans pointeur. **Choix de cette version** — les flèches gauche et droite pilotent le curseur, alors qu'elles visent une colonne dans l'histoire 2. Il n'y a pas de conflit : hors du dernier coup aucune visée n'est possible, les flèches y déplacent donc toujours le curseur ; au dernier coup elles visent comme avant, et le curseur se déplace alors depuis la barre elle-même quand elle a le focus.
+
+**Critères d'acceptation**
+
+- Un lien de notation ouvre la partie sur sa **dernière** position, curseur au dernier coup, sans qu'aucune pièce ne tombe au chargement.
+- La barre de lecture n'est affichée que si la partie affichée vient d'une notation : une partie lancée depuis l'écran de départ, ou une position ouverte au format grille (histoire 1), n'en montre aucune.
+- La barre indique à tout instant le rang du curseur et le nombre total de coups, et le libellé du coup courant est écrit dans la notation du document.
+- Aller au début affiche un plateau vide, deux réserves complètes, et un rang de 0.
+- Avancer d'un coup fait descendre **la seule pièce de ce coup**, depuis le bord haut du plateau ; aucune pièce déjà posée ne bouge.
+- Reculer d'un coup, aller au début, aller à la fin et sauter à un coup éloigné n'animent rien : la position s'affiche directement.
+- Franchir un tour passé avance le curseur d'un rang sans rien animer.
+- Tant que le curseur n'est pas sur le dernier coup, aucune pièce n'est sélectionnable et aucune pose n'aboutit ; la barre annonce en toutes lettres que le plateau est en lecture seule.
+- Ramené au dernier coup, le plateau redevient jouable et la partie peut se poursuivre ; le coup joué porte le total à un de plus et le curseur reste à la fin.
+- Reculer puis tenter de poser ne pose rien et ne crée aucune variante : la partie lue n'est jamais tronquée.
+- Les cinq fonctions de la barre sont atteignables au clavier, y compris là où aucune zone d'entrée de colonne n'est affichée.
+- Déplacer le curseur, du premier au dernier coup et retour, ne change ni la position verticale du bord haut du plateau, ni celle des réserves, sur téléphone comme sur grand écran.
+
+---
+
+### Histoire 14 — Inscrire son IA et vérifier qu'elle répond
+
+*Lié au support : suppose un service joignable par le réseau. Le jeu lui-même ne dépend d'aucune des histoires 14 à 16.*
+
+**Pour qui, pourquoi** — pour un développeur qui veut écrire un programme jouant à Linkx et le confronter à d'autres. Le jeu spécifie déjà des règles complètes et un format d'échange lisible : il ne manque qu'un endroit où brancher un programme et une preuve qu'il répond.
+
+**Ce que ça recouvre** — ce qu'est une IA du point de vue de la plateforme, ce qu'elle reçoit et ce qu'elle renvoie, l'inscription de son auteur, la vérification qu'elle fonctionne, et les fautes qui font perdre une partie.
+
+**Une IA est un service accessible par le réseau, exposant une seule route.** La plateforme lui envoie l'état d'une partie, elle répond par un coup. Rien d'autre. Elle n'a aucune notion de partie, de score, d'adversaire ni de tour précédent : c'est la plateforme qui enchaîne les coups en interrogeant deux IA à tour de rôle, et chaque appel se suffit à lui-même. Un auteur peut donc écrire une IA sans état, et une IA qui garde un état ne doit jamais en dépendre.
+
+**Ce qu'elle reçoit.** Trois choses : la **notation de la partie depuis son début**, au format de la section « Notation d'une partie » ; la **couleur** qu'elle tient ; et le **délai** dont elle dispose pour répondre. Rien d'autre n'est nécessaire, et c'est un résultat déjà acquis : rejouer une notation restitue le plateau, les réserves des deux joueurs, les exemplaires consommés et le joueur au trait. Selon la partie, cette notation peut être **vide** — l'IA ouvre alors sur un plateau nu — ou déjà entamée, une partie de vague pouvant partir d'une ouverture imposée (histoire 15). Une IA qui suppose toujours recevoir une notation vide à son premier appel est fautive.
+
+**Ce qu'elle répond.** Un **seul jeton de coup** dans cette même notation, `3Ir13` ou `4Lsr27`. Ni une partie, ni une liste, ni une position. Elle ne renvoie **jamais** le jeton de passe `--` : un tour passé est entièrement déterminé par la position, il est forcé par les règles et appliqué par la plateforme, qui n'interroge tout simplement pas une IA dont le tour est passé. Un `--` reçu est traité comme une passe non forcée, donc comme un coup illégal.
+
+**Les appels sont signés.** Chaque appel de la plateforme porte une empreinte calculée avec un **secret propre à l'IA**, remis une seule fois à son auteur lors de la déclaration. L'auteur peut ainsi vérifier qu'un appel vient bien de la plateforme, et refuser les autres. Le secret ne sert qu'à cela : il n'authentifie pas la réponse, qui n'engage que le service.
+
+**Délai de six secondes par coup.** Au-delà, la partie est perdue. Le délai est le même pour toutes les IA et il est annoncé dans chaque appel, pour qu'une IA qui approfondit par paliers, comme le maître de l'histoire 10, sache sur quoi se régler.
+
+**Les fautes techniques font perdre la partie, et comptent comme des défaites ordinaires.** Un **coup illégal** fait perdre, et le motif est nommé parmi les sept motifs de refus déjà spécifiés dans « Notation d'une partie » : syntaxe invalide, pièce épuisée, débordement latéral, débordement par le haut, support insuffisant, partie déjà terminée, passe non forcée. Une **absence de réponse** dans le délai, une **réponse illisible** et une **erreur du service** font perdre de la même façon, chacune sous son propre motif. **Choix de cette version** — ces défaites entrent au classement comme n'importe quelle défaite, sans catégorie à part ni annulation : une IA indisponible est une IA qui perd, faute de quoi une IA fragile serait protégée de ses propres pannes et son classement mentirait sur ce qu'elle vaut. Le motif exact et le rang du coup sont conservés et rendus à son auteur (histoire 16), car c'est de cela qu'il a besoin pour corriger.
+
+**Inscription.** On s'inscrit **depuis le jeu lui-même**, sans quitter l'application. On donne une adresse électronique, on reçoit un lien de connexion **à usage unique**, et le clic sur ce lien vaut confirmation de l'adresse. **Aucun mot de passe n'existe nulle part** : il n'y en a ni à choisir, ni à retenir, ni à réinitialiser. Un lien **périmé ou déjà consommé** ramène sur l'écran de connexion en disant lequel des deux, et non sur l'accueil du jeu : rien n'est plus décourageant qu'un clic qui semble sans effet. Une fois connecté, on déclare son IA en donnant un nom, qui sera public, et une adresse, qui ne le sera jamais. Le formulaire de déclaration s'ouvre sur demande, par un bouton **Ajouter une IA** : l'écran s'ouvre sur les IA qu'on a déjà, pas sur celle qu'on pourrait ajouter. Ce formulaire **renvoie à la spécification du protocole** — route, état envoyé, réponse attendue, signature, délai — car c'est là qu'on en a besoin, et non seulement depuis le classement : personne ne doit avoir à deviner ce que son service doit présenter.
+
+**L'adresse d'une IA est contrôlée.** Elle doit être en `https`, et elle ne peut désigner **aucune machine du réseau interne de la plateforme** : une adresse qui s'y résout est refusée à la déclaration comme à l'usage. Le nombre d'inscriptions est **limité par personne et par provenance**, pour qu'un même auteur ne puisse pas peupler le classement de dizaines de variantes de la même IA. Un refus est rendu en clair, en nommant ce qui ne va pas.
+
+**Partie de qualification.** Une IA nouvellement déclarée ne rejoint pas immédiatement les vagues : elle joue d'abord une **partie complète contre l'IA de la maison**. Elle n'entre au classement qu'après l'avoir terminée **sans faute technique** — sans hors-délai, sans coup illégal, sans erreur ni réponse illisible. Perdre cette partie ne l'empêche pas d'entrer ; ne pas la terminer, si. C'est ce qui élimine sur-le-champ les adresses mortes et les protocoles mal compris, au moment exact où leur auteur regarde l'écran, plutôt qu'une semaine plus tard dans un bilan de vague. L'issue de la qualification est rendue avec son motif ; une qualification échouée peut être relancée après correction, autant de fois que nécessaire.
+
+**Sonde.** À tout moment, l'auteur peut demander à la plateforme d'appeler son IA sur une **position d'essai**. La réponse est immédiate : soit « OK », avec le coup renvoyé et le temps de réponse, soit le **motif d'échec exact**, dans le même vocabulaire que les défaites techniques. Elle est suivie de **l'échange lui-même** — l'adresse appelée, la manière dont l'appel a été signé, le corps envoyé, le code HTTP obtenu et le corps rendu —, sans quoi un verdict ne se débogue pas : « injoignable » ne distingue pas une route absente d'une signature refusée. L'appel est signé **du vrai secret de l'IA**, comme le sera celui de l'arbitre : une sonde qui signerait autrement échouerait sur toute IA qui vérifie sa signature, c'est-à-dire sur toute IA conforme. On sonde donc une IA déjà déclarée, et l'on doit être connecté. C'est l'outil de mise au point, et il doit rester utilisable sur une IA en sommeil comme sur une IA en qualification.
+
+**L'IA de la maison participe.** L'adversaire du jeu (histoire 10) est lui-même inscrit comme IA et joue les vagues comme les autres. Il sert de **mètre-étalon** : un auteur sait ce que vaut son programme dès qu'il le voit au-dessus ou au-dessous de lui. **Choix de cette version** — il dispose d'un budget de réflexion **plus court** que dans le jeu, la plateforme bornant à six secondes le temps de réponse d'un service, appel réseau compris. Il est donc un peu moins fort que le maître qu'on affronte dans l'application, et l'histoire 10 le dit assez : sa force dépend de son budget, avec un seuil. Cela doit être **annoncé** sur son profil plutôt que masqué, sans quoi le classement laisserait croire qu'on a battu l'adversaire du jeu alors qu'on a battu une version bridée.
+
+**Retirer une IA** est possible à tout moment, sans délai ni justification. Elle sort des appariements dès le retrait. Ses **parties passées restent**, et les classements déjà calculés ne sont pas récrits : une victoire contre une IA retirée reste une victoire.
+
+**Critères d'acceptation**
+
+- Une IA expose une **seule** route ; la plateforme n'en appelle jamais d'autre et ne lui demande jamais autre chose qu'un coup.
+- Chaque appel porte la notation de la partie depuis son début, la couleur tenue et le délai imparti ; ces trois éléments suffisent à reconstituer la position.
+- Une IA appelée sur une notation vide et une IA appelée sur une notation déjà entamée reçoivent le même format et répondent de la même façon.
+- Une réponse valide est **un seul** jeton de coup dans la notation du document ; une réponse contenant plusieurs jetons est illisible et fait perdre.
+- Une réponse contenant le jeton de passe est refusée comme passe non forcée et fait perdre la partie.
+- Une IA dont le tour est passé n'est pas appelée.
+- Chaque appel porte une empreinte calculée avec le secret de l'IA, vérifiable par son auteur.
+- Une réponse arrivant après six secondes fait perdre la partie, au même titre qu'une absence de réponse.
+- Un coup illégal fait perdre la partie, et le motif rendu est l'un des sept motifs de « Notation d'une partie ».
+- Une erreur du service et une réponse illisible font chacune perdre sous leur propre motif.
+- Une défaite technique compte au classement exactement comme une défaite de jeu.
+- L'inscription se fait depuis le jeu, par adresse électronique et lien à usage unique ; aucun mot de passe n'est demandé ni stocké, à aucune étape.
+- Un lien de connexion expiré ou déjà utilisé ramène sur l'écran de connexion, avec le motif et de quoi en redemander un ; il ne ramène jamais au jeu sans explication.
+- Le formulaire de déclaration d'une IA n'apparaît qu'après un appui sur « Ajouter une IA ».
+- Un administrateur peut ouvrir une vague à tout moment ; elle porte la date de son ouverture et se classe comme celle du jeudi.
+- Il n'existe jamais deux vagues vivantes à la fois, et une vague ouverte se joue quel que soit le jour.
+- Le formulaire de déclaration renvoie à la spécification du protocole, accessible sans compte.
+- Une adresse d'IA qui n'est pas en `https`, ou qui désigne une machine du réseau interne de la plateforme, est refusée avec un motif en clair.
+- Le nombre d'IA déclarables est limité par personne et par provenance, et le dépassement est refusé en le disant.
+- Une IA nouvellement déclarée n'entre au classement qu'après avoir terminé une partie complète contre l'IA de la maison sans faute technique ; perdre cette partie ne l'en empêche pas.
+- Une qualification échouée est rendue avec son motif et peut être relancée après correction.
+- La sonde rend soit « OK » avec le coup et le temps de réponse, soit le motif d'échec exact, dans le même vocabulaire que les défaites techniques.
+- La sonde montre en outre l'échange : adresse appelée, mode de signature, corps envoyé, code HTTP et corps reçu.
+- La sonde signe du vrai secret de l'IA et n'est ouverte qu'à son auteur connecté.
+- Le secret d'une IA n'est affiché **qu'une seule fois**, à sa déclaration, et n'est jamais réaffiché ensuite.
+- L'IA de la maison figure au classement, et son budget de réflexion réduit est annoncé sur son profil.
+- Retirer une IA la sort des appariements immédiatement et laisse ses parties passées consultables.
+
+---
+
+### Histoire 15 — Faire jouer les IA chaque semaine et les classer
+
+*Lié au support : suppose la plateforme de l'histoire 14.*
+
+**Pour qui, pourquoi** — pour que les IA inscrites se mesurent réellement les unes aux autres, à intervalle connu, et qu'un auteur puisse voir progresser son programme d'une semaine à l'autre.
+
+**Ce que ça recouvre** — le calendrier des rencontres, le tirage des ouvertures, le calcul du classement, la mise en sommeil des IA muettes et le compte rendu envoyé aux auteurs.
+
+**Une vague par semaine.** Les rencontres se jouent le **jeudi, de 0 h à 12 h**, heure de Paris. Toutes les IA actives y participent, sans inscription à faire : être active suffit. Une IA déclarée en cours de semaine et qualifiée avant le jeudi joue la vague suivante.
+
+**Toutes contre toutes.** Chaque paire d'IA se rencontre plusieurs fois dans la vague, et **autant de fois dans chaque couleur** : le trait et la couleur ne doivent jamais être un avantage de tirage. Un nombre impair de rencontres par paire est donc impossible.
+
+**Pourquoi les ouvertures sont en partie imposées.** C'est le point le moins évident du dispositif, et il tient à une propriété des programmes : deux IA **déterministes** qui se rencontrent deux fois dans les mêmes couleurs, à plateau vide, rejouent **exactement la même partie**, coup pour coup. Compter deux fois ce résultat ne mesure rien de plus et gonfle artificiellement l'écart de classement — c'est un seul événement compté deux fois. La réponse évidente, imposer l'ouverture de toutes les parties, est mauvaise pour une autre raison : le **choix de l'ouverture est une compétence**, et pas une compétence marginale. L'adversaire du jeu embarque justement un livre d'ouverture (histoire 10), calculé pour cela ; tout imposer retirerait du concours ce que ce livre sait faire.
+
+D'où **deux étages** dans chaque rencontre. Chaque paire joue d'abord **deux parties à plateau vide**, une dans chaque couleur : là, l'ouverture est jugée, et le déterminisme n'est pas un problème puisque les deux parties diffèrent par les couleurs. Puis elle joue plusieurs paires de parties **à ouverture imposée**, tirées d'un jeu de **débuts canoniques** — des positions courtes, légales et équilibrées, communes à toute la vague — chacune jouée **deux fois, couleurs échangées**. Le tirage est **reproductible** : il ne dépend que de l'identité de la vague et de celle de la paire, si bien que reconstruire une vague redonne exactement les mêmes ouvertures.
+
+**Le nombre d'ouvertures imposées s'adapte au nombre d'IA.** L'objectif est qu'une IA joue de l'ordre d'une **centaine de parties par vague** quel que soit le nombre d'inscrits : assez pour que son classement veuille dire quelque chose, pas au point de faire de la participation une charge. Avec `n` IA actives, chaque IA rencontre `n − 1` adversaires et joue `2 + 2k` parties contre chacun, où `k` est le nombre d'ouvertures imposées par paire. **Choix de cette version** — `k` est le plus grand entier tel que `(n − 1) × (2 + 2k)` ne dépasse pas cent, et vaut **zéro** dès que l'aller-retour à plateau vide suffit à atteindre ce total. Il est en outre borné par le nombre de débuts canoniques disponibles : une paire ne joue jamais deux fois la même ouverture imposée, et à deux ou trois IA la formule seule en réclamerait plus qu'il n'en existe. Avec beaucoup d'IA, il ne reste donc que les deux parties à plateau vide, et c'est le bon comportement : le nombre d'adversaires fournit alors seul la matière du classement.
+
+**Aucune IA n'est jamais laissée sans adversaire.** Le tournoi étant toutes contre toutes, la parité du nombre d'inscrits n'entre pas en jeu : il n'y a pas de tour à apparier, donc jamais d'IA exemptée. Une IA qui attend son créneau le retrouve dès qu'un autre se libère ; aucune paire n'est sautée. Le seul cas où une IA ne joue pas est celui où elle est **seule active**, et la vague est alors vide de rencontres, le classement restant inchangé.
+
+**Classement Elo.** Chaque IA part à **1200**. Une victoire vaut un point, un **nul une demi-victoire**, une défaite — technique comprise (histoire 14) — zéro. **Choix de cette version** — le coefficient est **plus élevé sur les dix premières parties classées** d'une IA, 40 contre 20 ensuite, pour qu'une nouvelle IA rejoigne vite son niveau réel au lieu de traîner un 1200 imméritée pendant des semaines. Le classement est **recalculé en fin de vague**, et **la vague entière se juge d'un seul coup** : l'espérance de chaque rencontre se lit sur les classements d'**avant** la vague, les écarts s'additionnent, et la somme s'applique à la clôture. **Choix de cette version** — mettre à jour le classement après chaque partie le rendait dépendant de l'**ordre** des rencontres, et lourdement : une vague fait s'affronter deux IA des dizaines de fois de suite, si bien que leurs classements s'écartaient de plusieurs centaines de points *à l'intérieur d'une même vague*. Une IA ayant gagné tôt voyait ensuite chaque défaite lui coûter près de quarante points contre un adversaire artificiellement effondré, au point que **dix-neuf victoires sur trente-quatre pouvaient rendre un écart négatif** — mesuré, non supposé. Juger la ronde d'un bloc rend le résultat **indépendant de l'ordre** et **reproductible** : rejouer le calcul sur les mêmes parties redonne exactement les mêmes classements, au point près. Battre plus fort que soi rapporte toujours davantage, l'espérance restant celle de l'écart de classement.
+
+**Deux appels simultanés au maximum par IA.** La plateforme n'appelle jamais une même IA plus de deux fois à la fois, quel que soit le nombre de parties en cours dans la vague. C'est une décision de conception, pas une limite technique : personne ne doit avoir à écrire un service capable de traiter plusieurs parties en parallèle pour participer. Une IA qui traite ses appels un par un joue la vague entière sans jamais dépasser son délai.
+
+**Mise en sommeil.** Une IA qui échoue **techniquement sur la totalité de ses parties pendant trois vagues consécutives** sort des appariements : son classement est **gelé** à sa dernière valeur, et son auteur est prévenu par courriel. Trois vagues, et non une, parce qu'une indisponibilité d'une nuit ne doit pas coûter sa place à un programme correct. La totalité des parties, et non une majorité, parce qu'une IA qui répond parfois est une IA vivante. Son auteur peut la **réactiver** à tout moment ; elle repasse alors par la qualification de l'histoire 14 et reprend avec le classement qui avait été gelé.
+
+**Courriel hebdomadaire.** À la fin de chaque vague, chaque auteur reçoit le nouveau classement et le **bilan de ses IA** : classement, écart avec la vague précédente, parties gagnées, perdues et nulles, et le nombre de défaites techniques avec leur motif dominant. C'est le seul envoi périodique, et il ne part qu'aux auteurs ayant au moins une IA.
+
+**Une partie encore en cours à midi** est **close en nul technique** et compte comme un nul pour les deux IA. La vague ne déborde jamais de sa fenêtre.
+
+**Critères d'acceptation**
+
+- Les vagues se jouent le jeudi de 0 h à 12 h, heure de Paris, et toutes les IA actives y participent sans démarche.
+- Chaque paire d'IA se rencontre autant de fois dans chaque couleur ; aucune paire ne joue un nombre impair de parties.
+- Chaque paire joue exactement deux parties à plateau vide, une dans chaque couleur.
+- Les parties à ouverture imposée sont jouées deux fois chacune, couleurs échangées, depuis une ouverture tirée d'un jeu de débuts canoniques.
+- Le tirage des ouvertures est reproductible : reconstruire la même vague pour la même paire redonne les mêmes ouvertures.
+- Le nombre d'ouvertures imposées s'ajuste au nombre d'IA actives, de sorte qu'aucune IA ne joue plus de cent parties dans une vague ; avec beaucoup d'IA, il ne reste que les deux parties à plateau vide.
+- Aucune IA active n'est laissée sans adversaire, que leur nombre soit pair ou impair ; une IA seule active donne une vague sans rencontre et un classement inchangé.
+- À aucun instant la plateforme n'a plus de deux appels en cours vers une même IA.
+- Une IA nouvellement classée part de 1200 ; un nul vaut une demi-victoire pour chacun.
+- Le coefficient appliqué aux dix premières parties classées d'une IA est plus élevé que celui appliqué aux suivantes.
+- Le classement est recalculé en fin de vague sur les parties prises dans l'ordre chronologique, et deux calculs sur les mêmes parties donnent exactement le même résultat.
+- Une IA qui échoue techniquement sur toutes ses parties de trois vagues consécutives est mise en sommeil, son classement gelé, son auteur prévenu par courriel ; deux vagues n'y suffisent pas.
+- Une IA en sommeil peut être réactivée par son auteur, repasse par la qualification et reprend au classement gelé.
+- Chaque auteur d'au moins une IA reçoit, en fin de vague, le classement et le bilan de ses IA.
+- Une partie encore en cours à midi est close en nul technique et comptée comme un nul pour les deux IA.
+
+---
+
+### Histoire 16 — Consulter le classement et ses parties
+
+*Lié au support : suppose la plateforme des histoires 14 et 15.*
+
+**Pour qui, pourquoi** — pour deux publics distincts. Le curieux, qui veut savoir quelle IA est la meilleure et n'a aucune raison de créer un compte pour cela. Et l'auteur d'une IA, qui vient chercher **pourquoi il a perdu** : c'est le seul endroit où il peut le savoir.
+
+**Ce que ça recouvre** — quatre écrans : la découverte depuis le jeu, le classement public, la connexion, puis « Mes IA » et « Mes parties » une fois connecté.
+
+**Découverte.** L'écran de départ du jeu (histoires 2 et 10) propose une **troisième entrée** à côté de « À deux joueurs » et « Contre l'ordinateur » : le tournoi des IA. Elle est **aussi visible que les deux autres** — même traitement, même place dans la liste, pas un lien discret en pied de carte. Un développeur qui ouvre le jeu doit voir qu'il peut y brancher un programme, sans le savoir d'avance.
+
+**Classement, public, sans compte.** Il s'ouvre sans être connecté et ne demande jamais de l'être. En tête, un **compte à rebours** vers la prochaine vague, écrit en clair : « dans 3 j 04 h 12 min — jeudi à 0 h ». Pendant la vague, il cède la place à l'**avancement** — la part des parties jouées — et à l'heure de fin. Puis le tableau, une ligne par IA : **rang**, **nom de l'IA**, **Elo**, **écart depuis la vague précédente avec son signe écrit** (`+18`, `−7`, `=`), **nombre de parties classées**, et l'**état de l'IA en toutes lettres** lorsqu'elle n'est pas simplement active — « en sommeil », « en qualification ». **Aucune adresse électronique ni adresse d'IA n'y figure jamais**, ni sur cet écran ni sur aucun autre écran public : le nom de l'IA est la seule chose que son auteur rend public.
+
+**Connexion.** Une adresse électronique, un envoi de lien, une confirmation à l'écran disant que le courriel est parti. Rien d'autre : **aucun mot de passe** n'est demandé, ni à la première connexion ni aux suivantes, conformément à l'histoire 14. Une adresse inconnue et une adresse déjà inscrite se comportent de la même façon à l'écran.
+
+**Mes IA.** La liste de ses IA, chacune avec son **état en toutes lettres** et son **bilan de la dernière vague** : classement, écart, parties gagnées, perdues, nulles, et défaites techniques. Quatre actions par IA : la **tester** — c'est la sonde de l'histoire 14, dont le résultat s'affiche sur place —, **voir ses parties**, la **retirer**, et la **réactiver** lorsqu'elle est en sommeil. En dessous, le formulaire de **déclaration d'une nouvelle IA** : nom, adresse. Ses refus — adresse non `https`, machine interne, limite d'inscriptions atteinte, nom déjà pris — s'affichent **en clair sous le champ concerné**, jamais dans un message général qui laisserait chercher lequel des deux champs est en cause. À la déclaration, le **secret** est affiché **une seule fois**, accompagné d'un avertissement disant qu'il ne sera **jamais réaffiché** et qu'il faut le conserver maintenant.
+
+**Une vague commence quand elle est ouverte.** Le jeudi reste le rendez-vous : le réveil automatique ouvre la vague ce jour-là, et une seule par fenêtre. Mais un administrateur peut en **ouvrir une à tout moment**, sans attendre le jeudi — elle porte alors la date de son ouverture, dure autant qu'une autre et se classe comme elle. Il n'y a **jamais deux vagues vivantes à la fois**, et c'est la base qui le garantit : deux ouvertures concurrentes s'y départagent. Une fois une vague ouverte, le calendrier ne la retient plus — l'arbitrage la fait avancer quel que soit le jour, puisqu'elle n'existe que parce qu'on a voulu la jouer.
+
+**Admin.** Les commandes réservées aux administrateurs ont leur **écran à part**, et leur entrée de navigation, plutôt que d'alourdir « Mes IA » d'un bloc que presque personne ne voit. Chaque action y dit **ce qu'elle fait** avant de dire comment on la lance : les noms de code du serveur ne parlent qu'à qui l'a lu. L'entrée n'existe que pour un administrateur, et l'adresse tapée à la main renvoie au classement sans apprendre qu'un écran se trouve là.
+
+**Mes parties.** Filtrables par **IA**, par **vague** et par **issue**. Chaque ligne donne la **date**, l'**ouverture** — « plateau vide », ou le libellé du début canonique imposé —, la **couleur tenue**, l'**adversaire**, l'**issue en toutes lettres** et le **nombre de coups**. L'issue est une phrase, pas un symbole : « gagné par connexion », « perdu — hors délai au coup 14 », « nul par blocage », « perdu — coup illégal au coup 9, support insuffisant ». Chaque partie s'ouvre dans l'**écran de jeu**, avec la barre de lecture de l'histoire 13 : on la déroule coup par coup comme n'importe quelle partie reçue par lien. Et elle déplie un **journal** donnant, **coup par coup**, le temps de réponse de chaque IA et l'erreur éventuelle. C'est ce que l'auteur d'un bot vient chercher après une défaite, et rien d'autre ne le lui dira : un hors-délai au coup 14 se comprend en voyant les treize temps de réponse qui l'ont précédé.
+
+**Confidentialité.** Le classement est **public** ; une partie n'est visible que de ses **deux** participants. **Choix de cette version** — on aurait pu rendre toutes les parties publiques, ce qui aurait permis à chacun d'étudier une IA adverse pour la contrer, et aurait fait du tournoi un objet d'étude ouvert. Le choix inverse a été fait : une IA se juge sur son classement, et son auteur reste seul maître de ce qu'il publie de son programme. L'IA de la maison ne fait pas exception, et une partie qui l'oppose à une IA inscrite reste visible de l'auteur de celle-ci.
+
+**Exigences transverses.** Elles valent ici comme partout ailleurs dans ce document. **Trois niveaux de texte** au plus : un titre, un intertitre, un corps ; les tableaux ne créent pas un quatrième niveau. **Aucun débordement horizontal sur téléphone**, en portrait comme en paysage — un tableau de classement se replie plutôt que de faire défiler la page. Et **un état n'est jamais porté par la seule couleur** : chaque pastille d'état porte **son mot**, « active », « en sommeil », « en qualification », et chaque issue de partie est écrite.
+
+**Critères d'acceptation**
+
+- L'écran de départ du jeu propose une troisième entrée vers le tournoi des IA, présentée au même niveau que « À deux joueurs » et « Contre l'ordinateur ».
+- Le classement s'ouvre sans compte et sans invitation à en créer un.
+- Hors vague, un compte à rebours vers la prochaine vague est affiché avec ses jours, heures et minutes, et le jour et l'heure de départ en clair.
+- Pendant une vague, le compte à rebours cède la place à l'avancement des parties et à l'heure de fin.
+- Chaque ligne du classement donne le rang, le nom de l'IA, son Elo, l'écart depuis la vague précédente avec son signe écrit, et le nombre de parties classées.
+- Le classement d'une vague ne dépend pas de l'ordre de ses parties, et une IA qui gagne la majorité des siennes n'y perd jamais de points.
+- L'état d'une IA qui n'est pas simplement active est écrit en toutes lettres sur sa ligne.
+- Aucune adresse électronique ni adresse d'IA n'apparaît sur un écran public, en aucune circonstance.
+- La connexion ne demande qu'une adresse électronique et n'expose aucun champ de mot de passe.
+- « Mes IA » liste ses IA avec leur état en toutes lettres et le bilan de la dernière vague, et propose tester, voir ses parties, retirer, et réactiver une IA en sommeil.
+- Un refus de déclaration s'affiche sous le champ en cause, et non dans un message général.
+- Le secret d'une IA est affiché une seule fois, avec un avertissement disant qu'il ne sera jamais réaffiché.
+- « Mes parties » se filtre par IA, par vague et par issue, et chaque ligne donne la date, l'ouverture, la couleur tenue, l'adversaire, l'issue en toutes lettres et le nombre de coups.
+- Une partie s'ouvre dans l'écran de jeu avec la barre de lecture de l'histoire 13, et se déroule coup par coup.
+- Le journal d'une partie donne, pour chaque coup, le temps de réponse et l'erreur éventuelle.
+- Une partie n'est consultable que par ses deux participants ; toute autre demande est refusée, connecté ou non.
+- Sur un écran de téléphone, aucun des quatre écrans ne produit de débordement horizontal, en portrait comme en paysage.
+- Aucun état ni aucune issue n'est distingué par la seule couleur : chaque pastille porte son mot.
+
+---
+
 ## Hors périmètre
 
-Ne pas ajouter sans demande explicite : jeu en réseau, comptes, backend ou base de données, matchmaking, chronomètre, historique persistant, effets sonores.
+**Ce qui reste hors périmètre.** Ne pas ajouter sans demande explicite : le **jeu en réseau entre deux humains**, les **effets sonores**, l'**annulation d'un coup**, le **chronomètre en partie humaine**, et la **sauvegarde d'une partie humaine en cours**.
 
-L'annulation d'un coup n'est pas prévue : le jeu physique ne permet pas de reprendre une pièce posée. La notation de partie couvre le besoin de revenir à une position antérieure.
+**Ce qui entre au périmètre, et à quelles conditions.** Les histoires 14 à 16 introduisent des **comptes**, une **persistance** et un **service distant**. Ces trois choses existent **pour la plateforme de tournoi seulement**. Le jeu, lui, reste jouable **intégralement hors ligne, sans compte et sans aucun appel réseau**, adversaire ordinateur compris : l'histoire 12 n'est pas amendée, et **aucune fonction du jeu ne doit dépendre de la plateforme**. Lancer une partie, jouer contre l'ordinateur au niveau maître, demander conseil, ouvrir un lien de position, dérouler une partie coup par coup : tout cela fonctionne sans réseau et sans être connecté. La plateforme est une destination de plus depuis l'écran de départ, jamais un passage obligé.
+
+**L'annulation d'un coup n'est pas prévue** : le jeu physique ne permet pas de reprendre une pièce posée. L'histoire 13 ne l'introduit pas — sa barre de lecture donne à **voir** une partie passée, elle ne permet pas d'en reprendre le cours autrement. On peut revenir sur un coup, on ne peut pas en rejouer un autre à sa place. Le besoin de conserver ou de retrouver une position antérieure est couvert par la notation de partie (histoire 6).

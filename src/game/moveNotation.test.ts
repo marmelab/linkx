@@ -1,15 +1,16 @@
 import { describe, expect, it } from 'vitest'
-import { boardToText } from './boardText'
+import { boardToText } from './boardText.ts'
 import {
   PASS_TOKEN,
   parseGameRecord,
+  parseGameTimeline,
   parseMove,
   serializeGameRecord,
   serializeMove,
-} from './moveNotation'
-import { getUniqueOrientations } from './transforms'
-import { SHAPE_IDS } from './types'
-import type { GameState, Inventory, ShapeId } from './types'
+} from './moveNotation.ts'
+import { getUniqueOrientations } from './transforms.ts'
+import { SHAPE_IDS } from './types.ts'
+import type { GameState, Inventory, ShapeId } from './types.ts'
 
 /** Partie gagnée par les bleus : une colonne bleue relie le haut au bas. */
 const BLUE_WIN = '4Lr32 4Ss3 4Lr32 3Ir12 3Ir13 3Ir14 2r13'
@@ -259,6 +260,80 @@ describe('parties complètes rejouées depuis leur notation', () => {
 
     expect(boardOf(urlForm)).toBe(boardOf(ONGOING))
     expect(serializeGameRecord(replay(urlForm))).toBe(ONGOING)
+  })
+})
+
+describe('suite des positions traversées', () => {
+  function timeline(record: string): GameState[] {
+    const parsed = parseGameTimeline(record)
+    if (!parsed.ok) throw new Error(parsed.error.message)
+    return parsed.states
+  }
+
+  it('rend une position par entrée d’historique, plus le plateau vide', () => {
+    const states = timeline(ONGOING)
+
+    expect(states).toHaveLength(13)
+    expect(states[states.length - 1].history).toHaveLength(12)
+    // Le rang du curseur est l'index dans la suite : la position `k` porte
+    // exactement `k` entrées, ni plus ni moins, tant qu'aucune passe n'entre.
+    states.forEach((state, rank) => expect(state.history).toHaveLength(rank))
+  })
+
+  it('part d’un plateau vide et de deux réserves complètes', () => {
+    const [start] = timeline(ONGOING)
+
+    expect(boardToText(start.board)).toBe(rows(...Array(9).fill('.........')))
+    expect(start.inventories.blue).toEqual(inventory({}))
+    expect(start.inventories.white).toEqual(inventory({}))
+    expect(start.history).toHaveLength(0)
+    expect(start.phase).toBe('playing')
+  })
+
+  it('finit exactement sur l’état rendu par le rejeu complet', () => {
+    const states = timeline(ONGOING)
+    const final = states[states.length - 1]
+    const direct = replay(ONGOING)
+
+    expect(boardToText(final.board)).toBe(boardToText(direct.board))
+    expect(final.inventories).toEqual(direct.inventories)
+    expect(final.activePlayer).toBe(direct.activePlayer)
+    expect(final.history).toEqual(direct.history)
+  })
+
+  it('donne son rang à la passe forcée, sur la position du coup qui la provoque', () => {
+    const states = timeline(FORCED_PASS)
+    const final = states[states.length - 1]
+    const passRank = final.history.findIndex((entry) => entry.kind === 'pass') + 1
+
+    expect(passRank).toBeGreaterThan(0)
+    expect(states).toHaveLength(final.history.length + 1)
+    // Rien n'est posé par une passe : elle avance le rang et laisse la position.
+    expect(boardToText(states[passRank].board)).toBe(
+      boardToText(states[passRank - 1].board),
+    )
+  })
+
+  it('conserve la fin de partie sur la dernière position, et elle seule', () => {
+    const states = timeline(BLUE_WIN)
+
+    expect(states[states.length - 1].phase).toBe('finished')
+    expect(states[states.length - 1].result).toEqual({
+      winner: 'blue',
+      reason: 'connection',
+    })
+    expect(states[states.length - 2].phase).toBe('playing')
+  })
+
+  it('n’applique rien quand la notation est refusée', () => {
+    const parsed = parseGameTimeline('11 12 3I1')
+
+    expect(parsed.ok).toBe(false)
+    if (parsed.ok) return
+    expect(parsed.error).toMatchObject({ index: 2, token: '3I1', reason: 'unsupported' })
+    // Le refus reste structuré comme celui de `parseGameRecord`, qui n'en est
+    // qu'un cas particulier.
+    expect(parseGameRecord('11 12 3I1')).toEqual(parsed)
   })
 })
 

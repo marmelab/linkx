@@ -1,5 +1,5 @@
-import { BOARD_SIZE } from './types'
-import type { Board, DropResult, Orientation, Point } from './types'
+import { BOARD_SIZE } from './types.ts'
+import type { Board, DropResult, Orientation, Point } from './types.ts'
 
 export function createEmptyBoard(): Board {
   return Array.from({ length: BOARD_SIZE }, () =>

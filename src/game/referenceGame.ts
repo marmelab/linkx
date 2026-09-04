@@ -1,5 +1,5 @@
-import { parseGameRecord } from './moveNotation'
-import type { GamePosition } from './simulation'
+import { parseGameRecord } from './moveNotation.ts'
+import type { GamePosition } from './simulation.ts'
 
 /**
  * La partie que le maître a perdue avec l'ancienne recherche.

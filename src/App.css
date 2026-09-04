@@ -43,7 +43,8 @@
 .text-button:hover { color: var(--blue); text-decoration: underline; }
 
 .overline,
-.status-eyebrow {
+.status-eyebrow,
+.tournament-table th {
   color: #748096;
   font-size: 0.68rem;
   font-weight: 800;
@@ -158,6 +159,256 @@
    marge intérieure lui rend une cible tactile utilisable sans lui donner une
    taille de texte à elle. */
 .setup-note select { padding: 0.45rem 0.4rem; font: inherit; }
+
+/* L'entrée du tournoi est une ancre — elle change le fragment, ce que le point
+   d'entrée écoute — et non un bouton : elle doit néanmoins se lire comme les
+   deux autres, au même rang. D'où cette classe, qui ne fait qu'effacer le
+   soulignement du lien : tout le reste vient de `.mode-button`. */
+.mode-button--tournament { text-decoration: none; }
+
+/* Plateforme de tournoi (plan.md, histoire 16) ----------------------------
+   Quatre écrans branchés sur le fragment `#/…`, montés sur le fond et la carte
+   de l'écran d'accueil, la carte simplement élargie.
+
+   **Trois niveaux de texte, pas un de plus** : le titre `.tournament-title`,
+   l'intertitre en `.overline` — que les en-têtes de tableau reprennent, ils ne
+   créent donc pas un quatrième niveau —, et le corps à 1rem, en `--ink` ou en
+   `--muted`. Ne pas y introduire de taille supplémentaire : `small` et `code`
+   reprennent explicitement celle du corps.
+
+   **Aucun état n'est porté par la seule couleur** : chaque pastille `.badge`
+   contient son mot, et l'issue d'une partie est une phrase entière. */
+.tournament-shell {
+  --topbar-height: calc(58px + env(safe-area-inset-top, 0px));
+  --content-width: 1410px;
+
+  min-height: 100vh;
+  min-height: 100dvh;
+  background: var(--paper);
+}
+
+/* La carte se cale en haut plutôt qu'au centre : ces écrans sont longs, et un
+   tableau centré verticalement sauterait à chaque filtre. */
+.tournament-screen {
+  min-height: calc(100vh - var(--topbar-height));
+  min-height: calc(100dvh - var(--topbar-height));
+  align-content: start;
+  /* Pas de photo du plateau derrière ces écrans : ce sont des pages qu'on lit —
+     un classement, des formulaires, un journal —, là où l'accueil du jeu est une
+     vitrine. Le fond uni du cadre suffit, et ces pages sont longues. */
+  background: none;
+}
+
+.tournament-card {
+  width: min(100%, 980px);
+  padding: 2rem 2.2rem 2.2rem;
+  text-align: left;
+}
+
+/* La barre du jeu masque ses liens en dessous de 620px, faute de place à côté
+   du plateau. Ici il n'y a pas de plateau : les liens restent, et la barre
+   passe à la ligne plutôt que de déborder. */
+.tournament-nav { flex-wrap: wrap; row-gap: 0.3rem; }
+/* Spécificité et non ordre : la règle qui les masque vit dans la requête média
+   du jeu, bien plus bas dans ce fichier. */
+.tournament-shell .topbar-actions .text-button { display: inline-flex; }
+.tournament-nav .text-button.is-active { color: var(--blue); text-decoration: underline; }
+a.mini-brand { text-decoration: none; }
+
+.tournament-title { margin: 0 0 0.5rem; font-size: 1.7rem; font-weight: 800; line-height: 1.15; }
+.tournament-subtitle { margin: 1.8rem 0 0.7rem; }
+.tournament-lede { max-width: 60ch; margin: 0 0 1.3rem; color: var(--muted); line-height: 1.6; }
+.tournament-note { margin: 0.8rem 0; color: var(--muted); line-height: 1.6; }
+.tournament-note .secondary-button { margin-top: 0.5rem; }
+.tournament-error { margin: 0.3rem 0 0; color: var(--red); line-height: 1.5; }
+.tournament-error--standalone { margin: 0 0 1.3rem; }
+.tournament-card a { color: var(--blue); }
+.tournament-card a.secondary-button,
+.topbar a.secondary-button { display: inline-flex; align-items: center; color: var(--ink); text-decoration: none; }
+
+.wave-banner {
+  display: grid;
+  gap: 0.15rem;
+  margin: 0 0 1.4rem;
+  padding: 0.8rem 1rem;
+  border: 1px solid #bcd4f5;
+  border-radius: 6px;
+  background: var(--blue-pale);
+  line-height: 1.5;
+}
+
+/* Filet de sécurité : le tableau se replie en cartes avant d'en avoir besoin,
+   mais un contenu inattendu défile ici plutôt que dans la page. */
+.tournament-table-frame { overflow-x: auto; }
+
+.tournament-table { width: 100%; border-collapse: collapse; }
+.tournament-table th { padding: 0.5rem 0.6rem; text-align: left; }
+.tournament-table td { padding: 0.5rem 0.6rem; border-top: 1px solid var(--line); overflow-wrap: break-word; vertical-align: top; }
+/* `break-word` et non `anywhere` : ce dernier entre dans le calcul de la
+   largeur minimale des colonnes, qui se resserrent alors jusqu'à couper les
+   mots au milieu. Seules les valeurs sans espaces — adresses, secrets — ont
+   besoin d'être coupées n'importe où. */
+.game-actions .secondary-button { white-space: nowrap; }
+.tournament-table--journal { margin: 0.3rem 0; }
+.journal-row > td { background: #f2f4f8; }
+.game-actions { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+
+/* La pastille porte son mot : la teinte ne fait que le redire. */
+.badge {
+  display: inline-block;
+  padding: 0.05rem 0.5rem;
+  border: 1px solid #b9c0cc;
+  border-radius: 999px;
+  background: #fff;
+  white-space: nowrap;
+}
+
+.badge--active { border-color: #7bb37f; background: #eef8ef; }
+.badge--en_attente { border-color: #d3a44e; background: #fdf4e3; }
+.badge--sommeil { border-color: #9aa3b2; background: #f1f2f5; }
+.badge--retiree { border-color: #d99aa0; background: #fdf0f1; }
+
+.tournament-form { display: grid; max-width: 460px; gap: 0.9rem; margin: 0 0 1rem; }
+.tournament-form .primary-button { justify-self: start; }
+.tournament-form__actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.tournament-field { display: grid; gap: 0.25rem; margin: 0; }
+.tournament-field label { font-weight: 700; }
+.tournament-field input,
+.tournament-field select {
+  min-width: 0;
+  padding: 0.55rem 0.6rem;
+  border: 1px solid #b9c0cc;
+  border-radius: 6px;
+  background: #fff;
+  font: inherit;
+}
+
+/* Ni `small` ni `code` ne doivent créer un quatrième corps de texte. */
+.tournament-hint,
+.tournament-card code { font-size: inherit; }
+.tournament-hint { color: var(--muted); }
+.tournament-filters { display: flex; flex-wrap: wrap; gap: 1rem; margin: 0 0 1.2rem; }
+
+.bot-list { display: grid; gap: 0.8rem; margin: 0 0 1rem; padding: 0; list-style: none; }
+.bot-card { padding: 0.9rem 1rem; border: 1px solid var(--line); border-radius: 6px; background: #fff; }
+.bot-card__head { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem; margin: 0; }
+.tournament-shell__notice {
+  max-width: 720px;
+  margin: 0.8rem auto 0;
+  padding: 0.6rem 0.8rem;
+  border-radius: 6px;
+  background: #fff;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.bot-card__elo { margin-left: auto; color: var(--muted); white-space: nowrap; }
+.bot-card__elo strong { font-size: 1.3rem; color: var(--ink); }
+.bot-card__address { margin: 0.35rem 0 0; color: var(--muted); overflow-wrap: anywhere; }
+/* Le champ de correction prend la place de l'adresse affichée : la carte garde
+   sa hauteur, et le lien revient dès l'enregistrement. */
+.bot-card__address-form { margin: 0.35rem 0 0; }
+.bot-card__address-form input { width: 100%; }
+.bot-card__summary { margin: 0.35rem 0 0; color: var(--muted); line-height: 1.5; }
+.bot-card__actions { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 0.8rem 0 0; }
+
+/* Le retrait est irréversible et son bouton voisine avec « Tester » : la
+   confirmation se pose donc **sous** la barre d'actions, détachée d'elle, et
+   non dans la même rangée où le doigt vient de cliquer. */
+.bot-card__confirm { margin: 0.8rem 0 0; padding: 0.7rem 0.8rem; border: 1px solid var(--line); border-radius: 6px; background: #f2f4f8; }
+.bot-card__confirm > p { margin: 0; line-height: 1.5; }
+.bot-card__confirm .bot-card__actions { margin-top: 0.6rem; }
+
+/* Le secret ne s'affiche qu'une fois : l'encadré le dit, et le bouton de copie
+   est à côté de la valeur, pas ailleurs. */
+.secret-panel {
+  margin: 0 0 1.2rem;
+  padding: 0.9rem 1rem;
+  border: 2px solid var(--red);
+  border-radius: 6px;
+  background: #fff7f7;
+  line-height: 1.55;
+}
+
+.secret-panel p { margin: 0 0 0.5rem; }
+.secret-panel p:last-child { margin-bottom: 0; }
+.secret-panel__value { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem; }
+.secret-panel__value code { overflow-wrap: anywhere; }
+
+/* Déclenchement à la main du cron, visible des seuls administrateurs. Le compte
+   rendu est du JSON : il se **replie** plutôt que de défiler, l'histoire 16
+   interdisant tout débordement horizontal jusqu'à 375px. */
+.admin-panel { margin-top: 1.6rem; padding-top: 0.6rem; border-top: 1px solid var(--line); }
+.admin-queue { margin: 0 0 1.2rem; }
+.admin-queue > .bot-card__summary:first-child { margin-top: 0; }
+
+.admin-panel__force { margin: 0.7rem 0 0; color: var(--muted); }
+.admin-panel__force label { display: inline-flex; align-items: center; gap: 0.15rem; }
+.probe-report,
+.admin-panel__report {
+  margin: 0.8rem 0 0;
+  padding: 0.7rem 0.8rem;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #f2f4f8;
+  font-size: 0.85rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* Sous 720px le tableau se **replie en cartes** : une ligne devient un bloc,
+   chaque cellule portant son intitulé. C'est ce qui évite le défilement
+   horizontal exigé par l'histoire 16 — l'en-tête devient inutile et disparaît.
+   Une cellule vide — l'état d'une IA simplement active — ne laisse pas de
+   ligne fantôme. */
+/* Sept colonnes de prose ne tiennent pas dans la carte avant 900px : la table
+   des parties se replie plus tôt que celle du classement, qui n'en a que six,
+   toutes courtes. Le journal porte la même classe : ses six colonnes sont de
+   prose aussi, et sans elle il défilerait horizontalement dans son cadre entre
+   721 et 900px, ce que l'histoire 16 interdit. */
+@media (max-width: 900px) {
+  .tournament-table--wide,
+  .tournament-table--wide tbody,
+  .tournament-table--wide tr,
+  .tournament-table--wide td { display: block; width: auto; }
+  .tournament-table--wide thead { display: none; }
+  .tournament-table--wide tr {
+    margin-bottom: 0.6rem;
+    padding: 0.5rem 0.7rem;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: #fff;
+  }
+  .tournament-table--wide td { display: flex; justify-content: space-between; gap: 1rem; padding: 0.2rem 0; border: 0; }
+  .tournament-table--wide td:empty { display: none; }
+  .tournament-table--wide td::before { content: attr(data-label); color: var(--muted); }
+  .tournament-table--wide .journal-row > td { padding: 0; background: transparent; }
+  .tournament-table--wide .journal-row > td::before { content: none; }
+}
+
+@media (max-width: 720px) {
+  .tournament-card { padding: 1.4rem 1.1rem 1.6rem; }
+  .tournament-table,
+  .tournament-table tbody,
+  .tournament-table tr,
+  .tournament-table td { display: block; width: auto; }
+  .tournament-table thead { display: none; }
+  .tournament-table tr {
+    margin-bottom: 0.6rem;
+    padding: 0.5rem 0.7rem;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: #fff;
+  }
+  .tournament-table td { display: flex; justify-content: space-between; gap: 1rem; padding: 0.2rem 0; border: 0; }
+  .tournament-table td:empty { display: none; }
+  .tournament-table td::before { content: attr(data-label); color: var(--muted); }
+  .journal-row > td { padding: 0; background: transparent; }
+  .journal-row > td::before { content: none; }
+  .tournament-filters { gap: 0.7rem; }
+  .tournament-filters .tournament-field { flex: 1 1 12rem; }
+}
 
 /* Game chrome */
 .game-shell {
@@ -293,6 +544,46 @@
    `touch-action` ne couvre pas ce cas : il n'arbitre que le défilement. */
 .play-area,
 .piece-tray { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+/* Barre de lecture d'une partie reçue en notation (plan.md, histoire 13).
+
+   Sa hauteur est **fixe**, comme celle de `.play-head` sur téléphone et pour la
+   même raison : le bord haut du plateau est en dessous, et le moindre
+   débordement l'abaisserait. Elle est acquise dès le chargement — ou bien la
+   partie vient d'une notation et la barre est là du premier au dernier instant,
+   ou bien elle n'existe pas. La légende change de texte à chaque déplacement du
+   curseur, jamais de nombre de lignes : d'où le `nowrap` et la troncature. */
+.playback-bar {
+  --playback-height: 58px;
+
+  display: grid;
+  width: min(100%, 520px);
+  height: var(--playback-height);
+  flex: 0 0 auto;
+  align-content: center;
+  gap: 3px;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.playback-bar__controls { display: flex; min-width: 0; align-items: center; gap: 0.3rem; }
+.playback-bar__step { min-width: 34px; padding: 0.3rem 0.4rem; line-height: 1.1; }
+.playback-bar__step:disabled { cursor: default; opacity: 0.4; }
+.playback-bar__slider { min-width: 0; flex: 1 1 auto; accent-color: var(--blue); }
+
+/* Trois niveaux de texte et pas un de plus : le rang en `overline`, le jeton de
+   notation dans la couleur du texte, l'état du plateau en gris. */
+.playback-bar__legend {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: 0.45rem;
+  margin: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.playback-bar__move { flex: 0 0 auto; color: var(--ink); font-size: 0.8rem; font-weight: 700; }
+.playback-bar__mode { min-width: 0; overflow: hidden; color: var(--muted); font-size: 0.75rem; text-overflow: ellipsis; }
+
 /* Au bureau, l'en-tête empile simplement le bandeau puis l'aperçu : la
    géométrie est celle des deux blocs pris séparément. */
 .play-head { display: flex; width: min(100%, 520px); flex: 0 0 auto; flex-direction: column; align-items: center; }
@@ -686,6 +977,13 @@
   /* Bande de visée au doigt, et cadre de plateau resserré : les flèches se
      réalignent d'elles-mêmes sur les colonnes du damier. */
   .play-area { --drop-zone-height: 44px; --board-inset: 14px; padding: 0.7rem 0.55rem 0.6rem; }
+
+  /* Même hauteur fixe, resserrée : la barre ne prend au plateau que ce qu'il
+     faut à une rangée de commandes et à sa légende. Les cibles gagnent en
+     revanche les 40px que réclame le doigt, la légende passant sous elles. */
+  .playback-bar { --playback-height: 62px; gap: 2px; }
+  .playback-bar__step { min-width: 40px; min-height: 38px; }
+  .playback-bar__mode { font-size: 0.7rem; }
   /* Plus de bandeau de tour : en une colonne, c'est la réserve du joueur actif
      qui passe en premier, et ce déplacement dit déjà à qui de jouer. Restent le
      message d'erreur, l'aperçu et le panneau de fin — et surtout l'annonce

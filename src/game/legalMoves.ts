@@ -1,7 +1,7 @@
-import { calculateDrop } from './placement'
-import { getUniqueOrientations } from './transforms'
-import { BOARD_SIZE, SHAPE_IDS } from './types'
-import type { Board, Inventory, Orientation, Point, ShapeId } from './types'
+import { calculateDrop } from './placement.ts'
+import { getUniqueOrientations } from './transforms.ts'
+import { BOARD_SIZE, SHAPE_IDS } from './types.ts'
+import type { Board, Inventory, Orientation, Point, ShapeId } from './types.ts'
 
 export type LegalMove = {
   shapeId: ShapeId

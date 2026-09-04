@@ -1,4 +1,4 @@
-import { BOARD_SIZE } from './types'
+import { BOARD_SIZE } from './types.ts'
 
 /**
  * Plateau de bits

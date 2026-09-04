@@ -17,10 +17,10 @@ import {
   remainingPlies,
   toLegalMove,
   undoMove,
-} from './engineBoard'
-import type { EnginePosition } from './engineBoard'
-import type { LegalMove } from './legalMoves'
-import type { GamePosition } from './simulation'
+} from './engineBoard.ts'
+import type { EnginePosition } from './engineBoard.ts'
+import type { LegalMove } from './legalMoves.ts'
+import type { GamePosition } from './simulation.ts'
 import {
   CELL_BIT,
   CELL_LIMB,
@@ -34,8 +34,8 @@ import {
   fillLayers,
   setTerrain,
   popcount,
-} from './bitboard'
-import { BOARD_SIZE } from './types'
+} from './bitboard.ts'
+import { BOARD_SIZE } from './types.ts'
 
 /**
  * Recherche du niveau maître

@@ -5,16 +5,16 @@ import {
   chooseMasterMove,
   searchMasterTopMoves,
   evaluate,
-} from './engineSearch'
-import { createEnginePosition, loadPosition } from './engineBoard'
-import { referencePositionAfter } from './referenceGame'
-import { chooseMoveForDifficulty } from './minimax'
-import { createGamePosition, simulateLegalMove } from './simulation'
-import type { GamePosition } from './simulation'
-import { boardFromText } from './boardText'
-import { createInitialInventory } from './pieces'
-import { enumerateLegalMoves } from './legalMoves'
-import type { Inventory, PlayerId } from './types'
+} from './engineSearch.ts'
+import { createEnginePosition, loadPosition } from './engineBoard.ts'
+import { referencePositionAfter } from './referenceGame.ts'
+import { chooseMoveForDifficulty } from './minimax.ts'
+import { createGamePosition, simulateLegalMove } from './simulation.ts'
+import type { GamePosition } from './simulation.ts'
+import { boardFromText } from './boardText.ts'
+import { createInitialInventory } from './pieces.ts'
+import { enumerateLegalMoves } from './legalMoves.ts'
+import type { Inventory, PlayerId } from './types.ts'
 
 describe('recherche du maître', () => {
   /**

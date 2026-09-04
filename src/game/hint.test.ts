@@ -1,13 +1,13 @@
 import { describe, expect, it } from 'vitest'
-import { boardFromText } from './boardText'
-import { canOfferHint, chooseHint } from './hint'
-import type { Hint } from './hint'
-import { enumerateLegalMoves } from './legalMoves'
-import type { LegalMove } from './legalMoves'
-import { createInitialState, gameReducer } from './reducer'
-import { simulateLegalMove } from './simulation'
-import type { GamePosition } from './simulation'
-import type { GameState, Inventory } from './types'
+import { boardFromText } from './boardText.ts'
+import { canOfferHint, chooseHint } from './hint.ts'
+import type { Hint } from './hint.ts'
+import { enumerateLegalMoves } from './legalMoves.ts'
+import type { LegalMove } from './legalMoves.ts'
+import { createInitialState, gameReducer } from './reducer.ts'
+import { simulateLegalMove } from './simulation.ts'
+import type { GamePosition } from './simulation.ts'
+import type { GameState, Inventory } from './types.ts'
 
 /**
  * Bleu tient les colonnes 0 à 6 de la ligne du bas et touche donc déjà le bord

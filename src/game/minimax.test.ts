@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { boardFromText } from './boardText'
-import { enumerateLegalMoves } from './legalMoves'
+import { boardFromText } from './boardText.ts'
+import { enumerateLegalMoves } from './legalMoves.ts'
 import {
   DEPTH_DRIVEN_DIFFICULTIES,
   DIFFICULTY_DEPTHS,
@@ -11,18 +11,18 @@ import {
   classifyTranspositionBound,
   getAffordableDepth,
   positionKey,
-} from './minimax'
-import { createInitialInventory } from './pieces'
-import { createGamePosition, simulateLegalMove } from './simulation'
-import type { GamePosition } from './simulation'
-import { DIFFICULTY_IDS, SHAPE_IDS } from './types'
+} from './minimax.ts'
+import { createInitialInventory } from './pieces.ts'
+import { createGamePosition, simulateLegalMove } from './simulation.ts'
+import type { GamePosition } from './simulation.ts'
+import { DIFFICULTY_IDS, SHAPE_IDS } from './types.ts'
 import type {
   GameResult,
   Inventory,
   PlayerId,
   Rotation,
   ShapeId,
-} from './types'
+} from './types.ts'
 
 const STATISTICAL_GAME_COUNT = 20
 const MINIMUM_WIN_RATE = 0.8
