@@ -61,7 +61,27 @@ import type { BotBefore, BotRow, WaveGameRecord } from '../_shared/wavePlan.ts'
 import { WAVE_DURATION_MS, waveWindowAt } from '../_shared/waveWindow.ts'
 import type { PlayerId } from '../../../src/game/types.ts'
 
-const JSON_HEADERS = { 'content-type': 'application/json; charset=utf-8' }
+/**
+ * Le navigateur envoie un **préflight** avant tout appel portant `authorization`
+ * ou `apikey`, et un préflight ne porte jamais de jeton. Sans réponse à
+ * `OPTIONS`, la requête tombait dans le contrôle d'identité, y était refusée en
+ * 401, et cette réponse-là n'ayant aucun en-tête CORS le navigateur n'annonçait
+ * qu'une erreur d'origine — masquant le vrai statut.
+ *
+ * Invisible en local : la passerelle de la CLI répond elle-même aux préflights,
+ * là où celle du projet hébergé les transmet à la fonction. Le cron, lui, ne
+ * préflighte rien ; seul l'écran d'administration était touché.
+ */
+const CORS_HEADERS = {
+  'access-control-allow-origin': '*',
+  'access-control-allow-headers': 'authorization, content-type, apikey',
+  'access-control-allow-methods': 'POST, OPTIONS',
+}
+
+const JSON_HEADERS = {
+  ...CORS_HEADERS,
+  'content-type': 'application/json; charset=utf-8',
+}
 
 /** Lignes lues d'un coup ; PostgREST plafonne de toute façon les réponses. */
 const PAGE_SIZE = 1000
@@ -587,6 +607,9 @@ async function requestWaveMail(
 }
 
 Deno.serve(async (request: Request): Promise<Response> => {
+  if (request.method === 'OPTIONS') {
+    return new Response(null, { status: 204, headers: CORS_HEADERS })
+  }
   const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
   const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? ''
   if (!serviceKey || !supabaseUrl) {

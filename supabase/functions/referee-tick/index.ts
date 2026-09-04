@@ -57,7 +57,27 @@ import {
 } from '../_shared/tickBudget.ts'
 import { waveWindowAt } from '../_shared/waveWindow.ts'
 
-const JSON_HEADERS = { 'content-type': 'application/json; charset=utf-8' }
+/**
+ * Le navigateur envoie un **préflight** avant tout appel portant `authorization`
+ * ou `apikey`, et un préflight ne porte jamais de jeton. Sans réponse à
+ * `OPTIONS`, la requête tombait dans le contrôle d'identité, y était refusée en
+ * 401, et cette réponse-là n'ayant aucun en-tête CORS le navigateur n'annonçait
+ * qu'une erreur d'origine — masquant le vrai statut.
+ *
+ * Invisible en local : la passerelle de la CLI répond elle-même aux préflights,
+ * là où celle du projet hébergé les transmet à la fonction. Le cron, lui, ne
+ * préflighte rien ; seul l'écran d'administration était touché.
+ */
+const CORS_HEADERS = {
+  'access-control-allow-origin': '*',
+  'access-control-allow-headers': 'authorization, content-type, apikey',
+  'access-control-allow-methods': 'POST, OPTIONS',
+}
+
+const JSON_HEADERS = {
+  ...CORS_HEADERS,
+  'content-type': 'application/json; charset=utf-8',
+}
 
 /** Attente d'un message dont l'IA tient déjà ses deux appels. */
 const BUSY_RETRY_S = 2
@@ -242,6 +262,9 @@ async function playOneMove(
 }
 
 Deno.serve(async (request: Request): Promise<Response> => {
+  if (request.method === 'OPTIONS') {
+    return new Response(null, { status: 204, headers: CORS_HEADERS })
+  }
   const startedAt = Date.now()
   const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
   const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? ''
