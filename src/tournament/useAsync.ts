@@ -16,6 +16,13 @@ export type Async<T> = {
   reload: () => void
 }
 
+/**
+ * Lecture **suspendue** : l'écran reste en chargement tant que ses conditions ne
+ * sont pas réunies. Sans elle, un écran qui attend la session résoudrait aussitôt
+ * un contenu vide et annoncerait « aucune IA » à un auteur qui en a.
+ */
+export const PENDING: Promise<never> = new Promise(() => {})
+
 function messageOf(error: unknown): string {
   if (error instanceof Error && error.message) return error.message
   return 'Erreur inconnue.'

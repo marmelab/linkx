@@ -1,6 +1,15 @@
 import { describe, expect, it } from 'vitest'
 import { OPENINGS } from '../../supabase/functions/_shared/openings.ts'
-import { ANY, filterGames, QUALIFICATION, replayHref, toMyGames } from './games'
+import {
+  ANY,
+  filterGames,
+  gameKey,
+  NO_FILTER,
+  QUALIFICATION,
+  replayHref,
+  serverFilter,
+  toMyGames,
+} from './games'
 import type { GameRow } from './types'
 
 const row = (overrides: Partial<GameRow> = {}): GameRow => ({
@@ -61,10 +70,27 @@ describe('mes parties, vues de mon côté', () => {
     ).toBe('9Zz99')
   })
 
-  it('ne compte qu’une fois une partie de mon IA contre mon IA', () => {
-    const games = toMyGames([row({ bot_blanc: 'moi', blanc: { nom: 'Mon IA' } })], ['moi'])
-    expect(games).toHaveLength(1)
-    expect(games[0].color).toBe('blue')
+  it('rend une ligne par participant m’appartenant', () => {
+    // Deux de mes IA se rencontrent : la partie se lit des deux côtés, sinon
+    // elle manquerait au filtre de l'une et à son bilan.
+    const games = toMyGames(
+      [
+        row({
+          bot_blanc: 'moi-2',
+          bleu: { nom: 'Mon IA' },
+          blanc: { nom: 'Mon autre IA' },
+        }),
+      ],
+      ['moi', 'moi-2'],
+    )
+    expect(games.map((game) => game.color)).toEqual(['blue', 'white'])
+    expect(games.map((game) => game.botId)).toEqual(['moi', 'moi-2'])
+    expect(games.map((game) => game.opponent)).toEqual([
+      'Mon autre IA',
+      'Mon IA',
+    ])
+    expect(games.map((game) => game.outcome)).toEqual(['gagne', 'perdu'])
+    expect(new Set(games.map(gameKey)).size).toBe(2)
   })
 })
 
@@ -126,6 +152,23 @@ describe('filtres', () => {
         (g) => g.id,
       ),
     ).toEqual(['a'])
+  })
+})
+
+describe('filtres portés à la requête', () => {
+  it('ne demande rien de plus sans filtre', () => {
+    expect(serverFilter(NO_FILTER)).toEqual({ botId: undefined, waveId: undefined })
+  })
+
+  it('porte l’IA et la vague', () => {
+    expect(serverFilter({ botId: 'ia-1', waveId: 'v2', outcome: 'gagne' })).toEqual({
+      botId: 'ia-1',
+      waveId: 'v2',
+    })
+  })
+
+  it('traduit la qualification en absence de vague', () => {
+    expect(serverFilter({ ...NO_FILTER, waveId: QUALIFICATION }).waveId).toBeNull()
   })
 })
 

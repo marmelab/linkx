@@ -7,6 +7,7 @@
  */
 import { openingLabel } from '../../supabase/functions/_shared/openings.ts'
 import type { PlayerId } from '../game/types'
+import type { MyGamesFilter } from './api'
 import { describeOutcome, outcomeKind } from './outcomes'
 import type { OutcomeKind } from './outcomes'
 import type { EndReason, GameRow } from './types'
@@ -47,42 +48,47 @@ export function toMyGames(
   const games: MyGame[] = []
 
   for (const row of rows) {
-    // Une partie de l'auteur contre lui-même est lue du côté bleu : elle
-    // apparaît une fois, comme les autres.
-    const color: PlayerId | null = mine.has(row.bot_bleu)
-      ? 'blue'
-      : mine.has(row.bot_blanc)
-        ? 'white'
-        : null
-    if (color === null) continue
+    // Une ligne **par participant m'appartenant** : une partie entre deux de
+    // mes IA se lit des deux côtés, sans quoi elle manquerait au filtre de
+    // l'une d'elles et à son bilan.
+    const colors: PlayerId[] = []
+    if (mine.has(row.bot_bleu)) colors.push('blue')
+    if (mine.has(row.bot_blanc)) colors.push('white')
 
-    const input = {
-      finished: row.statut === 'terminee',
-      result: row.resultat,
-      reason: row.motif_fin,
-      refusal: row.motif_refus,
-      moveCount: row.nombre_coups,
-      color,
+    for (const color of colors) {
+      const input = {
+        finished: row.statut === 'terminee',
+        result: row.resultat,
+        reason: row.motif_fin,
+        refusal: row.motif_refus,
+        moveCount: row.nombre_coups,
+        color,
+      }
+
+      games.push({
+        id: row.id,
+        playedAt: row.cree_le,
+        waveId: row.vague_id,
+        opening: row.ouverture,
+        openingLabel: openingLabel(row.ouverture),
+        botId: color === 'blue' ? row.bot_bleu : row.bot_blanc,
+        color,
+        opponent: opponentName(row, color),
+        outcome: outcomeKind(input),
+        outcomeText: describeOutcome(input),
+        reason: row.motif_fin,
+        moveCount: row.nombre_coups,
+        notation: row.notation,
+      })
     }
-
-    games.push({
-      id: row.id,
-      playedAt: row.cree_le,
-      waveId: row.vague_id,
-      opening: row.ouverture,
-      openingLabel: openingLabel(row.ouverture),
-      botId: color === 'blue' ? row.bot_bleu : row.bot_blanc,
-      color,
-      opponent: opponentName(row, color),
-      outcome: outcomeKind(input),
-      outcomeText: describeOutcome(input),
-      reason: row.motif_fin,
-      moveCount: row.nombre_coups,
-      notation: row.notation,
-    })
   }
 
   return games
+}
+
+/** Clé de rendu : une même partie donne deux lignes quand elle m'oppose à moi. */
+export function gameKey(game: MyGame): string {
+  return `${game.id}-${game.color}`
 }
 
 export const ANY = 'toutes'
@@ -97,6 +103,23 @@ export const NO_FILTER: GameFilters = { botId: ANY, waveId: ANY, outcome: ANY }
 
 /** Une partie sans vague est une qualification : elle a sa propre valeur de filtre. */
 export const QUALIFICATION = 'qualification'
+
+/**
+ * Ce que les filtres d'IA et de vague valent **côté requête** : sans eux, une
+ * vague ancienne tomberait au-delà des dernières parties lues et l'écran la
+ * dirait vide. L'issue, elle, se déduit de la ligne et reste au client.
+ */
+export function serverFilter(filters: GameFilters): MyGamesFilter {
+  return {
+    botId: filters.botId === ANY ? undefined : filters.botId,
+    waveId:
+      filters.waveId === ANY
+        ? undefined
+        : filters.waveId === QUALIFICATION
+          ? null
+          : filters.waveId,
+  }
+}
 
 export function filterGames(
   games: readonly MyGame[],

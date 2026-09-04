@@ -7,12 +7,13 @@
  * relu du fuseau à chaque conversion. Module pur — aucune horloge implicite,
  * l'instant courant est toujours passé en argument.
  */
+import type { WaveRow } from './types'
+
 const PARIS = 'Europe/Paris'
 
 /** Jeudi, au sens de `Date.prototype.getUTCDay` (0 = dimanche). */
 export const WAVE_WEEKDAY = 4
 export const WAVE_START_HOUR = 0
-export const WAVE_END_HOUR = 12
 export const WAVE_START_LABEL = 'jeudi à 0 h'
 
 type WallClock = {
@@ -95,13 +96,6 @@ function parisWeekday(instant: number): number {
   return new Date(Date.UTC(wall.year, wall.month - 1, wall.day)).getUTCDay()
 }
 
-/** Début de la vague ouverte à cet instant, ou de la dernière fermée. */
-function lastWaveStart(now: number): number {
-  const wall = parisWallClock(now)
-  const back = (parisWeekday(now) - WAVE_WEEKDAY + 7) % 7
-  return parisInstant(wall.year, wall.month, wall.day - back, WAVE_START_HOUR)
-}
-
 /** Prochaine ouverture de vague, strictement postérieure à `now`. */
 export function nextWaveStart(now: number): number {
   const wall = parisWallClock(now)
@@ -121,16 +115,6 @@ export function nextWaveStart(now: number): number {
     )
   }
   return start
-}
-
-export type WaveWindow = { start: number; end: number }
-
-/** Fenêtre de la vague en cours, ou `null` hors vague. */
-export function currentWaveWindow(now: number): WaveWindow | null {
-  const start = lastWaveStart(now)
-  const wall = parisWallClock(start)
-  const end = parisInstant(wall.year, wall.month, wall.day, WAVE_END_HOUR)
-  return now >= start && now < end ? { start, end } : null
 }
 
 export type Countdown = { days: number; hours: number; minutes: number }
@@ -174,6 +158,50 @@ export function formatParisTime(instant: number): string {
 /** « jeudi 2 avril », à l'heure de Paris. */
 export function formatParisDate(instant: number): string {
   return dateFormat.format(instant)
+}
+
+const dayFormat = new Intl.DateTimeFormat('fr-FR', {
+  timeZone: PARIS,
+  dateStyle: 'medium',
+})
+
+const dateTimeFormat = new Intl.DateTimeFormat('fr-FR', {
+  timeZone: PARIS,
+  dateStyle: 'short',
+  timeStyle: 'short',
+})
+
+/**
+ * Toute date de la plateforme s'écrit à l'heure de Paris, sur laquelle le
+ * calendrier des vagues est ancré : sans fuseau explicite, la même vague
+ * porterait deux dates selon l'endroit d'où on la regarde.
+ */
+export function formatParisDay(instant: number): string {
+  return dayFormat.format(instant)
+}
+
+/** « 03/09/2026 10:12 », à l'heure de Paris. */
+export function formatParisDateTime(instant: number): string {
+  return dateTimeFormat.format(instant)
+}
+
+/**
+ * La vague réellement ouverte : une **ligne** au statut `en_cours`, dans sa
+ * fenêtre. Le calendrier seul ne suffit pas — l'ordonnanceur peut être arrêté,
+ * et une vague close avant midi resterait « en cours » jusqu'à midi.
+ */
+export function openWave(
+  waves: readonly WaveRow[],
+  now: number,
+): WaveRow | null {
+  return (
+    waves.find(
+      (wave) =>
+        wave.statut === 'en_cours' &&
+        Date.parse(wave.debut) <= now &&
+        now < Date.parse(wave.fin),
+    ) ?? null
+  )
 }
 
 /** Part des parties jouées, bornée à [0, 1] ; `null` si le total est inconnu. */

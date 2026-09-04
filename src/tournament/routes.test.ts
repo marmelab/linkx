@@ -5,6 +5,7 @@ import {
   isTournamentLocation,
   normalizeAuthCallbackUrl,
   pathFromHash,
+  urlWithoutAuthCode,
 } from './routes'
 
 describe('adresse d’un écran de tournoi', () => {
@@ -51,6 +52,27 @@ describe('retour du lien magique', () => {
   it('ne touche à rien sans code', () => {
     const href = 'https://exemple.fr/linkx/#/mes-ia'
     expect(normalizeAuthCallbackUrl(href)).toBe(href)
+  })
+
+  it('retire le code, y compris quand l’échange a échoué', () => {
+    // Un lien expiré laisse le code en place : la bibliothèque ne nettoie
+    // qu'après un échange réussi, et `isTournamentLocation` resterait vrai.
+    const cleaned = urlWithoutAuthCode(
+      'https://exemple.fr/linkx/?code=perime#/connexion',
+    )
+    expect(cleaned).toBe('https://exemple.fr/linkx/#/connexion')
+    expect(isTournamentLocation('', new URL(cleaned).search)).toBe(false)
+  })
+
+  it('conserve les autres paramètres de la query string', () => {
+    expect(
+      urlWithoutAuthCode('https://exemple.fr/linkx/?moves=15&code=abc#/'),
+    ).toBe('https://exemple.fr/linkx/?moves=15#/')
+  })
+
+  it('ne touche pas à une adresse sans code', () => {
+    const href = 'https://exemple.fr/linkx/#/classement'
+    expect(urlWithoutAuthCode(href)).toBe(href)
   })
 
   it('renvoie sur l’écran de connexion, jamais sur une autre origine', () => {

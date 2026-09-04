@@ -1,13 +1,16 @@
 import { describe, expect, it } from 'vitest'
 import {
   countdownParts,
-  currentWaveWindow,
   formatCountdown,
+  formatParisDateTime,
+  formatParisDay,
   formatParisTime,
   nextWaveStart,
+  openWave,
   parisInstant,
   waveProgress,
 } from './schedule'
+import type { WaveRow } from './types'
 
 /** Un instant lisible dans les tests : « 2026-03-25T12:00:00Z ». */
 const at = (iso: string) => Date.parse(iso)
@@ -55,23 +58,8 @@ describe('prochaine vague', () => {
   })
 })
 
-describe('vague en cours', () => {
-  it('reconnaît la fenêtre du jeudi matin', () => {
-    const window_ = currentWaveWindow(at('2026-01-15T06:00:00Z'))
-    expect(window_).not.toBeNull()
-    expect(window_?.start).toBe(at('2026-01-14T23:00:00Z'))
-    expect(window_?.end).toBe(at('2026-01-15T11:00:00Z'))
-  })
-
-  it('la ferme à midi, heure de Paris', () => {
-    expect(currentWaveWindow(at('2026-01-15T11:00:00Z'))).toBeNull()
-  })
-
-  it('n’en voit aucune un mardi', () => {
-    expect(currentWaveWindow(at('2026-01-13T09:00:00Z'))).toBeNull()
-  })
-
-  it('affiche l’heure de fin à Paris, pas à celle du visiteur', () => {
+describe('heure de fin d’une vague', () => {
+  it('s’affiche à Paris, pas à celle du visiteur', () => {
     expect(formatParisTime(at('2026-01-15T11:00:00Z'))).toBe('12:00')
   })
 })
@@ -90,6 +78,45 @@ describe('compte à rebours', () => {
 
   it('ne descend jamais sous zéro', () => {
     expect(formatCountdown(-5000)).toBe('0 min')
+  })
+})
+
+describe('vague réellement ouverte', () => {
+  const wave = (overrides: Partial<WaveRow> = {}): WaveRow => ({
+    id: 'v1',
+    debut: '2026-01-14T23:00:00Z',
+    fin: '2026-01-15T11:00:00Z',
+    statut: 'en_cours',
+    ...overrides,
+  })
+
+  it('rend la ligne ouverte quand l’instant tombe dans sa fenêtre', () => {
+    expect(openWave([wave()], at('2026-01-15T06:00:00Z'))?.id).toBe('v1')
+  })
+
+  it('n’en voit aucune faute de ligne, même un jeudi matin', () => {
+    // L'ordonnanceur arrêté, le calendrier seul annoncerait une vague en cours.
+    expect(openWave([], at('2026-01-15T06:00:00Z'))).toBeNull()
+  })
+
+  it('ne tient pas pour ouverte une vague déjà terminée', () => {
+    expect(
+      openWave([wave({ statut: 'terminee' })], at('2026-01-15T06:00:00Z')),
+    ).toBeNull()
+  })
+
+  it('la ferme dès que l’instant sort de sa fenêtre', () => {
+    expect(openWave([wave()], at('2026-01-15T11:00:00Z'))).toBeNull()
+  })
+})
+
+describe('dates ancrées sur Paris', () => {
+  it('écrit la date du visiteur à l’heure de Paris, pas à la sienne', () => {
+    // 23 h 30 UTC le 1er janvier, c'est déjà le 2 à Paris.
+    const written = formatParisDateTime(at('2026-01-01T23:30:00Z'))
+    expect(written).toContain('02/01/2026')
+    expect(written).toContain('00:30')
+    expect(formatParisDay(at('2026-01-01T23:30:00Z'))).toContain('2 janv')
   })
 })
 

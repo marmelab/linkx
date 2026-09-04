@@ -140,21 +140,47 @@ export async function fetchBotNames(
 }
 
 /**
+ * Nombre maximal de parties rendues en une lecture. L'écran compare la taille
+ * de ce qu'il reçoit à cette borne : atteinte, il **dit** la troncature plutôt
+ * que de laisser croire à une vague vide.
+ */
+export const MY_GAMES_LIMIT = 400
+
+/**
+ * `botId` absent ne filtre pas ; `waveId` vaut l'identifiant d'une vague,
+ * `null` pour les qualifications — les parties sans vague — et `undefined` pour
+ * ne pas filtrer.
+ */
+export type MyGamesFilter = { botId?: string; waveId?: string | null }
+
+/**
  * Les parties de l'auteur. La politique de `parties` les borne déjà à ses deux
- * participants : il n'y a rien à filtrer côté client.
+ * participants : le filtre n'est là que pour aller chercher les anciennes,
+ * au-delà des quatre cents dernières.
  *
  * Les noms sont résolus par une seconde requête plutôt que par une jointure :
  * ils viennent d'une vue, qui n'a pas de clé étrangère à emprunter. Un seul
  * chemin, donc, et l'adversaire est nommé aussi bien que la sienne — c'est
  * `games.ts` qui bascule ensuite du point de vue de l'auteur.
  */
-export async function fetchMyGames(limit = 400): Promise<GameRow[]> {
+export async function fetchMyGames(
+  filter: MyGamesFilter = {},
+): Promise<GameRow[]> {
+  let query = tournamentClient().from('parties').select(GAME_COLUMNS)
+  if (filter.botId !== undefined) {
+    query = query.or(
+      `bot_bleu.eq.${filter.botId},bot_blanc.eq.${filter.botId}`,
+    )
+  }
+  if (filter.waveId === null) query = query.is('vague_id', null)
+  else if (filter.waveId !== undefined) {
+    query = query.eq('vague_id', filter.waveId)
+  }
+
   const rows = unwrap<GameRow[]>(
-    (await tournamentClient()
-      .from('parties')
-      .select(GAME_COLUMNS)
+    (await query
       .order('cree_le', { ascending: false })
-      .limit(limit)) as unknown as {
+      .limit(MY_GAMES_LIMIT)) as unknown as {
       data: GameRow[] | null
       error: { message: string } | null
     },

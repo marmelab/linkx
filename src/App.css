@@ -162,8 +162,9 @@
 
 /* L'entrée du tournoi est une ancre — elle change le fragment, ce que le point
    d'entrée écoute — et non un bouton : elle doit néanmoins se lire comme les
-   deux autres, au même rang. */
-a.mode-button { text-decoration: none; }
+   deux autres, au même rang. D'où cette classe, qui ne fait qu'effacer le
+   soulignement du lien : tout le reste vient de `.mode-button`. */
+.mode-button--tournament { text-decoration: none; }
 
 /* Plateforme de tournoi (plan.md, histoire 16) ----------------------------
    Quatre écrans branchés sur le fragment `#/…`, montés sur le fond et la carte
@@ -289,6 +290,13 @@ a.mini-brand { text-decoration: none; }
 .bot-card__summary { margin: 0.35rem 0 0; color: var(--muted); line-height: 1.5; }
 .bot-card__actions { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 0.8rem 0 0; }
 
+/* Le retrait est irréversible et son bouton voisine avec « Tester » : la
+   confirmation se pose donc **sous** la barre d'actions, détachée d'elle, et
+   non dans la même rangée où le doigt vient de cliquer. */
+.bot-card__confirm { margin: 0.8rem 0 0; padding: 0.7rem 0.8rem; border: 1px solid var(--line); border-radius: 6px; background: #f2f4f8; }
+.bot-card__confirm > p { margin: 0; line-height: 1.5; }
+.bot-card__confirm .bot-card__actions { margin-top: 0.6rem; }
+
 /* Le secret ne s'affiche qu'une fois : l'encadré le dit, et le bouton de copie
    est à côté de la valeur, pas ailleurs. */
 .secret-panel {
@@ -312,7 +320,9 @@ a.mini-brand { text-decoration: none; }
    ligne fantôme. */
 /* Sept colonnes de prose ne tiennent pas dans la carte avant 900px : la table
    des parties se replie plus tôt que celle du classement, qui n'en a que six,
-   toutes courtes. */
+   toutes courtes. Le journal porte la même classe : ses six colonnes sont de
+   prose aussi, et sans elle il défilerait horizontalement dans son cadre entre
+   721 et 900px, ce que l'histoire 16 interdit. */
 @media (max-width: 900px) {
   .tournament-table--wide,
   .tournament-table--wide tbody,

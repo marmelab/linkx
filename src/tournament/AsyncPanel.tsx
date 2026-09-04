@@ -22,11 +22,13 @@ export function AsyncPanel<T>({ state, children }: AsyncPanelProps<T>) {
   }
 
   if (state.status === 'error' || state.data === null) {
+    // « N'a pas répondu » serait faux d'un refus d'accès, qui a bel et bien
+    // répondu. Le panneau dit donc ce qu'il sait — la lecture a échoué — et
+    // laisse le message du service à sa propre ligne, en second.
     return (
       <div className="tournament-note" role="alert">
-        <p>
-          La plateforme n’a pas répondu. {state.error}
-        </p>
+        <p>Cette lecture n’a pas abouti.</p>
+        {state.error && <p className="tournament-error">{state.error}</p>}
         <button
           type="button"
           className="secondary-button secondary-button--small"

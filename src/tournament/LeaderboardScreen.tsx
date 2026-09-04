@@ -4,15 +4,16 @@ import { fetchLeaderboard, fetchWaveProgress, fetchWaves } from './api'
 import { STATUS_LABELS } from './outcomes'
 import { formatGap, orderLeaderboard } from './ranking'
 import {
-  currentWaveWindow,
   formatCountdown,
   formatParisDate,
   formatParisTime,
   nextWaveStart,
+  openWave,
   WAVE_START_LABEL,
   waveProgress,
 } from './schedule'
 import { useAsync } from './useAsync'
+import type { WaveProgressRow } from './api'
 import type { LeaderboardRow, WaveRow } from './types'
 
 const PROTOCOL_URL =
@@ -21,7 +22,6 @@ const PROTOCOL_URL =
 type Payload = {
   rows: LeaderboardRow[]
   waves: WaveRow[]
-  progress: { jouees: number; total: number } | null
 }
 
 /** L'horloge de l'écran, rafraîchie à la minute : le compte à rebours en vit. */
@@ -36,38 +36,34 @@ function useMinute(): number {
 
 async function loadLeaderboard(): Promise<Payload> {
   const [rows, waves] = await Promise.all([fetchLeaderboard(), fetchWaves()])
-  const now = Date.now()
-  const open = waves.find(
-    (wave) =>
-      wave.statut === 'en_cours' &&
-      Date.parse(wave.debut) <= now &&
-      now < Date.parse(wave.fin),
-  )
-  const progress = open ? await fetchWaveProgress(open.id) : null
-  return { rows, waves, progress }
+  return { rows, waves }
 }
 
-function WaveBanner({ payload, now }: { payload: Payload; now: number }) {
-  const open = payload.waves.find(
-    (wave) => Date.parse(wave.debut) <= now && now < Date.parse(wave.fin),
-  )
-  const openWindow = open
-    ? { start: Date.parse(open.debut), end: Date.parse(open.fin) }
-    : currentWaveWindow(now)
-
-  if (openWindow) {
-    const part = payload.progress
-      ? waveProgress(payload.progress.jouees, payload.progress.total)
-      : null
+/**
+ * La bannière ne parle d'une vague en cours que sur une **ligne** ouverte : le
+ * calendrier seul annoncerait des parties là où l'ordonnanceur est arrêté, et
+ * garderait « en cours » une vague close avant midi.
+ */
+function WaveBanner({
+  open,
+  progress,
+  now,
+}: {
+  open: WaveRow | null
+  progress: WaveProgressRow
+  now: number
+}) {
+  if (open) {
+    const part = progress ? waveProgress(progress.jouees, progress.total) : null
     return (
       <p className="wave-banner">
         <span className="overline">Vague en cours</span>
         <strong>
-          {part === null
-            ? 'Les parties se jouent'
-            : `${payload.progress?.jouees} parties jouées sur ${payload.progress?.total}, soit ${Math.round(part * 100)} %`}
+          {progress && part !== null
+            ? `${progress.jouees} parties jouées sur ${progress.total}, soit ${Math.round(part * 100)} %`
+            : 'Les parties se jouent'}
           {' — fin à '}
-          {formatParisTime(openWindow.end)}, heure de Paris.
+          {formatParisTime(Date.parse(open.fin))}, heure de Paris.
         </strong>
       </p>
     )
@@ -88,6 +84,13 @@ function WaveBanner({ payload, now }: { payload: Payload; now: number }) {
 export function LeaderboardScreen() {
   const state = useAsync<Payload>(loadLeaderboard, [])
   const now = useMinute()
+  const open = state.data ? openWave(state.data.waves, now) : null
+  // L'avancement suit l'horloge, comme le compte à rebours : lu une seule fois,
+  // « 42 parties sur 120 » ne bougerait plus de toute la vague.
+  const progress = useAsync<WaveProgressRow>(
+    () => (open ? fetchWaveProgress(open.id) : Promise.resolve(null)),
+    [open?.id, now],
+  )
 
   return (
     <>
@@ -104,7 +107,7 @@ export function LeaderboardScreen() {
       <AsyncPanel state={state}>
         {(payload) => (
           <>
-            <WaveBanner payload={payload} now={now} />
+            <WaveBanner open={open} progress={progress.data} now={now} />
             {payload.rows.length === 0 ? (
               <p className="tournament-note">
                 Aucune IA n’est encore inscrite. La première déclarée ouvrira ce

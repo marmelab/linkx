@@ -68,6 +68,24 @@ export function normalizeAuthCallbackUrl(href: string): string {
   return url.toString()
 }
 
+/**
+ * Retire le `code=` du retour de lien magique.
+ *
+ * La bibliothèque d'authentification ne nettoie l'adresse qu'après un échange
+ * **réussi**. Un lien expiré laisserait donc `?code=` en place à jamais :
+ * `isTournamentLocation` resterait vrai et « Revenir au jeu » rebondirait sur le
+ * classement. `session.ts` appelle donc ceci dès que la première lecture de
+ * session a répondu, quel que soit son sort.
+ *
+ * Rend l'adresse inchangée quand il n'y a rien à retirer.
+ */
+export function urlWithoutAuthCode(href: string): string {
+  const url = new URL(href)
+  if (!url.searchParams.has('code')) return href
+  url.searchParams.delete('code')
+  return url.toString()
+}
+
 /** Adresse de retour du lien magique : le document, sur l'écran de connexion. */
 export function authRedirectUrl(origin: string, pathname: string): string {
   return `${origin}${pathname}#${TOURNAMENT_PATHS.login}`

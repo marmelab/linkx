@@ -19,7 +19,7 @@ import { formatGap } from './ranking'
 import { STATUS_LABELS } from './outcomes'
 import { TOURNAMENT_PATHS } from './routes'
 import { useSession } from './session'
-import { useAsync } from './useAsync'
+import { PENDING, useAsync } from './useAsync'
 import type { BotRow } from './types'
 
 type Payload = {
@@ -72,6 +72,9 @@ function BotCard({
   const [probe, setProbe] = useState<ProbeReply | null>(null)
   const [busy, setBusy] = useState<'probe' | 'status' | null>(null)
   const [failure, setFailure] = useState<string | null>(null)
+  // Un retrait ne se défait pas, et le bouton voisine avec « Tester » : il
+  // demande donc confirmation, sur place, avant de partir.
+  const [confirming, setConfirming] = useState(false)
 
   const runProbe = async () => {
     setBusy('probe')
@@ -89,6 +92,7 @@ function BotCard({
   const changeStatus = async (status: 'retiree' | 'en_attente') => {
     setBusy('status')
     setFailure(null)
+    setConfirming(false)
     try {
       const reply = await setBotStatus(bot.id, status)
       if (!reply.ok) {
@@ -150,18 +154,49 @@ function BotCard({
           <button
             type="button"
             className="secondary-button secondary-button--small"
-            onClick={() => changeStatus('retiree')}
-            disabled={busy !== null}
+            onClick={() => setConfirming(true)}
+            disabled={busy !== null || confirming}
           >
             Retirer
           </button>
         )}
       </p>
 
+      {confirming && (
+        <div className="bot-card__confirm">
+          {/* Le bouton « Retirer » se désactive en s'ouvrant : la question est
+              donc annoncée, et le premier bouton de la réponse prend le focus
+              qu'il vient de perdre. */}
+          <p role="alert">
+            Retirer <strong>{bot.nom}</strong> ? Elle cesse de jouer les vagues,
+            et une IA retirée ne revient pas.
+          </p>
+          <p className="bot-card__actions">
+            <button
+              type="button"
+              className="secondary-button secondary-button--small"
+              autoFocus
+              onClick={() => changeStatus('retiree')}
+              disabled={busy !== null}
+            >
+              Confirmer le retrait
+            </button>
+            <button
+              type="button"
+              className="secondary-button secondary-button--small"
+              onClick={() => setConfirming(false)}
+              disabled={busy !== null}
+            >
+              Annuler
+            </button>
+          </p>
+        </div>
+      )}
+
       {probe && (
         <p
           className={probe.ok ? 'tournament-note' : 'tournament-error'}
-          role="status"
+          role={probe.ok ? 'status' : 'alert'}
         >
           {probe.message ?? (probe.ok ? 'OK.' : 'Échec.')}
         </p>
@@ -291,9 +326,11 @@ function DeclareForm({ onDeclared }: { onDeclared: () => void }) {
 
 export function MyBotsScreen() {
   const { session, ready } = useSession()
+  // Rien n'est lu avant que la session ait répondu : une lecture à vide
+  // annoncerait « aucune IA » à un auteur qui en a déclaré.
   const state = useAsync<Payload>(
-    () => (session ? loadMyBots() : Promise.resolve({ bots: [], summaries: new Map() })),
-    [session?.user.id],
+    () => (session ? loadMyBots() : PENDING),
+    [ready, session?.user.id],
   )
 
   if (ready && !session) return <Navigate to={TOURNAMENT_PATHS.login} replace />
