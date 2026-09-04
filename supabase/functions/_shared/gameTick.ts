@@ -183,10 +183,19 @@ export function interruptMutation(row: StoredGame, now: Date): GameMutation {
   }
 }
 
+/**
+ * Ligne d'erreur du journal. Un coup illégal n'a qu'une chose à dire, le verdict
+ * de l'arbitre ; une panne de transport en a deux, et il les faut toutes les
+ * deux : le **verdict**, qui nomme le motif et le rang du coup, et le **détail**
+ * technique, qui dit ce qui s'est réellement passé sur le fil. Rendre le seul
+ * détail laissait la qualification refusée sur une phrase tronquée — « faute
+ * technique. pas de réponse en 6000 ms » —, la clôture d'une qualification
+ * relisant précisément cette ligne pour composer son verdict.
+ */
 function errorOf(result: BotCallResult, outcome: GameOutcome | null): string | null {
-  if (!result.ok) return result.detail
-  if (outcome && outcome.offender !== null) return outcome.message
-  return null
+  const verdict = outcome && outcome.offender !== null ? outcome.message : null
+  if (result.ok) return verdict
+  return verdict === null ? result.detail : `${verdict} (${result.detail})`
 }
 
 /**

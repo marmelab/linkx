@@ -115,7 +115,11 @@ describe('écriture d’une défaite technique', () => {
     expect(mutation.update.bot_fautif).toBe('ia-bleue')
     expect(mutation.update.notation).toBe('')
     expect(mutation.update.terminee_le).toBe(NOW.toISOString())
-    expect(mutation.journal?.erreur).toBe('pas de réponse en 6000 ms')
+    // Le verdict de l'arbitre **et** le détail du transport : le premier nomme
+    // le motif et le rang, le second dit ce qui s'est passé sur le fil.
+    expect(mutation.journal?.erreur).toBe(
+      'Perdu — hors délai au coup 1. (pas de réponse en 6000 ms)',
+    )
     expect(mutation.journal?.statut_http).toBeNull()
   })
 

@@ -11,10 +11,17 @@
  *
  *   1. clore une vague dont l'heure de fin est passée, les parties encore en
  *      cours devenant des nuls techniques ;
- *   2. dans la fenêtre : ouvrir la vague du jeudi si elle ne l'est pas ;
- *   3. qualifier les IA en attente contre l'IA de la maison ;
- *   4. remettre en file les parties qui n'ont pas bougé ;
- *   5. clore la vague dès que toutes ses parties sont terminées.
+ *   2. qualifier les IA en attente contre l'IA de la maison, et remettre en file
+ *      les parties qui n'ont pas bougé ;
+ *   3. dans la fenêtre : ouvrir la vague du jeudi si elle ne l'est pas ;
+ *   4. clore la vague dès que toutes ses parties sont terminées.
+ *
+ * **La qualification ne dépend pas de la fenêtre.** L'histoire 14 la veut jouée
+ * au moment où son auteur regarde l'écran, pas au prochain jeudi : une IA
+ * déclarée un lundi n'a pas à attendre trois jours pour entrer au classement.
+ * Elle n'appartient d'ailleurs à aucune vague — `vague_id` nul — et ne compte
+ * dans aucun avancement. C'est pourquoi le cron réveille cette fonction tous
+ * les jours (migration 20260904120000) et non le seul jeudi.
  *
  * **Une seule vague par jeudi.** L'unicité n'est pas gardée par un « lire puis
  * créer si absent », qui est exactement la faute que soixante réveils
@@ -23,6 +30,7 @@
  * même valeur pour tous les réveils de la fenêtre ; la deuxième insertion
  * échoue en 23505, et cet échec **est** le verrou.
  */
+import { essaiInstant, readJsonBody } from '../_shared/essaiLocal.ts'
 import { moveCountOf, interruptMutation } from '../_shared/gameTick.ts'
 import type { StoredGame } from '../_shared/gameTick.ts'
 import type { GameOutcome, OutcomeReason } from '../_shared/referee.ts'
@@ -312,7 +320,11 @@ async function requeueStaleGames(rest: Rest, now: Date): Promise<number> {
   return stale.length
 }
 
-/** Midi passé : la vague ne déborde jamais de sa fenêtre. */
+/**
+ * Midi passé : la vague ne déborde jamais de sa fenêtre. Seules ses propres
+ * parties sont closes — une qualification, qui n'appartient à aucune vague et se
+ * joue tous les jours, n'a pas à mourir parce qu'un jeudi s'achève.
+ */
 async function interruptRunningGames(
   rest: Rest,
   wave: WaveDbRow,
@@ -320,8 +332,7 @@ async function interruptRunningGames(
 ): Promise<number> {
   const games = await selectAll<GameDbRow>(
     rest,
-    `parties?statut=neq.terminee&select=${GAME_COLUMNS}` +
-      `&or=(vague_id.eq.${wave.id},vague_id.is.null)`,
+    `parties?statut=neq.terminee&select=${GAME_COLUMNS}&vague_id=eq.${wave.id}`,
   )
   let closed = 0
   for (const game of games) {
@@ -466,7 +477,7 @@ Deno.serve(async (request: Request): Promise<Response> => {
   }
 
   const rest = createRest({ url: supabaseUrl, serviceKey })
-  const now = new Date()
+  const now = essaiInstant(await readJsonBody(request)) ?? new Date()
   const window = waveWindowAt(now)
   const report: Record<string, unknown> = {
     ok: true,
@@ -492,6 +503,11 @@ Deno.serve(async (request: Request): Promise<Response> => {
     return json(report)
   }
 
+  // Avant la fenêtre, et pas seulement dedans : une qualification n'attend pas
+  // le jeudi, et une partie immobile n'a pas à attendre non plus.
+  report.qualifications = await runQualifications(rest, bots)
+  report.remises_en_file = await requeueStaleGames(rest, now)
+
   if (!window.inWindow) {
     report.prochaine_vague = window.start.toISOString()
     return json(report)
@@ -503,8 +519,6 @@ Deno.serve(async (request: Request): Promise<Response> => {
     ? await createWaveGames(rest, wave, bots)
     : 'déjà ouverte'
 
-  report.qualifications = await runQualifications(rest, bots)
-  report.remises_en_file = await requeueStaleGames(rest, now)
   const cloture = await closeWaveIfDone(rest, wave, bots, false)
   report.cloture = cloture
   if (cloture.closed) {

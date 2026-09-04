@@ -22,6 +22,7 @@
  */
 import { callBot, MOVE_DEADLINE_MS, toBotReply } from '../_shared/botClient.ts'
 import { checkBotAddressResolved } from '../_shared/denoDns.ts'
+import { essaiTarget } from '../_shared/essaiLocal.ts'
 import { judgeReply, openGame, REFUSAL_LABELS } from '../_shared/referee.ts'
 
 /**
@@ -136,7 +137,8 @@ Deno.serve(async (request: Request): Promise<Response> => {
 
   const result = await callBot(
     {
-      address: address.address,
+      // Hors passe d'intégration locale, `essaiTarget` rend toujours `null`.
+      address: essaiTarget(address.host) ?? address.address,
       secret,
       gameId: 'sonde',
       color: PROBE_COLOR,

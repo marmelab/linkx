@@ -7,6 +7,7 @@
  * appeler `checkBotAddressResolved`. Le résolveur reste **injectable** pour que
  * ce module se teste lui aussi sans réseau.
  */
+import { essaiTarget } from './essaiLocal.ts'
 import { checkBotAddress, checkBotAddressWithDns } from './safeUrl.ts'
 import type { AddressVerdict, DnsResolver } from './safeUrl.ts'
 
@@ -50,6 +51,10 @@ export async function checkBotAddressResolved(
 ): Promise<AddressVerdict> {
   const verdict = checkBotAddress(raw)
   if (!verdict.ok || !resolve) return verdict
+  // Hôte d'essai de la passe d'intégration locale : il n'existe dans aucun DNS,
+  // et l'appel sera dérivé vers un service local (`essaiLocal.ts`). Hors essai,
+  // la liste est vide et ce test ne change rien.
+  if (essaiTarget(verdict.host)) return verdict
   let addresses: readonly string[]
   try {
     addresses = await resolve(verdict.host)

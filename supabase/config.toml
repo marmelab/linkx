@@ -421,11 +421,18 @@ verify_jwt = false
 enabled = true
 verify_jwt = false
 
-# Ordonnanceur des vagues et arbitre des parties. Réveillés chaque minute du
-# jeudi par pg_cron (migration 20260904100300), qui présente la clé de service.
-# Même raison que ci-dessus de ne pas s'en remettre à `verify_jwt` : il ne
-# vérifie qu'une signature, et le jeton d'un simple visiteur en porte une. Les
-# deux fonctions exigent donc la clé de service, et se taisent hors fenêtre.
+# Ordonnanceur des vagues et arbitre des parties. Réveillés chaque minute par
+# pg_cron (migration 20260904120000), qui présente la clé de service. Même
+# raison que ci-dessus de ne pas s'en remettre à `verify_jwt` : il ne vérifie
+# qu'une signature, et le jeton d'un simple visiteur en porte une. Les deux
+# fonctions exigent donc la clé de service. Hors de la fenêtre du jeudi, elles
+# ne mènent que les qualifications, qui n'attendent pas la vague (histoire 14).
+#
+# Deux entrées d'essai, fermées par défaut et décrites dans
+# `_shared/essaiLocal.ts` : TOURNOI_ESSAI_HORLOGE laisse ces deux fonctions lire
+# l'instant dans le corps de la requête, TOURNOI_ESSAI_ADRESSES dérive des hôtes
+# nommément listés vers un service local. Elles ne se posent qu'en local, par
+# `supabase functions serve --env-file`, jamais sur un projet distant.
 [functions.scheduler]
 enabled = true
 verify_jwt = false
