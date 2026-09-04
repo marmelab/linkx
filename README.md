@@ -239,6 +239,14 @@ Il faut pour cela une **variable** de dépôt `SUPABASE_PROJECT_REF` et deux **s
 
 `VITE_SUPABASE_URL` et `VITE_SUPABASE_ANON_KEY` sont des **variables**, pas des secrets : elles partent dans le bundle, où n'importe qui les lit. La clé « anon » est publique par construction — c'est RLS qui protège les données, et les tests pgTAP qui le prouvent. En leur absence, le jeu se construit à l'identique et les écrans du tournoi ne s'affichent pas.
 
+**Trois réglages ne se déploient pas et se font à la main dans le tableau de bord du projet**, une fois. Rien dans le dépôt ne les porte : `supabase/config.toml` ne configure que la pile locale, et le workflow ne pousse pas cette configuration. Les oublier ne casse aucun build — cela casse l'usage.
+
+1. **Les adresses de retour d'authentification** (Project Settings → Authentication → URL Configuration). `Site URL` vaut l'adresse publiée, **sous-chemin compris** (`https://<compte>.github.io/linkx/`), et les `Redirect URLs` doivent contenir `https://<compte>.github.io/linkx/**` — le motif couvre le fragment `#/connexion` que la SPA demande. Laissées au défaut, elles valent `http://localhost:3000` : le service **rejette silencieusement** l'adresse demandée, retombe sur `Site URL`, et tout lien de connexion mène à une page inexistante. Les liens déjà envoyés restent morts, il faut en redemander un.
+2. **Le serveur d'envoi** (Project Settings → Authentication → SMTP Settings). Celui de Supabase est bridé à quelques courriels par heure et réservé aux essais. C'est GoTrue qui poste les liens de connexion, en SMTP ; `wave-mail`, lui, passe par l'API de Resend — deux chemins d'envoi, à ne pas confondre.
+3. **L'amorçage de l'IA de la maison**, décrit plus haut : sans elle, aucune IA ne se qualifie.
+
+Deux différences avec le local méritent d'être connues : la **confirmation d'adresse** est active par défaut sur un projet hébergé, si bien que le premier courriel d'un nouveau compte est un « Confirm signup » et non un lien magique ; et `npx supabase config push` **ne doit pas** servir à régler le premier point, puisqu'il pousserait le `[auth]` local — dont un `site_url` en `localhost`.
+
 ## Discipline de modification
 
 - Préserver les changements existants de l'utilisateur et éviter les réécritures sans rapport avec la tâche.
