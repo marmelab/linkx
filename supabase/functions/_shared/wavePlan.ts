@@ -23,9 +23,9 @@ import type { PlayerId } from '../../../src/game/types.ts'
 export const SLEEP_WAVES = 3
 
 /**
- * Au-delà, une partie qui n'a pas bougé est considérée perdue par la file — son
- * message a expiré sans être traité, ou n'a jamais été empilé — et la vague la
- * remet en file. Le rejeu étant sans effet, un doublon ne coûte rien.
+ * Au-delà, une partie qui n'a pas bougé **et dont aucun message n'attend** est
+ * considérée perdue par la file — son message a expiré sans être traité, ou n'a
+ * jamais été empilé — et la vague la remet en file.
  */
 export const STALE_GAME_MS = 5 * 60_000
 
@@ -156,14 +156,26 @@ export function qualificationVerdict(
   }
 }
 
-/** Parties de la vague qu'il faut remettre en file, faute d'avoir avancé. */
+/**
+ * Parties qu'il faut remettre en file, faute d'avoir avancé.
+ *
+ * **L'immobilité ne suffit pas.** Une partie qui attend son tour — l'IA tient
+ * déjà ses deux appels, et `referee-tick` a replanifié son message — ne touche
+ * pas sa ligne. À l'ouverture d'une vague de 192 parties pour huit IA, elles
+ * sont presque toutes dans ce cas : les réempiler au bout du délai leur donnerait
+ * un second message, puis un troisième la minute suivante, chacun coûtant un
+ * appel d'IA et une écriture de journal. `queued` porte les parties dont un
+ * message attend déjà, visible ou non ; elles ne sont jamais réempilées.
+ */
 export function gamesToRequeue(
   games: readonly { id: string; statut: string; modifie_le: string }[],
   now: Date,
+  queued: ReadonlySet<string>,
   staleMs: number = STALE_GAME_MS,
 ): string[] {
   return games
     .filter((game) => game.statut !== 'terminee')
+    .filter((game) => !queued.has(game.id))
     .filter((game) => now.getTime() - Date.parse(game.modifie_le) >= staleMs)
     .map((game) => game.id)
 }

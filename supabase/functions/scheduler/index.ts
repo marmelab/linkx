@@ -28,7 +28,9 @@
  * concurrents révèlent : elle est portée par l'index unique de `vagues.debut`
  * (migration 20260904100200). `debut` vaut minuit à Paris du jeudi visé, la
  * même valeur pour tous les réveils de la fenêtre ; la deuxième insertion
- * échoue en 23505, et cet échec **est** le verrou.
+ * échoue en 23505, et cet échec **est** le verrou. Une vague naît `planifiee` et
+ * ne passe `en_cours` qu'une fois ses parties créées, sans quoi un réveil
+ * concurrent la clôrait à vide avant qu'aucune rencontre n'existe.
  */
 import { essaiInstant, readJsonBody } from '../_shared/essaiLocal.ts'
 import { moveCountOf, interruptMutation } from '../_shared/gameTick.ts'
@@ -134,6 +136,12 @@ async function enqueue(rest: Rest, ids: readonly string[]): Promise<void> {
 /**
  * Ouvre la vague du jeudi, ou rend celle qu'un autre réveil vient d'ouvrir.
  * `created` distingue les deux : seul l'ouvreur crée les parties.
+ *
+ * **La vague naît `planifiee`.** Née `en_cours`, elle serait close à vide par un
+ * réveil concurrent : celui-ci ne la crée pas, appelle la clôture, ne voit
+ * encore aucune partie et en conclut que tout est fini — les parties de
+ * l'ouvreur naissant alors sous une vague déjà close. `planifiee` dit « mes
+ * rencontres n'existent pas encore », et la clôture exige `en_cours`.
  */
 async function ensureWave(
   rest: Rest,
@@ -147,7 +155,7 @@ async function ensureWave(
         debut,
         fin: window.end.toISOString(),
         graine: crypto.randomUUID(),
-        statut: 'en_cours',
+        statut: 'planifiee',
       }],
       { returning: 'id,debut,fin,graine,statut' },
     )
@@ -163,7 +171,15 @@ async function ensureWave(
   return { wave: existing, created: false }
 }
 
-/** Crée toutes les parties de la vague et les empile. */
+/**
+ * Crée toutes les parties de la vague, les empile, puis ouvre la vague.
+ *
+ * **Rejouable de bout en bout.** L'index unique (vague, bleu, blanc, ouverture)
+ * absorbe les insertions déjà faites, et les identifiants sont relus de la table
+ * plutôt que du retour d'insertion : un ouvreur mort en chemin est repris au
+ * réveil suivant sans dédoubler ses parties ni en oublier une à empiler. La
+ * vague ne passe `en_cours` qu'à la toute fin, quand ses rencontres existent.
+ */
 async function createWaveGames(
   rest: Rest,
   wave: WaveDbRow,
@@ -182,15 +198,20 @@ async function createWaveGames(
     statut: 'en_attente',
   }))
 
-  const ids: string[] = []
   for (const batch of chunk(rows, INSERT_CHUNK)) {
-    const created = await rest.insert<{ id: string }>('parties', batch, {
-      returning: 'id',
+    await rest.insert('parties', batch, {
+      onConflict: 'vague_id,bot_bleu,bot_blanc,ouverture',
+      ignoreDuplicates: true,
     })
-    ids.push(...created.map((row) => row.id))
   }
-  await enqueue(rest, ids)
-  return { games: ids.length, openingsPerPair: plan.openingsPerPair }
+  const created = await selectAll<{ id: string }>(
+    rest,
+    `parties?vague_id=eq.${wave.id}&select=id&order=id.asc`,
+  )
+  const queued = new Set(await rest.rpc<string[]>('file_coups_parties_en_file'))
+  await enqueue(rest, created.filter((row) => !queued.has(row.id)).map((row) => row.id))
+  await rest.rpc<boolean>('ouvrir_vague', { vague: wave.id })
+  return { games: created.length, openingsPerPair: plan.openingsPerPair }
 }
 
 /**
@@ -318,22 +339,31 @@ async function runQualifications(
 
     if (!qualificationNeeded(bot, attempts)) continue
 
-    const [game] = await rest.insert<{ id: string }>(
-      'parties',
-      [{
-        vague_id: null,
-        ouverture: '',
-        notation: '',
-        nombre_coups: 0,
-        bot_bleu: bot.id,
-        bot_blanc: house.id,
-        statut: 'en_attente',
-      }],
-      { returning: 'id' },
-    )
-    if (game) {
-      await enqueue(rest, [game.id])
-      opened += 1
+    // L'unicité d'une qualification ouverte est portée par un index partiel
+    // (migration 20260904150200), et non par la lecture ci-dessus : deux réveils
+    // qui se recouvrent n'en voient chacun aucune et en ouvriraient chacun une,
+    // le verdict étant ensuite pris sur celle des deux qui finit la dernière.
+    // Le 23505 est donc le cas normal d'une course, pas une panne.
+    try {
+      const [game] = await rest.insert<{ id: string }>(
+        'parties',
+        [{
+          vague_id: null,
+          ouverture: '',
+          notation: '',
+          nombre_coups: 0,
+          bot_bleu: bot.id,
+          bot_blanc: house.id,
+          statut: 'en_attente',
+        }],
+        { returning: 'id' },
+      )
+      if (game) {
+        await enqueue(rest, [game.id])
+        opened += 1
+      }
+    } catch (error) {
+      if (!(error instanceof RestError) || error.code !== UNIQUE_VIOLATION) throw error
     }
   }
 
@@ -348,13 +378,21 @@ async function runQualifications(
     }
 }
 
-/** Parties immobiles : leur message a été perdu, la vague les remet en file. */
+/**
+ * Parties immobiles : leur message a été perdu, la vague les remet en file.
+ * Celles dont un message attend encore, elles, ne sont pas immobiles — elles
+ * font la queue derrière une IA saturée, et les réempiler dédoublerait la vague
+ * entière à chaque réveil.
+ */
 async function requeueStaleGames(rest: Rest, now: Date): Promise<number> {
   const games = await selectAll<GameDbRow>(
     rest,
     `parties?statut=neq.terminee&select=${GAME_COLUMNS}&order=modifie_le.asc`,
   )
-  const stale = gamesToRequeue(games, now)
+  const queued = new Set(
+    await rest.rpc<string[]>('file_coups_parties_en_file'),
+  )
+  const stale = gamesToRequeue(games, now, queued)
   await enqueue(rest, stale)
   return stale.length
 }
@@ -378,6 +416,7 @@ async function interruptRunningGames(
     const stored: StoredGame = {
       id: game.id,
       notation: game.notation,
+      moveCount: game.nombre_coups,
       blueBot: game.bot_bleu,
       whiteBot: game.bot_blanc,
     }
@@ -406,9 +445,13 @@ function ratedGamesOf(games: readonly GameDbRow[]): WaveGameRecord[] {
 }
 
 /**
- * Clôture : classement, historique et sommeil. Le calcul se fait
- * **avant** de réclamer la vague, et la réclamation est conditionnelle : deux
- * réveils concurrents calculent peut-être tous deux, un seul écrit.
+ * Clôture : classement, historique et sommeil. Le classement se calcule ici —
+ * c'est du domaine pur — mais il **s'écrit en base**, dans la même transaction
+ * que la réclamation de la vague (`clore_vague`, migration 20260904150100).
+ * Réclamer d'abord et écrire ensuite, en trois aller-retours, laissait une
+ * invocation morte au milieu abandonner une vague close sans aucun Elo appliqué,
+ * sans courriel, et sans chemin de reprise — la réclamation étant conditionnelle,
+ * plus rien ne réessayait.
  */
 async function closeWaveIfDone(
   rest: Rest,
@@ -416,6 +459,10 @@ async function closeWaveIfDone(
   bots: readonly BotDbRow[],
   force: boolean,
 ): Promise<{ closed: boolean; note: string; endormies?: number }> {
+  if (wave.statut !== 'en_cours') {
+    return { closed: false, note: `vague ${wave.statut}, rien à clore` }
+  }
+
   const games = await selectAll<GameDbRow>(
     rest,
     `parties?vague_id=eq.${wave.id}&select=${GAME_COLUMNS}&order=cree_le.asc,id.asc`,
@@ -437,44 +484,30 @@ async function closeWaveIfDone(
     ratedGamesOf(games.filter((game) => game.statut === 'terminee')),
   )
 
-  const claimed = await rest.update<{ id: string }>(
-    'vagues',
-    `id=eq.${wave.id}&statut=eq.en_cours`,
-    { statut: 'terminee' },
-    'id',
+  const claimed = await rest.rpc<{ reclamee: boolean; classees: number }>(
+    'clore_vague',
+    {
+      vague: wave.id,
+      classements: closures.map((closure) => ({
+        bot_id: closure.bot,
+        elo_avant: closure.eloBefore,
+        elo_apres: closure.elo,
+        victoires: closure.wins,
+        nuls: closure.draws,
+        defaites: closure.losses,
+        parties_classees: closure.ratedGames,
+        vagues_echouees_consecutives: closure.failureStreak,
+        endormie: closure.asleep,
+      })),
+    },
   )
-  if (claimed.length === 0) {
+  if (!claimed.reclamee) {
     return { closed: false, note: 'vague déjà close par un autre réveil' }
-  }
-
-  await rest.insert(
-    'historique_elo',
-    closures.map((closure) => ({
-      bot_id: closure.bot,
-      vague_id: wave.id,
-      elo_avant: closure.eloBefore,
-      elo_apres: closure.elo,
-      victoires: closure.wins,
-      nuls: closure.draws,
-      defaites: closure.losses,
-    })),
-    { onConflict: 'bot_id,vague_id', ignoreDuplicates: true },
-  )
-
-  for (const closure of closures) {
-    await rest.update('bots', `id=eq.${closure.bot}`, {
-      elo: closure.elo,
-      parties_classees: closure.ratedGames,
-      vagues_echouees_consecutives: closure.failureStreak,
-      // Une IA endormie sort des appariements ; son classement, déjà écrit
-      // ci-dessus, ne bougera plus tant qu'elle n'est pas réactivée.
-      ...(closure.asleep ? { statut: 'sommeil' } : {}),
-    })
   }
 
   return {
     closed: true,
-    note: `${closures.length} IA classées`,
+    note: `${claimed.classees} IA classées`,
     endormies: closures.filter((closure) => closure.asleep).length,
   }
 }
@@ -529,10 +562,18 @@ Deno.serve(async (request: Request): Promise<Response> => {
 
   // Une vague dont l'heure de fin est passée se clôt même hors fenêtre : c'est
   // le seul moyen que la fin de vague ne dépende pas de l'instant du réveil.
+  // Une vague restée `planifiee` — ouvreur mort avant la fin de sa création — se
+  // clôt aussi : sa fenêtre est passée, plus rien ne s'y créera, et la laisser
+  // là la rendrait éternelle.
   const [running] = await rest.select<WaveDbRow>(
-    'vagues?statut=eq.en_cours&select=id,debut,fin,graine,statut&order=debut.desc&limit=1',
+    'vagues?statut=in.(planifiee,en_cours)&select=id,debut,fin,graine,statut' +
+      '&order=debut.desc&limit=1',
   )
   if (running && Date.parse(running.fin) <= now.getTime()) {
+    if (running.statut === 'planifiee') {
+      await rest.rpc<boolean>('ouvrir_vague', { vague: running.id })
+      running.statut = 'en_cours'
+    }
     report.interrompues = await interruptRunningGames(rest, running, now)
     const cloture = await closeWaveIfDone(rest, running, bots, true)
     report.cloture = cloture
@@ -554,9 +595,14 @@ Deno.serve(async (request: Request): Promise<Response> => {
 
   const { wave, created } = await ensureWave(rest, window)
   report.vague_id = wave.id
-  report.ouverture = created
-    ? await createWaveGames(rest, wave, bots)
-    : 'déjà ouverte'
+  // Une vague encore `planifiee` que ce réveil n'a pas créée est celle d'un
+  // ouvreur mort en chemin : la création étant rejouable, on la reprend.
+  if (created || wave.statut === 'planifiee') {
+    report.ouverture = await createWaveGames(rest, wave, bots)
+    wave.statut = 'en_cours'
+  } else {
+    report.ouverture = 'déjà ouverte'
+  }
 
   const cloture = await closeWaveIfDone(rest, wave, bots, false)
   report.cloture = cloture

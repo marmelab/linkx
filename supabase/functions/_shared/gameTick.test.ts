@@ -12,10 +12,11 @@ import { REFERENCE_GAME } from '../../../src/game/referenceGame.ts'
 
 const NOW = new Date('2026-09-03T02:34:56.000Z')
 
-function row(notation: string): StoredGame {
+function row(notation: string, moveCount = moveCountOf(notation)): StoredGame {
   return {
     id: 'partie-1',
     notation,
+    moveCount,
     blueBot: 'ia-bleue',
     whiteBot: 'ia-blanche',
   }
@@ -166,6 +167,24 @@ describe('clôtures', () => {
     expect(mutation.update.bot_fautif).toBeNull()
     expect(mutation.update.nombre_coups).toBe(2)
     expect(mutation.expectedNotation).toBe('15 3Ir13')
+  })
+
+  // Le filtre d'écriture porte sur `nombre_coups` : l'écrire à zéro alors que la
+  // ligne en porte sept ne correspondrait jamais, la partie resterait en cours
+  // et se ferait réempiler chaque minute jusqu'à midi.
+  it('filtre sur le compte de la ligne quand la notation ne se relit pas', () => {
+    const mutation = interruptMutation(row('pas-un-coup', 7), NOW)
+    expect(mutation.expectedMoveCount).toBe(7)
+    expect(mutation.update.nombre_coups).toBe(7)
+    expect(mutation.update.statut).toBe('terminee')
+  })
+
+  it('sort une partie à notation illisible en nul technique plutôt qu’en boucle', () => {
+    const broken = row('pas-un-coup', 7)
+    const step = call(planGameStep(row('15')))
+    const mutation = replyMutation(broken, step, replied('3Ir13'), NOW)
+    expect(mutation.expectedMoveCount).toBe(7)
+    expect(mutation.update.motif_fin).toBe('interrupted')
   })
 })
 

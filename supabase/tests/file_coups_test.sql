@@ -4,7 +4,7 @@
 -- entre deux invocations de `referee-tick` ; il redevient jouable sur demande,
 -- ce qui est la façon dont une partie enchaîne ses coups.
 begin;
-select plan(8);
+select plan(12);
 
 insert into auth.users (id, email)
 values ('77777777-7777-7777-7777-777777777777', 'auteur-file@example.test');
@@ -41,6 +41,16 @@ select is(
   'un message dépilé est invisible : deux invocations ne jouent pas la même partie'
 );
 
+-- L'ordonnanceur réempile les parties immobiles. Une partie qui attend son tour
+-- derrière une IA saturée ne touche pourtant pas sa ligne : sans savoir ce que
+-- la file contient, il lui donnerait un second message, puis un troisième.
+-- Un message **invisible** en fait partie : il est en cours de traitement.
+select is(
+  public.file_coups_parties_en_file(),
+  array['77770000-0000-0000-0000-0000000000aa']::uuid[],
+  'un message invisible compte comme déjà en file'
+);
+
 select ok(
   public.file_coups_replanifier((select msg_id from lu), 0),
   'une partie qui vient d''avancer se remet en file'
@@ -52,12 +62,28 @@ select is(
   'replanifié à zéro seconde, le message redevient jouable aussitôt'
 );
 
+select is(
+  public.file_coups_enfiler(array['77770000-0000-0000-0000-0000000000aa']::uuid[]),
+  1,
+  'un doublon s''empile bel et bien : rien en base ne l''en empêche'
+);
+select is(
+  public.file_coups_parties_en_file(),
+  array['77770000-0000-0000-0000-0000000000aa']::uuid[],
+  'et la partie n''est nommée qu''une fois, si nombreux que soient ses messages'
+);
+select is(public.file_coups_taille(), 2::bigint, 'deux messages pour une partie');
+
 select ok(
   public.file_coups_supprimer((select msg_id from lu)),
   'une partie terminée sort de la file'
 );
 
-select is(public.file_coups_taille(), 0::bigint, 'la file est vide');
+select is(
+  public.file_coups_parties_en_file(),
+  array['77770000-0000-0000-0000-0000000000aa']::uuid[],
+  'son doublon reste, et la partie reste donc en file'
+);
 
 select * from finish();
 rollback;

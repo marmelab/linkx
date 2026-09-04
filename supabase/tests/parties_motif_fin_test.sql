@@ -16,16 +16,24 @@ insert into public.vagues (id, debut, fin, graine)
 values ('f0000000-0000-0000-0000-00000000000a',
         '2026-09-10 00:00+02', '2026-09-10 12:00+02', 'graine-m');
 
+-- Une vague ne donne jamais deux fois la même rencontre sur la même ouverture
+-- (index `parties_vague_appariement_idx`) : ce test-ci n'en fabrique pourtant
+-- qu'une, répétée pour chaque motif. Chacune reçoit donc son ouverture, ce qui
+-- est aussi ce qu'un vrai calendrier ferait.
+create temp sequence essai_ouverture;
+
 create or replace function pg_temp.creer_partie(
   motif text, refus text, resultat text default 'white'
 ) returns void language plpgsql as $$
 begin
   insert into public.parties
-    (vague_id, bot_bleu, bot_blanc, statut, resultat, motif_fin, motif_refus)
+    (vague_id, bot_bleu, bot_blanc, ouverture, statut, resultat,
+     motif_fin, motif_refus)
   values
     ('f0000000-0000-0000-0000-00000000000a',
      'f0000000-0000-0000-0000-000000000001',
      'f0000000-0000-0000-0000-000000000002',
+     'ouverture-' || nextval('essai_ouverture'),
      'terminee', resultat, motif, refus);
 end;
 $$;

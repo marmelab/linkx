@@ -14,9 +14,13 @@
 --     chacune un second, soit trois appels simultanés ;
 --   * un jeton **expire**. Une invocation tuée en plein appel ne rend rien ;
 --     sans expiration, l'IA resterait bloquée à deux appels fantômes jusqu'à la
---     fin de la vague. La durée couvre le délai de six secondes et l'écriture
---     qui suit, et reste inférieure à l'invisibilité d'un message de la file :
---     un message ne redevient jouable qu'une fois son jeton périmé.
+--     fin de la vague. La durée couvre le délai de six secondes d'un appel, et
+--     lui seul : `referee-tick` rend le jeton dès la réponse reçue, avant
+--     d'écrire le coup et le journal. Elle reste assez au-dessous de
+--     l'invisibilité d'un message pour que celle-ci porte en plus les lectures
+--     qui séparent le dépilage de la prise du jeton (`_shared/tickBudget.ts`,
+--     `LEASE_PICKUP_RESERVE_MS`) : un message ne redevient jamais jouable tant
+--     que le jeton pris pour lui est vivant.
 
 create table if not exists public.appels_bot (
   id bigint generated always as identity primary key,

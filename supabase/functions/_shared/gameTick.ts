@@ -31,6 +31,13 @@ export type StoredGame = {
   id: string
   /** Notation depuis le début, ouverture imposée comprise. */
   notation: string
+  /**
+   * Colonne `nombre_coups` de la ligne. Elle se déduit de la notation partout
+   * sauf là où celle-ci ne se relit pas : c'est **le seul** filtre d'écriture
+   * qui reste alors, et l'écrire à zéro condamnerait la partie à ne jamais se
+   * clore et à se faire réempiler jusqu'à midi.
+   */
+  moveCount: number
   blueBot: string
   whiteBot: string
 }
@@ -169,10 +176,14 @@ export function settleMutation(
   }
 }
 
-/** Fin de fenêtre : la partie encore en cours devient un nul technique. */
+/**
+ * Fin de fenêtre : la partie encore en cours devient un nul technique. Sert
+ * aussi de porte de sortie à une notation stockée illisible — auquel cas le
+ * compte de la ligne fait foi, faute de pouvoir le recalculer.
+ */
 export function interruptMutation(row: StoredGame, now: Date): GameMutation {
   const game = openStored(row)
-  const moveCount = game ? game.state.history.length : 0
+  const moveCount = game ? game.state.history.length : row.moveCount
   const outcome = closeInterruptedGame()
   return {
     expectedNotation: row.notation,

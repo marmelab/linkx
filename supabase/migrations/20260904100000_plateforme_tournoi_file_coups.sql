@@ -9,20 +9,26 @@
 --
 --   délai d'appel 6 s  <  jeton d'appel 20 s  <  invisibilité d'un message 30 s
 --
--- Un coup peut prendre six secondes ; l'invisibilité doit donc les couvrir, et
--- couvrir en plus l'écriture qui suit. Elle doit surtout dépasser la durée du
--- jeton d'appel pris vers l'IA (20 s), sans quoi une seconde invocation
--- reprendrait la partie pendant que la première tient encore son appel.
+-- Un coup peut prendre six secondes. L'invisibilité doit surtout dépasser la
+-- durée du jeton d'appel pris vers l'IA (20 s), et la dépasser d'assez pour
+-- porter en plus les lectures qui séparent le dépilage de la prise du jeton
+-- (`_shared/tickBudget.ts`, `LEASE_PICKUP_RESERVE_MS`) : sans cela une seconde
+-- invocation reprendrait la partie pendant que la première tient encore son
+-- appel.
 --
 -- **Un message rejoué est sans effet.** Une visibilité qui expire — invocation
 -- morte, appel qui traîne — remet le message en circulation, et un empilage de
 -- rattrapage peut aussi le doubler. Trois garde-fous, dans cet ordre :
 --
---   1. l'écriture du coup est conditionnée à la notation sur laquelle il a été
---      décidé (`expectedNotation`, `_shared/gameTick.ts`) : si un autre passage
---      a déjà avancé la partie, le `update` ne touche aucune ligne ;
---   2. `evenements_partie` porte un index unique sur (partie_id, rang_coup) :
---      le journal ne se dédouble pas davantage ;
+--   1. l'écriture du coup est conditionnée au **nombre de coups** de la ligne au
+--      moment où il a été décidé (`expectedMoveCount`, `_shared/gameTick.ts`) :
+--      un entier, sans échappement d'URL à réussir, et strictement croissant
+--      tant que la partie avance. Si un autre passage l'a déjà avancée, le
+--      `update` ne touche aucune ligne, et le message rejoué est **supprimé** —
+--      c'est ce qui fait décroître la population de messages d'une partie ;
+--   2. `evenements_partie` porte un index unique sur (partie_id, rang_coup), et
+--      le journal n'est écrit qu'**après** une écriture de coup réussie : il ne
+--      se dédouble pas, et ne nomme jamais un coup qui n'a pas été appliqué ;
 --   3. une partie déjà terminée ressort en `settle`, qui réécrit exactement les
 --      mêmes colonnes.
 --

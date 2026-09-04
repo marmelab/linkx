@@ -3,8 +3,9 @@
  *
  * Le module n'appelle rien : il reçoit la réponse brute d'une IA et rend un
  * verdict. C'est ce qui le rend testable, et c'est aussi ce qui garantit qu'il
- * ne réécrit aucune règle : valider un coup, c'est `parseGameRecord` et rien
- * d'autre.
+ * ne réécrit aucune règle : la légalité d'un coup, c'est `parseGameRecord` et
+ * rien d'autre. L'arbitre exige en revanche que la réponse **fasse avancer** la
+ * partie, ce qui n'est pas une règle du jeu mais une condition de lisibilité.
  */
 import { parseGameRecord, serializeGameRecord } from '../../../src/game/moveNotation.ts'
 import type { NotationError, NotationErrorReason } from '../../../src/game/moveNotation.ts'
@@ -249,6 +250,23 @@ export function judgeReply(game: OngoingGame, reply: BotReply): RefereeResult {
         'illegal',
         illegalMoveMessage(game.state, parsed.error.reason),
         parsed.error.reason,
+      ),
+    }
+  }
+
+  // La notation admet un marqueur de premier joueur en tête : sur une notation
+  // vide, `b`, `blue`, `w` ou `white` se relisent donc sans erreur et rendent une
+  // partie à **zéro coup**. Accepter cela réécrirait le même état indéfiniment,
+  // et la partie redemanderait le même coup jusqu'à la fin de la vague. Un coup
+  // ajoute au moins une entrée d'historique : à défaut, la réponse est illisible.
+  if (parsed.state.history.length <= game.state.history.length) {
+    return {
+      ok: false,
+      outcome: technicalLoss(
+        game,
+        color,
+        'unreadable-reply',
+        `Perdu — réponse illisible au coup ${nextMoveNumber(game.state)}.`,
       ),
     }
   }

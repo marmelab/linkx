@@ -5,7 +5,7 @@
 -- place libérée, et qu'un jeton laissé par une invocation morte ne condamne pas
 -- l'IA jusqu'à la fin de la vague.
 begin;
-select plan(9);
+select plan(13);
 
 insert into auth.users (id, email)
 values ('88888888-8888-8888-8888-888888888888', 'auteur-jetons@example.test');
@@ -59,12 +59,42 @@ select isnt(
   'la place rendue est immédiatement réutilisable'
 );
 
--- Invocation morte : deux jetons pris et jamais rendus, mais périmés. Sans
--- expiration, l'IA resterait muette jusqu'à la fin de la vague.
+-- Invocation morte : deux jetons pris pour la durée **réelle** d'un bail, et
+-- jamais rendus. Les prendre avec une durée nulle les ferait naître périmés et
+-- ne prouverait rien : `now()` est figé sur la transaction, et un bail de vingt
+-- secondes ne s'écoulerait jamais. Le temps se simule donc en reculant les deux
+-- lignes de vingt et une secondes — le seul moyen, dans une transaction, de
+-- distinguer un bail vivant d'un bail échu.
 select ok(
-  public.prendre_jeton_appel('88880000-0000-0000-0000-000000000003', null::uuid, 0) is not null
-  and public.prendre_jeton_appel('88880000-0000-0000-0000-000000000003', null::uuid, 0) is not null,
-  'deux jetons pris par une invocation qui ne les rendra pas'
+  public.prendre_jeton_appel('88880000-0000-0000-0000-000000000003', null::uuid, 20) is not null
+  and public.prendre_jeton_appel('88880000-0000-0000-0000-000000000003', null::uuid, 20) is not null,
+  'deux jetons de vingt secondes pris par une invocation qui ne les rendra pas'
+);
+select is(
+  public.prendre_jeton_appel('88880000-0000-0000-0000-000000000003', null::uuid, 20),
+  null::bigint,
+  'un bail encore vivant bloque bien la place'
+);
+select is(
+  public.purger_jetons_expires(),
+  0,
+  'la purge ne touche pas un bail encore vivant'
+);
+
+update public.appels_bot
+set pris_le = pris_le - interval '21 seconds',
+    expire_le = expire_le - interval '21 seconds'
+where bot_id = '88880000-0000-0000-0000-000000000003';
+
+select is(
+  public.appels_en_cours('88880000-0000-0000-0000-000000000003'),
+  0,
+  'les vingt secondes écoulées, plus aucun appel n''est en cours'
+);
+select is(
+  public.purger_jetons_expires(),
+  2,
+  'la purge emporte les deux baux échus'
 );
 select isnt(
   public.prendre_jeton_appel('88880000-0000-0000-0000-000000000003', null::uuid, 20),

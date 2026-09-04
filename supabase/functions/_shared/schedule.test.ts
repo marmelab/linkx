@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import {
+  MAX_BOTS_WITHIN_TARGET,
   MAX_GAMES_PER_BOT,
   buildSchedule,
   drawOpenings,
+  gamesPerBot,
   openingsPerPair,
 } from './schedule.ts'
 import type { ScheduledGame, Schedule } from './schedule.ts'
@@ -16,7 +18,7 @@ function pairKey(game: ScheduledGame): string {
   return [game.blue, game.white].sort().join('/')
 }
 
-function gamesPerBot(schedule: Schedule): Map<string, number> {
+function gamesByBot(schedule: Schedule): Map<string, number> {
   const total = new Map<string, number>()
   for (const game of schedule.games) {
     total.set(game.blue, (total.get(game.blue) ?? 0) + 1)
@@ -48,6 +50,35 @@ describe('nombre d’ouvertures imposées', () => {
   it('vaut zéro sans rencontre possible', () => {
     expect(openingsPerPair(0, 99)).toBe(0)
     expect(openingsPerPair(1, 99)).toBe(0)
+  })
+})
+
+// La borne ne se vérifie qu'à l'endroit où elle casse. `k` étant déjà nul à
+// 51 IA, rien ne peut plus réduire le total au-delà : la sortie de borne est
+// assumée, et ces tests en fixent la valeur exacte pour qu'elle ne dérive pas
+// sans qu'on le sache.
+describe('borne des cent parties par IA', () => {
+  it('tient exactement jusqu’à MAX_BOTS_WITHIN_TARGET inscrites', () => {
+    for (let count = 2; count <= MAX_BOTS_WITHIN_TARGET; count += 1) {
+      expect(gamesPerBot(count)).toBeLessThanOrEqual(MAX_GAMES_PER_BOT)
+    }
+    expect(gamesPerBot(MAX_BOTS_WITHIN_TARGET)).toBe(MAX_GAMES_PER_BOT)
+  })
+
+  it('la dépasse dès l’inscrite suivante, et croît ensuite en n²', () => {
+    expect(gamesPerBot(MAX_BOTS_WITHIN_TARGET + 1)).toBe(102)
+    expect(gamesPerBot(100)).toBe(198)
+    expect(gamesPerBot(200)).toBe(398)
+    // 200 IA à 398 parties chacune : 39 800 parties dans la vague.
+    expect((gamesPerBot(200) * 200) / 2).toBe(39_800)
+  })
+
+  it('donne le même compte que le calendrier réellement construit', () => {
+    for (const count of [2, 5, 12, 26, 51, 52]) {
+      const total = gamesPerBot(count, OPENINGS.length)
+      const built = buildSchedule(bots(count), 'vague-1')
+      expect(built.games.length * 2).toBe(total * count)
+    }
   })
 })
 
@@ -138,7 +169,7 @@ describe.each([5, 6, 12])('vague à %i IA', (count) => {
   })
 
   it('laisse chaque IA sous la centaine de parties, et aucune sans adversaire', () => {
-    const total = gamesPerBot(schedule)
+    const total = gamesByBot(schedule)
     expect(total.size).toBe(count)
     for (const played of total.values()) {
       expect(played).toBeLessThanOrEqual(MAX_GAMES_PER_BOT)
@@ -158,7 +189,7 @@ describe('nombre impair d’IA', () => {
   it('n’exempte personne : toutes contre toutes n’apparie pas par ronde', () => {
     for (const count of [3, 5, 7, 9]) {
       const schedule = buildSchedule(bots(count), 'vague-1')
-      const total = gamesPerBot(schedule)
+      const total = gamesByBot(schedule)
       expect(total.size).toBe(count)
       const played = new Set(total.values())
       expect(played.size).toBe(1)

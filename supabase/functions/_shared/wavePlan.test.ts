@@ -165,19 +165,28 @@ describe('verdict de qualification', () => {
 
 describe('parties à remettre en file', () => {
   const now = new Date('2026-09-03T02:00:00Z')
+  const games = [
+    { id: 'vive', statut: 'en_cours', modifie_le: '2026-09-03T01:59:00Z' },
+    { id: 'figee', statut: 'en_cours', modifie_le: '2026-09-03T01:50:00Z' },
+    { id: 'jamais', statut: 'en_attente', modifie_le: '2026-09-03T01:00:00Z' },
+    { id: 'finie', statut: 'terminee', modifie_le: '2026-09-03T01:00:00Z' },
+  ]
 
   it('ne retient que les parties non terminées et immobiles', () => {
-    expect(
-      gamesToRequeue(
-        [
-          { id: 'vive', statut: 'en_cours', modifie_le: '2026-09-03T01:59:00Z' },
-          { id: 'figee', statut: 'en_cours', modifie_le: '2026-09-03T01:50:00Z' },
-          { id: 'jamais', statut: 'en_attente', modifie_le: '2026-09-03T01:00:00Z' },
-          { id: 'finie', statut: 'terminee', modifie_le: '2026-09-03T01:00:00Z' },
-        ],
-        now,
-      ),
-    ).toEqual(['figee', 'jamais'])
+    expect(gamesToRequeue(games, now, new Set())).toEqual(['figee', 'jamais'])
+  })
+
+  // Une partie qui attend son tour derrière une IA saturée ne touche pas sa
+  // ligne : sans ce filtre, une vague entière recevrait un second message au
+  // bout de cinq minutes, puis un troisième à la minute suivante.
+  it('n’en réempile aucune dont un message attend déjà dans la file', () => {
+    expect(gamesToRequeue(games, now, new Set(['figee', 'jamais']))).toEqual([])
+    expect(gamesToRequeue(games, now, new Set(['figee']))).toEqual(['jamais'])
+  })
+
+  it('réempile une partie retirée de la file après son immobilisation', () => {
+    expect(gamesToRequeue(games, now, new Set(['vive', 'finie'])))
+      .toEqual(['figee', 'jamais'])
   })
 })
 

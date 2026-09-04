@@ -63,6 +63,7 @@ type GameDbRow = {
   id: string
   vague_id: string | null
   notation: string
+  nombre_coups: number
   statut: string
   bot_bleu: string
   bot_blanc: string
@@ -91,6 +92,7 @@ function storedOf(row: GameDbRow): StoredGame {
   return {
     id: row.id,
     notation: row.notation,
+    moveCount: row.nombre_coups,
     blueBot: row.bot_bleu,
     whiteBot: row.bot_blanc,
   }
@@ -106,14 +108,6 @@ async function applyMutation(
   gameId: string,
   mutation: GameMutation,
 ): Promise<boolean> {
-  if (mutation.journal) {
-    // Le journal d'abord : même si l'écriture du coup se révèle périmée, la
-    // trace de l'appel reste, et l'index unique (partie, rang) la dédoublonne.
-    await rest.insert('evenements_partie', [mutation.journal], {
-      onConflict: 'partie_id,rang_coup',
-      ignoreDuplicates: true,
-    })
-  }
   const written = await rest.update<{ id: string }>(
     'parties',
     `id=eq.${gameId}&statut=neq.terminee` +
@@ -121,7 +115,20 @@ async function applyMutation(
     mutation.update,
     'id',
   )
-  return written.length > 0
+  if (written.length === 0) return false
+  if (mutation.journal) {
+    // Le journal **après** l'écriture du coup, et seulement si elle a pris. Le
+    // journal est ce que l'auteur d'une IA vient lire pour comprendre la
+    // notation : écrit d'abord, il porterait le coup du perdant d'une course
+    // entre deux passages là où la notation porte celui du gagnant, et
+    // désignerait un coup qui n'a jamais été appliqué. L'appel perdu n'est pas
+    // pour autant muet : le message est replanifié et rejoué.
+    await rest.insert('evenements_partie', [mutation.journal], {
+      onConflict: 'partie_id,rang_coup',
+      ignoreDuplicates: true,
+    })
+  }
+  return true
 }
 
 /** Échec fabriqué pour une adresse devenue inappelable : c'est injoignable. */
@@ -144,7 +151,7 @@ async function playOneMove(
 ): Promise<Verdict> {
   const [row] = await rest.select<GameDbRow>(
     `parties?id=eq.${message.partie_id}` +
-      '&select=id,vague_id,notation,statut,bot_bleu,bot_blanc&limit=1',
+      '&select=id,vague_id,notation,nombre_coups,statut,bot_bleu,bot_blanc&limit=1',
   )
   if (!row) {
     await rest.rpc('file_coups_supprimer', { msg: message.msg_id })
@@ -224,9 +231,13 @@ async function playOneMove(
   const advanced = await applyMutation(rest, row.id, mutation)
 
   if (!advanced) {
-    // Un autre passage a déjà avancé la partie : ce message est en retard d'un
-    // coup. Le rendre visible tout de suite le fera repartir de l'état réel.
-    await rest.rpc('file_coups_replanifier', { msg: message.msg_id, delai_s: 0 })
+    // Un autre passage a déjà avancé la partie : deux messages tournaient donc
+    // pour elle, et celui-ci est le doublon. Le **supprimer** est ce qui fait
+    // décroître la population de messages d'une partie : replanifié, il
+    // resterait à doubler chaque appel d'IA jusqu'à la fin de la partie. Le
+    // vainqueur de la course, lui, replanifie le sien ; et une partie qui se
+    // retrouverait sans aucun message est réempilée par l'ordonnanceur.
+    await rest.rpc('file_coups_supprimer', { msg: message.msg_id })
     return 'écriture périmée'
   }
   if (mutation.update.statut === 'terminee') {

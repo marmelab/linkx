@@ -171,6 +171,31 @@ describe('défaites techniques', () => {
     }
   })
 
+  // Sur une notation vide, le premier jeton d'une notation peut être un
+  // marqueur de premier joueur : il se relit sans erreur et ne pose aucune
+  // pièce. Accepté, il ferait redemander le même coup jusqu'à la fin de la
+  // vague, et `w` inverserait en plus le premier joueur sans que les couleurs
+  // bougent en base.
+  it('fait perdre un marqueur de premier joueur, qui n’avance pas la partie', () => {
+    for (const body of ['b', 'blue', 'BLUE', 'w', 'white']) {
+      const result = judgeReply(game(''), { ok: true, body })
+      expect(result.ok).toBe(false)
+      if (result.ok) continue
+      expect(result.outcome.reason).toBe('unreadable-reply')
+      expect(result.outcome.offender).toBe('ia-bleue')
+      expect(result.outcome.moveNumber).toBe(1)
+    }
+  })
+
+  it('fait perdre un marqueur de premier joueur en cours de partie aussi', () => {
+    for (const body of ['b', 'blue', 'BLUE', 'w', 'white']) {
+      const result = judgeReply(game('15'), { ok: true, body })
+      expect(result.ok).toBe(false)
+      if (result.ok) continue
+      expect(result.outcome.offender).toBe('ia-blanche')
+    }
+  })
+
   it('fait perdre le jeton de passe, même là où la position passe vraiment', () => {
     const ongoing = game(BEFORE_FORCED_PASS)
     const after = judgeReply(ongoing, { ok: true, body: '4Lsr37' })
