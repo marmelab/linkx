@@ -12,6 +12,14 @@ export const SIGNATURE_HEADER = 'x-linkx-signature'
 /** Nom de la variable d'environnement portant le secret remis à l'inscription. */
 export const SECRET_ENV = 'LINKX_BOT_SECRET'
 
+/**
+ * Seule variable qui autorise un appel non signé, et seulement en
+ * développement. Sans elle, un secret absent **ferme** la fonction : la
+ * recherche minimax coûte du processeur, et cette fonction est publique — une
+ * variable oubliée au déploiement l'offrait jusqu'ici à qui la demande.
+ */
+export const ALLOW_UNSIGNED_ENV = 'LINKX_BOT_ALLOW_UNSIGNED'
+
 /** Au-delà, l'appel est considéré comme rejoué. */
 export const MAX_TIMESTAMP_AGE_S = 300
 
@@ -53,16 +61,29 @@ async function computeDigest(secret: string, payload: string): Promise<string> {
 }
 
 /**
- * Rend `checked: false` lorsque aucun secret n'est configuré : le service reste
- * utilisable en développement, et l'appelant trace ce choix.
+ * Vérifie la signature d'un appel.
+ *
+ * Sans secret configuré, l'appel est **refusé** : c'est le seul comportement
+ * sûr pour une fonction publique qui calcule. `allowUnsigned` rouvre ce chemin
+ * pour le développement, et seule une variable d'environnement explicite peut
+ * la poser ; l'appelant trace alors ce choix par `checked: false`.
  */
 export async function verifySignature(
   headers: Headers,
   rawBody: string,
   secret: string | undefined,
-  nowSeconds: number = Math.floor(Date.now() / 1000),
+  options: { allowUnsigned?: boolean; nowSeconds?: number } = {},
 ): Promise<SignatureVerdict> {
-  if (!secret) return { ok: true, checked: false }
+  const nowSeconds = options.nowSeconds ?? Math.floor(Date.now() / 1000)
+  if (!secret) {
+    return options.allowUnsigned
+      ? { ok: true, checked: false }
+      : {
+        ok: false,
+        message:
+          'Service mal configuré : aucun secret de signature, aucun appel accepté.',
+      }
+  }
 
   const timestamp = headers.get(TIMESTAMP_HEADER)
   const signature = headers.get(SIGNATURE_HEADER)

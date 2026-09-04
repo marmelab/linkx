@@ -174,10 +174,17 @@ export async function fetchMyGames(limit = 400): Promise<GameRow[]> {
   }))
 }
 
+/**
+ * Journal d'appel d'une partie, lu par la vue `journal_appels` et non par la
+ * table : `erreur` et `reponse_brute` ne sont plus lisibles d'un participant
+ * quelconque, mais du seul propriétaire de l'IA appelée (migration
+ * `plateforme_tournoi_journal_prive`). La vue rend le reste des deux côtés, et
+ * `erreur` à `null` sur les appels de l'adversaire.
+ */
 export async function fetchGameEvents(gameId: string): Promise<GameEventRow[]> {
   return unwrap<GameEventRow[]>(
     await tournamentClient()
-      .from('evenements_partie')
+      .from('journal_appels')
       .select('id, partie_id, rang_coup, bot_id, latence_ms, statut_http, coup, erreur')
       .eq('partie_id', gameId)
       .order('rang_coup', { ascending: true }),

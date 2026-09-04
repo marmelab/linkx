@@ -17,6 +17,7 @@ export type AddressRefusal =
   | 'internal-host'
   | 'metadata'
   | 'resolution'
+  | 'resolution-unavailable'
 
 export type AddressVerdict =
   | { ok: true; address: string; host: string }
@@ -34,6 +35,8 @@ export const ADDRESS_MESSAGES: Record<AddressRefusal, string> = {
   'internal-host': 'Cette adresse désigne une machine interne.',
   metadata: 'Cette adresse désigne le service de métadonnées de l’hébergeur.',
   resolution: 'Cette adresse ne se résout en aucune machine joignable.',
+  'resolution-unavailable':
+    'La plateforme n’a pas pu vérifier vers quelle machine cette adresse pointe : elle est refusée tant que cette vérification est impossible.',
 }
 
 /** Suffixes réservés aux réseaux locaux : jamais joignables depuis l'extérieur. */
@@ -202,6 +205,10 @@ export function checkBotAddress(raw: string): AddressVerdict {
 /**
  * Même contrôle, prolongé par la résolution DNS : un nom public qui pointe sur
  * une adresse privée est refusé au même titre qu'une IP privée littérale.
+ *
+ * Le contrôle **échoue fermé** : une résolution qui lève refuse l'adresse.
+ * Accepter faute d'avoir pu vérifier reviendrait à n'opposer que le contrôle
+ * d'écriture à qui héberge son propre DNS — c'est-à-dire rien.
  */
 export async function checkBotAddressWithDns(
   raw: string,
@@ -214,7 +221,7 @@ export async function checkBotAddressWithDns(
   try {
     addresses = await resolve(verdict.host)
   } catch {
-    return refuse('resolution')
+    return refuse('resolution-unavailable')
   }
   if (addresses.length === 0) return refuse('resolution')
 

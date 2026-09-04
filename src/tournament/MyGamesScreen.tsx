@@ -168,7 +168,9 @@ export function MyGamesScreen() {
       <h1 className="tournament-title">Mes parties</h1>
       <p className="tournament-lede">
         Chaque partie s’ouvre dans l’écran de jeu et se déroule coup par coup.
-        Le journal donne, appel par appel, le temps de réponse et l’erreur.
+        Le journal donne, appel par appel, le temps de réponse et le code HTTP
+        des deux camps ; l’erreur rendue par un service n’est montrée qu’à
+        l’auteur de l’IA appelée.
       </p>
 
       <AsyncPanel state={state}>

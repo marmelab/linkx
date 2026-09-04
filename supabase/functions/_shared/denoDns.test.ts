@@ -34,16 +34,18 @@ describe('contrôle d’adresse avec résolution', () => {
     if (!verdict.ok) expect(verdict.reason).toBe('resolution')
   })
 
-  it('s’en tient à l’écriture quand la résolution est impossible', async () => {
+  it('refuse quand la résolution est impossible', async () => {
     const verdict = await checkBotAddressResolved('https://ia.exemple.fr/coup', () =>
       Promise.reject(new Error('résolution DNS indisponible')),
     )
-    expect(verdict.ok).toBe(true)
+    expect(verdict.ok).toBe(false)
+    if (!verdict.ok) expect(verdict.reason).toBe('resolution-unavailable')
   })
 
-  it('s’en tient à l’écriture quand le runtime n’expose aucun résolveur', async () => {
+  it('refuse quand le runtime n’expose aucun résolveur', async () => {
     const verdict = await checkBotAddressResolved('https://ia.exemple.fr/coup', null)
-    expect(verdict.ok).toBe(true)
+    expect(verdict.ok).toBe(false)
+    if (!verdict.ok) expect(verdict.reason).toBe('resolution-unavailable')
   })
 
   it('refuse l’écriture avant même de résoudre', async () => {

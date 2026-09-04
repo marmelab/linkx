@@ -173,7 +173,7 @@ describe('résolution DNS injectée', () => {
       Promise.reject(new Error('NXDOMAIN')),
     )
     expect(failed.ok).toBe(false)
-    if (!failed.ok) expect(failed.reason).toBe('resolution')
+    if (!failed.ok) expect(failed.reason).toBe('resolution-unavailable')
   })
 
   it('n’appelle pas le résolveur quand l’écriture est déjà refusée', async () => {

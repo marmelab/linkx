@@ -35,6 +35,17 @@ export const MIN_BUDGET_MS = 200
 /** Analyse, sérialisation, contrôle de légalité et aller-retour réseau. */
 export const RESPONSE_MARGIN_MS = 400
 
+/**
+ * Délai annoncé maximal retenu, quoi que l'appelant demande.
+ *
+ * Le délai n'est pas une simple promesse faite à l'appelant : c'est **lui** qui
+ * décide de l'admission ci-dessous. Un appelant qui annonce dix fois le délai du
+ * protocole se ferait admettre dix fois plus loin dans la file, et le refus
+ * d'admission — qui existe pour ne pas répondre hors délai — ne protégerait plus
+ * rien. La plateforme n'annonce jamais plus de six secondes.
+ */
+export const MAX_DEADLINE_MS = 6_000
+
 export class SearchQueueFullError extends Error {
   constructor(readonly queuedAhead: number) {
     super(`File pleine : ${queuedAhead} recherche(s) déjà en attente.`)
@@ -71,14 +82,15 @@ export function enqueueSearch<T>(
   deadlineMs: number,
   startedAt: number = Date.now(),
 ): Promise<T> {
+  const deadline = Math.min(deadlineMs, MAX_DEADLINE_MS)
   const projectedWaitMs = queued * TARGET_BUDGET_MS
-  if (projectedWaitMs + MIN_BUDGET_MS + RESPONSE_MARGIN_MS > deadlineMs) {
+  if (projectedWaitMs + MIN_BUDGET_MS + RESPONSE_MARGIN_MS > deadline) {
     return Promise.reject(new SearchQueueFullError(queued))
   }
 
   queued += 1
   const run = tail.then(() =>
-    task(affordableBudgetMs(deadlineMs - (Date.now() - startedAt))),
+    task(affordableBudgetMs(deadline - (Date.now() - startedAt))),
   )
   // La queue ne doit jamais porter de rejet : un échec ne bloque pas la suite.
   tail = run.catch(() => undefined)

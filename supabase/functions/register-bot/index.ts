@@ -28,6 +28,16 @@ const JSON_HEADERS = {
 const REGISTRATION_WINDOW_MS = 60_000
 const MAX_REGISTRATIONS_PER_WINDOW = 2
 
+/**
+ * IA vivantes par compte. Une dizaine couvre largement l'auteur qui compare
+ * plusieurs versions de la sienne, et borne ce qu'un compte peut peser sur les
+ * appariements comme sur le travail de l'ordonnanceur. Le plafond est tenu en
+ * base (migration `plateforme_tournoi_ecriture_reservee_bots`) ; il est
+ * recompté ici pour rendre un refus lisible plutôt qu'une contrainte violée.
+ * Une IA retirée ne compte pas : elle ne joue plus.
+ */
+const MAX_BOTS_PER_OWNER = 10
+
 const MAX_NAME_LENGTH = 64
 /** Lettres, chiffres et ponctuation de nom ; ni contrôle, ni balise, ni emoji. */
 const NAME_PATTERN = /^[\p{L}\p{N}][\p{L}\p{N} '._+-]*$/u
@@ -140,6 +150,19 @@ Deno.serve(async (request: Request): Promise<Response> => {
     )
   }
 
+  const vivantes = await fetch(
+    `${rest}?select=id&proprietaire=eq.${utilisateur}` +
+      `&statut=neq.retiree&limit=${MAX_BOTS_PER_OWNER + 1}`,
+    { headers: serviceHeaders },
+  )
+  if (!vivantes.ok) return refuse('Service indisponible, réessayez.', 503)
+  if (((await vivantes.json()) as unknown[]).length >= MAX_BOTS_PER_OWNER) {
+    return refuse(
+      `Vous avez déjà ${MAX_BOTS_PER_OWNER} IA en lice : retirez-en une avant d’en déclarer une autre.`,
+      409,
+    )
+  }
+
   const secret = newSecret()
   const creation = await fetch(`${rest}?select=id,nom,adresse_service,statut,cree_le`, {
     method: 'POST',
@@ -159,6 +182,11 @@ Deno.serve(async (request: Request): Promise<Response> => {
       | null
     if (erreur?.code === '23505') {
       return refuse('Ce nom est déjà pris par une autre IA.', 409, 'name')
+    }
+    // Nom refusé par la contrainte, ou plafond d'IA franchi entre le décompte
+    // ci-dessus et l'insertion : c'est un refus, pas une panne à réessayer.
+    if (erreur?.code === '23514') {
+      return refuse('Cette déclaration a été refusée par la plateforme.', 400)
     }
     return refuse('La déclaration a échoué, réessayez.', 503)
   }

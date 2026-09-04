@@ -6,16 +6,42 @@
  * qui touche à `Deno` vit donc ici, et les fonctions edge n'ont plus qu'à
  * appeler `checkBotAddressResolved`. Le résolveur reste **injectable** pour que
  * ce module se teste lui aussi sans réseau.
+ *
+ * **Échec fermé.** Sans résolveur, ou si la résolution lève, l'adresse est
+ * refusée. C'est le contraire de ce que ce module faisait : il retombait alors
+ * sur le seul contrôle d'écriture, c'est-à-dire sur rien du tout pour qui tient
+ * son propre DNS — un nom public bien écrit passait sans qu'on sache jamais
+ * vers quelle machine il pointe.
+ *
+ * **Limite connue : la résolution n'est pas épinglée.** L'adresse retenue ici
+ * n'est pas celle qu'emploiera `botClient.ts` : `fetch` résout à nouveau, et un
+ * DNS à durée de vie nulle peut rendre une adresse publique à ce contrôle-ci et
+ * une adresse interne à l'appel. Épingler demanderait d'appeler l'IP retenue en
+ * forçant l'en-tête `Host` et le nom de serveur TLS ; l'edge runtime n'expose ni
+ * `Deno.createHttpClient` ni le `serverName` de `Deno.connectTls`, et `Host` est
+ * un en-tête interdit à `fetch`. Il faudrait donc réécrire un client HTTPS à la
+ * main, ce qui coûterait plus de sûreté qu'il n'en rendrait. Ce qui borne la
+ * fenêtre, à défaut :
+ *
+ *   * l'adresse est **recontrôlée à chaque appel** (`referee-tick`), et non à la
+ *     seule déclaration ;
+ *   * `botClient.ts` refuse les redirections, qui seraient le chemin facile ;
+ *   * ce que le service répond ne sort plus vers l'adversaire : `erreur` et
+ *     `reponse_brute` du journal sont réservées au propriétaire de l'IA appelée
+ *     (migration `plateforme_tournoi_journal_prive`).
  */
 import { essaiTarget } from './essaiLocal.ts'
-import { checkBotAddress, checkBotAddressWithDns } from './safeUrl.ts'
+import {
+  ADDRESS_MESSAGES,
+  checkBotAddress,
+  checkBotAddressWithDns,
+} from './safeUrl.ts'
 import type { AddressVerdict, DnsResolver } from './safeUrl.ts'
 
 /**
  * Résolution DNS du runtime. Un nom introuvable rend une liste vide, que
  * `checkBotAddressWithDns` refuse ; une résolution *impossible* — permission
- * refusée, fonction absente — lève, et l'appelant s'en tient alors au contrôle
- * d'écriture plutôt que de refuser toutes les adresses.
+ * refusée, fonction absente — lève, et l'adresse est refusée à son tour.
  */
 export async function resolveWithDeno(host: string): Promise<readonly string[]> {
   const addresses: string[] = []
@@ -39,27 +65,27 @@ export function denoDnsResolver(): DnsResolver | null {
   return typeof Deno.resolveDns === 'function' ? resolveWithDeno : null
 }
 
+const UNAVAILABLE: AddressVerdict = {
+  ok: false,
+  reason: 'resolution-unavailable',
+  message: ADDRESS_MESSAGES['resolution-unavailable'],
+}
+
 /**
- * Contrôle complet d'une adresse d'IA : l'écriture, puis la résolution quand
- * elle est disponible. Sans résolveur, ou si la résolution elle-même échoue, le
- * seul contrôle d'écriture fait foi — refuser toutes les adresses parce que le
- * runtime ne sait pas résoudre serait pire que ne pas résoudre.
+ * Contrôle complet d'une adresse d'IA : l'écriture, puis la résolution. Sans
+ * résolveur, l'adresse est refusée — la plateforme n'appelle pas une machine
+ * dont elle ne sait rien.
  */
 export async function checkBotAddressResolved(
   raw: string,
   resolve: DnsResolver | null = denoDnsResolver(),
 ): Promise<AddressVerdict> {
   const verdict = checkBotAddress(raw)
-  if (!verdict.ok || !resolve) return verdict
+  if (!verdict.ok) return verdict
   // Hôte d'essai de la passe d'intégration locale : il n'existe dans aucun DNS,
   // et l'appel sera dérivé vers un service local (`essaiLocal.ts`). Hors essai,
   // la liste est vide et ce test ne change rien.
   if (essaiTarget(verdict.host)) return verdict
-  let addresses: readonly string[]
-  try {
-    addresses = await resolve(verdict.host)
-  } catch {
-    return verdict
-  }
-  return await checkBotAddressWithDns(raw, () => Promise.resolve(addresses))
+  if (!resolve) return UNAVAILABLE
+  return await checkBotAddressWithDns(raw, resolve)
 }

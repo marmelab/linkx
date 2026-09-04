@@ -8,11 +8,12 @@
  */
 import { chooseBotMove } from './botMove.ts'
 import {
+  MAX_DEADLINE_MS,
   SearchQueueFullError,
   enqueueSearch,
   pendingSearches,
 } from './searchQueue.ts'
-import { SECRET_ENV, verifySignature } from './signature.ts'
+import { ALLOW_UNSIGNED_ENV, SECRET_ENV, verifySignature } from './signature.ts'
 import type { PlayerId } from '../../../src/game/types.ts'
 
 const JSON_HEADERS = { 'content-type': 'application/json; charset=utf-8' }
@@ -24,9 +25,12 @@ const DEFAULT_DEADLINE_MS = 6_000
 const KNOWN_PROTOCOL = 1
 
 const secret = Deno.env.get(SECRET_ENV)
+const allowUnsigned = Deno.env.get(ALLOW_UNSIGNED_ENV) === '1'
 if (!secret) {
-  console.warn(
-    `bot-linkx : ${SECRET_ENV} absent, vérification de signature désactivée.`,
+  console.error(
+    allowUnsigned
+      ? `bot-linkx : ${SECRET_ENV} absent et ${ALLOW_UNSIGNED_ENV} posée, appels non signés acceptés — développement seulement.`
+      : `bot-linkx : ${SECRET_ENV} absent, tous les appels sont refusés.`,
   )
 }
 
@@ -44,10 +48,15 @@ function readColor(value: unknown): PlayerId | null | undefined {
   return undefined
 }
 
+/**
+ * Délai annoncé par l'appelant. Le plafond est appliqué par `enqueueSearch`,
+ * pour qui ce délai n'est pas une promesse mais le critère d'admission.
+ */
 function readDeadline(value: unknown): number {
-  return typeof value === 'number' && Number.isFinite(value) && value > 0
+  const asked = typeof value === 'number' && Number.isFinite(value) && value > 0
     ? value
     : DEFAULT_DEADLINE_MS
+  return Math.min(asked, MAX_DEADLINE_MS)
 }
 
 Deno.serve(async (request: Request): Promise<Response> => {
@@ -57,7 +66,9 @@ Deno.serve(async (request: Request): Promise<Response> => {
   }
 
   const rawBody = await request.text()
-  const verdict = await verifySignature(request.headers, rawBody, secret)
+  const verdict = await verifySignature(request.headers, rawBody, secret, {
+    allowUnsigned,
+  })
   if (!verdict.ok) return refuse(401, verdict.message)
 
   let payload: unknown

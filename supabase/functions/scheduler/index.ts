@@ -33,6 +33,7 @@
 import { essaiInstant, readJsonBody } from '../_shared/essaiLocal.ts'
 import { moveCountOf, interruptMutation } from '../_shared/gameTick.ts'
 import type { StoredGame } from '../_shared/gameTick.ts'
+import { fromPlatform } from '../_shared/platformAuth.ts'
 import type { GameOutcome, OutcomeReason } from '../_shared/referee.ts'
 import { UNIQUE_VIOLATION, RestError, createRest } from '../_shared/rest.ts'
 import type { Rest } from '../_shared/rest.ts'
@@ -54,6 +55,12 @@ const JSON_HEADERS = { 'content-type': 'application/json; charset=utf-8' }
 const PAGE_SIZE = 1000
 /** Parties écrites par insertion : une vague en compte des centaines. */
 const INSERT_CHUNK = 500
+/**
+ * IA en attente examinées par réveil. Le cron en donne un par minute : vingt
+ * qualifications à la minute suffisent largement à l'affluence réelle, et
+ * bornent le travail fait **avant** l'ouverture de la vague.
+ */
+const MAX_QUALIFICATIONS_PER_TICK = 20
 
 type BotDbRow = BotRow & {
   adresse_service: string
@@ -96,16 +103,6 @@ const GAME_COLUMNS =
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: JSON_HEADERS })
-}
-
-/**
- * Le cron présente la clé de service. `verify_jwt` ne vérifie qu'une signature,
- * et le jeton d'un simple utilisateur en porte une : c'est bien la clé de
- * service qu'il faut exiger, pas un jeton valide.
- */
-function fromPlatform(request: Request, serviceKey: string): boolean {
-  const header = request.headers.get('authorization') ?? ''
-  return header === `Bearer ${serviceKey}`
 }
 
 /** Lecture paginée : une vague de cinquante IA dépasse une page PostgREST. */
@@ -196,6 +193,18 @@ async function createWaveGames(
   return { games: ids.length, openingsPerPair: plan.openingsPerPair }
 }
 
+/**
+ * La liste, tournée d'un cran de fenêtre par minute écoulée : deux réveils
+ * consécutifs n'examinent pas les mêmes IA, et toutes passent en autant de
+ * minutes qu'il y a de fenêtres.
+ */
+function rotatedByMinute<T>(items: readonly T[], now: Date): T[] {
+  const start =
+    (Math.floor(now.getTime() / 60_000) * MAX_QUALIFICATIONS_PER_TICK) %
+    items.length
+  return [...items.slice(start), ...items.slice(0, start)]
+}
+
 /** Dernier message du journal : c'est lui qui dit pourquoi une IA a échoué. */
 async function lastJournalMessage(
   rest: Rest,
@@ -228,13 +237,34 @@ function outcomeOfRow(row: GameDbRow, message: string): GameOutcome {
  * Partie de qualification : une IA en attente joue contre l'IA de la maison et
  * devient active si elle la termine sans faute technique. Le verdict est écrit
  * au rang 0 du journal de la partie, là où son auteur ira le lire.
+ *
+ * **Budget borné.** Chaque IA en attente coûte au moins une lecture paginée des
+ * parties de qualification, et ce travail précède l'ouverture de la vague : sans
+ * plafond, quelques milliers de lignes `en_attente` suffiraient à faire expirer
+ * chaque réveil avant qu'aucun jeudi ne s'ouvre. Le reste n'est pas perdu, il
+ * est reporté au réveil suivant — le cron en donne un par minute —, et le
+ * rapport dit combien attendent encore. La fenêtre **tourne** avec la minute :
+ * prendre toujours les mêmes vingt premières laisserait une IA coincée en
+ * attente occuper sa place indéfiniment, et les suivantes n'auraient jamais
+ * leur qualification.
  */
 async function runQualifications(
   rest: Rest,
   bots: readonly BotDbRow[],
-): Promise<{ opened: number; qualified: number; refused: number; note?: string }> {
-  const waiting = bots.filter((bot) => bot.statut === 'en_attente')
-  if (waiting.length === 0) return { opened: 0, qualified: 0, refused: 0 }
+  now: Date,
+): Promise<{
+  opened: number
+  qualified: number
+  refused: number
+  waiting?: number
+  note?: string
+}> {
+  const allWaiting = bots.filter((bot) => bot.statut === 'en_attente')
+  if (allWaiting.length === 0) return { opened: 0, qualified: 0, refused: 0 }
+  const waiting = allWaiting.length <= MAX_QUALIFICATIONS_PER_TICK
+    ? allWaiting
+    : rotatedByMinute(allWaiting, now).slice(0, MAX_QUALIFICATIONS_PER_TICK)
+  const deferred = allWaiting.length - waiting.length
 
   const house = bots.find((bot) => bot.ia_maison && bot.statut === 'active')
   if (!house) {
@@ -242,6 +272,7 @@ async function runQualifications(
       opened: 0,
       qualified: 0,
       refused: 0,
+      waiting: allWaiting.length,
       note: 'IA de la maison absente ou inactive : aucune qualification lancée.',
     }
   }
@@ -306,7 +337,15 @@ async function runQualifications(
     }
   }
 
-  return { opened, qualified, refused }
+  return deferred === 0
+    ? { opened, qualified, refused }
+    : {
+      opened,
+      qualified,
+      refused,
+      waiting: allWaiting.length,
+      note: `${deferred} IA en attente reportées au prochain réveil.`,
+    }
 }
 
 /** Parties immobiles : leur message a été perdu, la vague les remet en file. */
@@ -505,7 +544,7 @@ Deno.serve(async (request: Request): Promise<Response> => {
 
   // Avant la fenêtre, et pas seulement dedans : une qualification n'attend pas
   // le jeudi, et une partie immobile n'a pas à attendre non plus.
-  report.qualifications = await runQualifications(rest, bots)
+  report.qualifications = await runQualifications(rest, bots, now)
   report.remises_en_file = await requeueStaleGames(rest, now)
 
   if (!window.inWindow) {

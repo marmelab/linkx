@@ -407,7 +407,10 @@ verify_jwt = false
 
 # L'IA de la maison est appelée par la plateforme de tournoi, pas par un
 # utilisateur connecté : elle s'authentifie par la signature du protocole
-# (`docs/protocole-ia.md`), jamais par un jeton Supabase.
+# (`docs/protocole-ia.md`), jamais par un jeton Supabase. Secret exigé :
+# LINKX_BOT_SECRET. Sans lui la fonction refuse tout appel en 401 — elle est
+# publique et calcule —, sauf sous LINKX_BOT_ALLOW_UNSIGNED=1, réservée au
+# développement et jamais posée sur un projet distant.
 [functions.bot-linkx]
 enabled = true
 verify_jwt = false

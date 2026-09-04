@@ -38,6 +38,7 @@ import {
   settleMutation,
 } from '../_shared/gameTick.ts'
 import type { GameMutation, StoredGame } from '../_shared/gameTick.ts'
+import { fromPlatform } from '../_shared/platformAuth.ts'
 import { createRest } from '../_shared/rest.ts'
 import type { Rest } from '../_shared/rest.ts'
 import {
@@ -84,10 +85,6 @@ type Verdict =
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: JSON_HEADERS })
-}
-
-function fromPlatform(request: Request, serviceKey: string): boolean {
-  return (request.headers.get('authorization') ?? '') === `Bearer ${serviceKey}`
 }
 
 function storedOf(row: GameDbRow): StoredGame {

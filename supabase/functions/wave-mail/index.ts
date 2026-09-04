@@ -16,6 +16,7 @@
  * ne nomme les destinataires que par leur identifiant.
  */
 import { TOURNAMENT_PATHS } from '../../../src/tournament/routes.ts'
+import { fromPlatform } from '../_shared/platformAuth.ts'
 import { UNIQUE_VIOLATION, createRest } from '../_shared/rest.ts'
 import type { Rest } from '../_shared/rest.ts'
 import { sendWaveMails } from '../_shared/waveMailDelivery.ts'
@@ -101,16 +102,6 @@ type FaultRow = {
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: JSON_HEADERS })
-}
-
-/** Comparaison à durée constante : un secret ne se compare pas avec `===`. */
-function sameSecret(given: string, expected: string): boolean {
-  if (given.length !== expected.length || expected.length === 0) return false
-  let difference = 0
-  for (let i = 0; i < given.length; i += 1) {
-    difference |= given.charCodeAt(i) ^ expected.charCodeAt(i)
-  }
-  return difference === 0
 }
 
 function baseUrl(site: string): string {
@@ -389,8 +380,7 @@ Deno.serve(async (request: Request): Promise<Response> => {
     return json({ ok: false, message: 'Service mal configuré.' }, 500)
   }
 
-  const bearer = (request.headers.get('authorization') ?? '').replace(/^Bearer\s+/i, '')
-  if (!sameSecret(bearer, serviceKey)) {
+  if (!fromPlatform(request, serviceKey)) {
     return json({ ok: false, message: 'Réservé à la plateforme.' }, 401)
   }
 

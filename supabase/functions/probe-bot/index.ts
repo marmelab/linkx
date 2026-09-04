@@ -84,10 +84,27 @@ function tooFrequent(source: string, now: number): boolean {
   return false
 }
 
-/** Provenance telle que le routeur la rapporte, à défaut de mieux. */
+/**
+ * Provenance de l'appel, telle qu'on peut la connaître.
+ *
+ * `x-forwarded-for` est une liste que chaque relais **complète à droite** : le
+ * premier élément est celui que l'appelant a écrit lui-même, donc ce qu'il veut.
+ * Compter dessus donnait un compteur par valeur inventée, c'est-à-dire aucun
+ * compteur. Le dernier élément est celui qu'a posé le relais le plus proche de
+ * nous, le seul de la liste que l'appelant ne choisit pas.
+ *
+ * Ce n'en est pas une identité pour autant : deux appelants derrière le même
+ * relais partagent la valeur, et une infrastructure qui n'ajouterait rien
+ * laisserait passer celle de l'appelant. **Aucun en-tête HTTP ne borne un
+ * abus** ; ce qui le borne est le plafond total ci-dessus, qui ne dépend
+ * d'aucune provenance.
+ */
 function sourceOf(request: Request): string {
-  const forwarded = request.headers.get('x-forwarded-for') ?? ''
-  return forwarded.split(',')[0].trim() || 'inconnue'
+  const forwarded = (request.headers.get('x-forwarded-for') ?? '')
+    .split(',')
+    .map((part) => part.trim())
+    .filter((part) => part !== '')
+  return forwarded[forwarded.length - 1] ?? 'inconnue'
 }
 
 function ephemeralSecret(): string {
