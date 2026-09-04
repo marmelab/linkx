@@ -429,6 +429,19 @@ async function requeueStaleGames(rest: Rest, now: Date): Promise<number> {
 }
 
 /**
+ * Parties closes de front par la fin d'une vague. Chacune porte son propre
+ * `nombre_coups` et son propre motif : c'est autant d'`update` distincts, qu'on
+ * ne peut pas réduire à un seul. On les mène donc **en parallèle**, par paquets.
+ *
+ * En série, une vague de cinquante et une IA en demandait deux mille cinq cents
+ * à la queue leu leu, dans l'invocation qui doit ensuite relire toutes les
+ * parties et écrire le classement : les cent cinquante secondes d'horloge de
+ * l'edge runtime devenaient atteignables, et une invocation coupée laissait la
+ * vague vivante — donc, par `vagues_vivante_unique_idx`, aucune vague suivante.
+ */
+const INTERRUPT_CONCURRENCY = 16
+
+/**
  * Midi passé : la vague ne déborde jamais de sa fenêtre. Seules ses propres
  * parties sont closes — une qualification, qui n'appartient à aucune vague et se
  * joue tous les jours, n'a pas à mourir parce qu'un jeudi s'achève.
@@ -442,8 +455,7 @@ async function interruptRunningGames(
     rest,
     `parties?statut=neq.terminee&select=${GAME_COLUMNS}&vague_id=eq.${wave.id}`,
   )
-  let closed = 0
-  for (const game of games) {
+  const interrupt = async (game: GameDbRow): Promise<number> => {
     const stored: StoredGame = {
       id: game.id,
       notation: game.notation,
@@ -451,14 +463,19 @@ async function interruptRunningGames(
       blueBot: game.bot_bleu,
       whiteBot: game.bot_blanc,
     }
-    const mutation = interruptMutation(stored, now)
     const written = await rest.update(
       'parties',
       `id=eq.${game.id}&statut=neq.terminee`,
-      mutation.update,
+      interruptMutation(stored, now).update,
       'id',
     )
-    closed += written.length
+    return written.length
+  }
+
+  let closed = 0
+  for (const batch of chunk(games, INTERRUPT_CONCURRENCY)) {
+    const written = await Promise.all(batch.map(interrupt))
+    closed += written.reduce((total, count) => total + count, 0)
   }
   return closed
 }
@@ -606,6 +623,16 @@ Deno.serve(async (request: Request): Promise<Response> => {
 
   const bots = await selectAll<BotDbRow>(rest, `bots?select=${BOT_COLUMNS}&order=id.asc`)
 
+  // **Les qualifications d'abord, quoi qu'il arrive ensuite.** Avant la fenêtre,
+  // et pas seulement dedans : une qualification n'attend pas le jeudi, et une
+  // partie immobile n'a pas à attendre non plus. Les faire passer après la
+  // clôture d'une vague expirée les liait au sort de celle-ci — une vague qui ne
+  // se clôt pas (interruption coupée par le budget, `clore_vague` en erreur)
+  // reprenait la même branche à chaque réveil et ne qualifiait plus personne,
+  // alors que l'histoire 14 veut l'IA qualifiée pendant que son auteur regarde.
+  report.qualifications = await runQualifications(rest, bots, now)
+  report.remises_en_file = await requeueStaleGames(rest, now)
+
   // Une vague dont l'heure de fin est passée se clôt même hors fenêtre : c'est
   // le seul moyen que la fin de vague ne dépende pas de l'instant du réveil.
   // Une vague restée `planifiee` — ouvreur mort avant la fin de sa création — se
@@ -628,11 +655,6 @@ Deno.serve(async (request: Request): Promise<Response> => {
     }
     return json(report)
   }
-
-  // Avant la fenêtre, et pas seulement dedans : une qualification n'attend pas
-  // le jeudi, et une partie immobile n'a pas à attendre non plus.
-  report.qualifications = await runQualifications(rest, bots, now)
-  report.remises_en_file = await requeueStaleGames(rest, now)
 
   // Une vague vivante se poursuit : on la reprend là où elle en est, quel que
   // soit le jour. Le calendrier ne décide que de l'ouverture, jamais de la

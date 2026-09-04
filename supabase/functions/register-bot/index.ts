@@ -10,9 +10,16 @@
  *
  * La partie de qualification est déclenchée par l'ordonnanceur : l'IA reste ici
  * en `en_attente`, et la réponse le dit.
+ *
+ * Le transport passe par `_shared/rest.ts`, comme `update-bot` : c'est lui qui
+ * porte les en-têtes de service, le `prefer` d'une insertion et le `SQLSTATE`
+ * d'un refus. Trois `fetch` écrits à la main ici en faisaient une seconde
+ * mécanique à tenir d'accord, et la seule des trois fonctions à ne pas pouvoir
+ * s'essayer sans réseau.
  */
 import { checkBotAddressResolved } from '../_shared/denoDns.ts'
 import { currentUserId } from '../_shared/platformAuth.ts'
+import { RestError, UNIQUE_VIOLATION, createRest } from '../_shared/rest.ts'
 
 const CORS_HEADERS = {
   'access-control-allow-origin': '*',
@@ -24,6 +31,9 @@ const JSON_HEADERS = {
   ...CORS_HEADERS,
   'content-type': 'application/json; charset=utf-8',
 }
+
+/** `SQLSTATE` d'une contrainte `check` violée : le motif du nom, ou le plafond. */
+const CHECK_VIOLATION = '23514'
 
 /** Deux déclarations par minute : au-delà, ce n'est plus un auteur qui essaie. */
 const REGISTRATION_WINDOW_MS = 60_000
@@ -107,36 +117,34 @@ Deno.serve(async (request: Request): Promise<Response> => {
   const address = await checkBotAddressResolved(rawUrl)
   if (!address.ok) return refuse(address.message, 400, 'url')
 
-  const rest = `${supabaseUrl}/rest/v1/bots`
-  const serviceHeaders = {
-    apikey: serviceKey,
-    authorization: `Bearer ${serviceKey}`,
-    'content-type': 'application/json',
-  }
+  const rest = createRest({ url: supabaseUrl, serviceKey })
 
   // Débit compté en base, sur les déclarations elles-mêmes : une mémoire
   // d'isolate ne survivrait ni à un redémarrage ni à une seconde instance.
   const depuis = new Date(Date.now() - REGISTRATION_WINDOW_MS).toISOString()
-  const recentes = await fetch(
-    `${rest}?select=id&proprietaire=eq.${utilisateur}` +
-      `&cree_le=gte.${encodeURIComponent(depuis)}&limit=10`,
-    { headers: serviceHeaders },
-  )
-  if (!recentes.ok) return refuse('Service indisponible, réessayez.', 503)
-  if (((await recentes.json()) as unknown[]).length >= MAX_REGISTRATIONS_PER_WINDOW) {
+  let recentes: unknown[]
+  let vivantes: unknown[]
+  try {
+    ;[recentes, vivantes] = await Promise.all([
+      rest.select(
+        `bots?select=id&proprietaire=eq.${utilisateur}` +
+          `&cree_le=gte.${encodeURIComponent(depuis)}&limit=10`,
+      ),
+      rest.select(
+        `bots?select=id&proprietaire=eq.${utilisateur}` +
+          `&statut=neq.retiree&limit=${MAX_BOTS_PER_OWNER + 1}`,
+      ),
+    ])
+  } catch {
+    return refuse('Service indisponible, réessayez.', 503)
+  }
+  if (recentes.length >= MAX_REGISTRATIONS_PER_WINDOW) {
     return refuse(
       'Trop de déclarations en peu de temps : attendez une minute.',
       429,
     )
   }
-
-  const vivantes = await fetch(
-    `${rest}?select=id&proprietaire=eq.${utilisateur}` +
-      `&statut=neq.retiree&limit=${MAX_BOTS_PER_OWNER + 1}`,
-    { headers: serviceHeaders },
-  )
-  if (!vivantes.ok) return refuse('Service indisponible, réessayez.', 503)
-  if (((await vivantes.json()) as unknown[]).length >= MAX_BOTS_PER_OWNER) {
+  if (vivantes.length >= MAX_BOTS_PER_OWNER) {
     return refuse(
       `Vous avez déjà ${MAX_BOTS_PER_OWNER} IA en lice : retirez-en une avant d’en déclarer une autre.`,
       409,
@@ -144,34 +152,32 @@ Deno.serve(async (request: Request): Promise<Response> => {
   }
 
   const secret = newSecret()
-  const creation = await fetch(`${rest}?select=id,nom,adresse_service,statut,cree_le`, {
-    method: 'POST',
-    headers: { ...serviceHeaders, prefer: 'return=representation' },
-    body: JSON.stringify({
-      proprietaire: utilisateur,
-      nom: name,
-      adresse_service: address.address,
-      secret_signature: secret,
-      statut: 'en_attente',
-    }),
-  })
-
-  if (!creation.ok) {
-    const erreur = (await creation.json().catch(() => null)) as
-      | { code?: unknown }
-      | null
-    if (erreur?.code === '23505') {
+  let bot: Record<string, unknown> | undefined
+  try {
+    ;[bot] = await rest.insert<Record<string, unknown>>(
+      'bots',
+      [{
+        proprietaire: utilisateur,
+        nom: name,
+        adresse_service: address.address,
+        secret_signature: secret,
+        statut: 'en_attente',
+      }],
+      { returning: 'id,nom,adresse_service,statut,cree_le' },
+    )
+  } catch (error) {
+    const code = error instanceof RestError ? error.code : null
+    if (code === UNIQUE_VIOLATION) {
       return refuse('Ce nom est déjà pris par une autre IA.', 409, 'name')
     }
     // Nom refusé par la contrainte, ou plafond d'IA franchi entre le décompte
     // ci-dessus et l'insertion : c'est un refus, pas une panne à réessayer.
-    if (erreur?.code === '23514') {
+    if (code === CHECK_VIOLATION) {
       return refuse('Cette déclaration a été refusée par la plateforme.', 400)
     }
     return refuse('La déclaration a échoué, réessayez.', 503)
   }
 
-  const [bot] = (await creation.json()) as Array<Record<string, unknown>>
   return json({
     ok: true,
     bot,

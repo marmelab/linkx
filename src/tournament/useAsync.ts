@@ -20,8 +20,16 @@ export type Async<T> = {
  * Lecture **suspendue** : l'écran reste en chargement tant que ses conditions ne
  * sont pas réunies. Sans elle, un écran qui attend la session résoudrait aussitôt
  * un contenu vide et annoncerait « aucune IA » à un auteur qui en a.
+ *
+ * Une promesse **neuve** à chaque appel, jamais une constante de module. Une
+ * promesse qui ne se règle jamais retient pour toujours les réactions qu'on lui
+ * accroche : partagée, elle accumulerait à chaque effet une paire de
+ * gestionnaires portant le `setState` et tout le closure du composant, que ni le
+ * démontage ni `cancelled` ne libèrent. Neuve, elle disparaît avec eux.
  */
-export const PENDING: Promise<never> = new Promise(() => {})
+export function pending<T>(): Promise<T> {
+  return new Promise<T>(() => {})
+}
 
 function messageOf(error: unknown): string {
   if (error instanceof Error && error.message) return error.message

@@ -2,7 +2,7 @@ import { NavLink, Outlet } from 'react-router'
 import { isAdministrator, signOut } from './api'
 import { TOURNAMENT_PATHS } from './routes'
 import { useSession } from './session'
-import { PENDING, useAsync } from './useAsync'
+import { pending, useAsync } from './useAsync'
 import type { Async } from './useAsync'
 
 /**
@@ -30,7 +30,7 @@ export type TournamentContext = {
 export function TournamentLayout() {
   const { session, ready } = useSession()
   const admin = useAsync<boolean>(
-    () => (session ? isAdministrator() : PENDING),
+    () => (session ? isAdministrator() : pending<boolean>()),
     [ready, session?.user.id],
   )
 

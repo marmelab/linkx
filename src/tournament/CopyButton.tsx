@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 type CopyButtonProps = {
   value: string
@@ -15,6 +15,15 @@ type CopyButtonProps = {
 export function CopyButton({ value, label, prompt }: CopyButtonProps) {
   const [copied, setCopied] = useState(false)
   const resetTimer = useRef<number | null>(null)
+
+  // Le secret se copie souvent juste avant de fermer le panneau : sans cela, le
+  // minuteur survivrait au démontage et réveillerait un composant disparu.
+  useEffect(
+    () => () => {
+      if (resetTimer.current) window.clearTimeout(resetTimer.current)
+    },
+    [],
+  )
 
   const copy = async () => {
     try {

@@ -305,6 +305,10 @@ a.mini-brand { text-decoration: none; }
 .bot-card__elo { margin-left: auto; color: var(--muted); white-space: nowrap; }
 .bot-card__elo strong { font-size: 1.3rem; color: var(--ink); }
 .bot-card__address { margin: 0.35rem 0 0; color: var(--muted); overflow-wrap: anywhere; }
+/* Le champ de correction prend la place de l'adresse affichée : la carte garde
+   sa hauteur, et le lien revient dès l'enregistrement. */
+.bot-card__address-form { margin: 0.35rem 0 0; }
+.bot-card__address-form input { width: 100%; }
 .bot-card__summary { margin: 0.35rem 0 0; color: var(--muted); line-height: 1.5; }
 .bot-card__actions { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 0.8rem 0 0; }
 

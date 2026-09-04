@@ -15,7 +15,7 @@
  * **Aucune adresse électronique n'est journalisée ni rendue** : le compte rendu
  * ne nomme les destinataires que par leur identifiant.
  */
-import { TOURNAMENT_PATHS } from '../../../src/tournament/routes.ts'
+import { TOURNAMENT_PATHS } from '../_shared/tournamentPaths.ts'
 import { fromPlatform } from '../_shared/platformAuth.ts'
 import { UNIQUE_VIOLATION, createRest } from '../_shared/rest.ts'
 import type { Rest } from '../_shared/rest.ts'
@@ -38,9 +38,11 @@ import type { NotationErrorReason } from '../../../src/game/moveNotation.ts'
 const JSON_HEADERS = { 'content-type': 'application/json; charset=utf-8' }
 
 /**
- * Les chemins viennent du routeur lui-même, jamais d'une copie : un courriel
+ * Les chemins viennent de leur source unique, jamais d'une copie : un courriel
  * qui enverrait sur des pages introuvables serait pire que pas de courriel, et
- * une liste recopiée ici se serait périmée à la première route renommée.
+ * une liste recopiée ici se serait périmée à la première route renommée. C'est
+ * `src/tournament/routes.ts` qui les réexporte au routeur, et non l'inverse :
+ * ce répertoire n'est pas écrit pour Deno.
  *
  * Le `#` n'est pas décoratif : le routeur est en **mode hash**, GitHub Pages
  * servant des fichiers statiques. `…/linkx/classement` rendrait une 404 ;

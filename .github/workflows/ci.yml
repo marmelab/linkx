@@ -39,7 +39,9 @@ jobs:
       - name: Test
         run: npm test
 
-      # `npm run build` enchaîne `tsc -b` puis le build Vite.
+      # `npm run build` enchaîne `tsc -b` puis le build Vite. `tsc -b` couvre les
+      # quatre projets référencés par `tsconfig.json`, dont les tests des
+      # fonctions edge (`tsconfig.supabase.json`).
       #
       # Les deux variables du tournoi sont des *variables* de dépôt et non des
       # secrets : elles partent dans le bundle, où n'importe qui les lit. La clé
@@ -88,6 +90,11 @@ jobs:
 
       # `find` plutôt qu'un glob : `**` ne récurse pas sans `globstar`, et le
       # silence d'un glob non développé passerait pour un succès.
+      #
+      # Les `*.test.ts` sont exclus : ils importent `vitest`, que Deno ne résout
+      # pas. Ils ne sont pas pour autant sans filet — `tsconfig.supabase.json`
+      # les type-vérifie dans le job `quality`, avec `tsc -b`. Sans lui, ces deux
+      # mille lignes étaient le seul coin du dépôt que rien ne vérifiait.
       - name: Type-check des fonctions edge
         run: deno check $(find supabase/functions -name '*.ts' ! -name '*.test.ts')
 

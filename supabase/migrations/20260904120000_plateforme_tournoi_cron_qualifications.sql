@@ -15,15 +15,13 @@
 -- meurt, et la relancer après correction de l'adresse. Une seule entrée par
 -- fonction, tous les jours, remplace les deux besoins.
 --
--- Ce n'est pas un affaiblissement de la fenêtre de vague. Les deux fonctions se
--- gardent elles-mêmes, et hors fenêtre :
---
---   * `scheduler` n'ouvre aucune vague, n'en crée aucune partie et n'en classe
---     aucune ; il ne fait que qualifier les IA en attente et remettre en file
---     les parties immobiles ;
---   * `referee-tick` ne joue que les parties **sans vague**, c'est-à-dire les
---     qualifications ; une partie de vague dépilée hors fenêtre est remise en
---     attente sans être touchée.
+-- Ce n'est pas un affaiblissement de la fenêtre de vague, qui borne
+-- l'**ouverture** d'une vague et rien d'autre : hors fenêtre, `scheduler`
+-- qualifie les IA en attente et remet en file les parties immobiles, mais
+-- n'ouvre aucune vague. `referee-tick`, lui, ne lit pas le calendrier : une
+-- vague ouverte est faite pour être jouée, quel que soit le jour, et c'est
+-- l'ordonnanceur seul qui décide d'en ouvrir une. Voir le README, section
+-- « Plateforme de tournoi », qui fait foi sur ce partage.
 --
 -- Effet de bord heureux : les quatre entrées d'origine devenaient deux par
 -- fonction pour rattraper les deux heures de la vague qui tombent le mercredi

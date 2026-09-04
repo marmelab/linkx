@@ -27,8 +27,22 @@ function call(step: GameStep): Extract<GameStep, { kind: 'call' }> {
   return step
 }
 
+/** Les en-têtes réellement partis : `callBot` les rend avec chaque résultat. */
+const SENT = {
+  'content-type': 'application/json; charset=utf-8',
+  'X-Linkx-Timestamp': '1757000000',
+  'X-Linkx-Signature': 'sha256=00',
+}
+
 function replied(move: string): BotCallResult {
-  return { ok: true, move, latencyMs: 412, status: 200, snippet: `{"move":"${move}"}` }
+  return {
+    ok: true,
+    move,
+    latencyMs: 412,
+    status: 200,
+    snippet: `{"move":"${move}"}`,
+    headers: SENT,
+  }
 }
 
 const timedOut: BotCallResult = {
@@ -37,6 +51,7 @@ const timedOut: BotCallResult = {
   latencyMs: 6000,
   status: null,
   snippet: '',
+  headers: SENT,
   detail: 'pas de réponse en 6000 ms',
 }
 

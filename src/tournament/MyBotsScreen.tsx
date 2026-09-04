@@ -5,14 +5,14 @@ import { AsyncPanel } from "./AsyncPanel";
 import { CopyButton } from "./CopyButton";
 import {
   fetchBotHistory,
+  fetchGameRows,
   fetchMyBots,
-  fetchMyGames,
   probeBot,
   registerBot,
-  setBotStatus,
+  updateBot,
 } from "./api";
-import type { ProbeReply, RegisterReply } from "./api";
-import { summarizeLastWave } from "./botSummary";
+import type { BotChange, ProbeReply, RegisterReply } from "./api";
+import { lastWaveRow, summarizeLastWave } from "./botSummary";
 import type { WaveSummary } from "./botSummary";
 import { toMyGames } from "./games";
 import { formatGap } from "./ranking";
@@ -20,7 +20,7 @@ import { STATUS_LABELS } from "./outcomes";
 import { TOURNAMENT_PATHS } from "./routes";
 import { PROTOCOL_URL } from "./protocol";
 import { useSession } from "./session";
-import { PENDING, useAsync } from "./useAsync";
+import { pending, useAsync } from "./useAsync";
 import type { BotRow } from "./types";
 
 type Payload = {
@@ -41,14 +41,37 @@ function withdrawnLast(bots: readonly BotRow[]): BotRow[] {
   return [...bots].sort((a, b) => withdrawn(a) - withdrawn(b));
 }
 
+/**
+ * Seules les parties **des dernières vagues** sont lues, et sans nommer
+ * personne : le bilan ne compte que les défaites techniques de la vague que
+ * `summarizeLastWave` retient, et n'affiche aucun adversaire. Tout charger — les
+ * quatre cents dernières parties, plus une requête pour résoudre huit cents
+ * noms jamais lus — coûtait deux lectures lourdes à chaque affichage et à chaque
+ * relecture, retrait ou déclaration comprise. Le décompte y gagne au passage
+ * d'être juste au-delà de cette borne.
+ *
+ * Les IA d'un même auteur partagent presque toujours leur dernière vague : c'est
+ * donc une requête, bornée par le plafond de dix IA par compte.
+ */
 async function loadMyBots(): Promise<Payload> {
   const bots = withdrawnLast(await fetchMyBots());
   const ids = bots.map((bot) => bot.id);
-  const [history, rows] = await Promise.all([
-    fetchBotHistory(ids),
-    ids.length === 0 ? Promise.resolve([]) : fetchMyGames(),
-  ]);
+  const history = await fetchBotHistory(ids);
+
+  const lastWaves = [
+    ...new Set(
+      bots
+        .map((bot) => lastWaveRow(bot.id, history)?.vague_id)
+        .filter((waveId) => waveId !== undefined),
+    ),
+  ];
+  const rows = (
+    await Promise.all(
+      lastWaves.map((waveId) => fetchGameRows({ waveId })),
+    )
+  ).flat();
   const games = toMyGames(rows, ids);
+
   return {
     bots,
     summaries: new Map(
@@ -96,16 +119,23 @@ function BotCard({
   onChanged: () => void;
 }) {
   const [probe, setProbe] = useState<ProbeReply | null>(null);
-  const [busy, setBusy] = useState<"probe" | "status" | null>(null);
+  const [busy, setBusy] = useState<"probe" | "change" | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
+  const [done, setDone] = useState<string | null>(null);
   // Un retrait ne se défait pas, et le bouton voisine avec « Tester » : il
   // demande donc confirmation, sur place, avant de partir.
   const [confirming, setConfirming] = useState(false);
+  // L'adresse ne se corrige que sur demande : le champ ne s'ouvre pas d'office,
+  // l'écran montrant d'abord ce qui est déclaré.
+  const [editingUrl, setEditingUrl] = useState(false);
+  const [url, setUrl] = useState(bot.adresse_service);
+  const [urlError, setUrlError] = useState<string | null>(null);
 
   const runProbe = async () => {
     setBusy("probe");
     setProbe(null);
     setFailure(null);
+    setDone(null);
     try {
       setProbe(await probeBot(bot.id));
     } catch (error) {
@@ -115,17 +145,27 @@ function BotCard({
     }
   };
 
-  const changeStatus = async (status: "retiree" | "en_attente") => {
-    setBusy("status");
+  /**
+   * Un refus **sous le champ nommé**, comme à la déclaration : `update-bot` rend
+   * `field`, et une adresse refusée n'a rien à faire dans le message général.
+   */
+  const change = async (asked: BotChange) => {
+    setBusy("change");
     setFailure(null);
+    setUrlError(null);
+    setDone(null);
     setConfirming(false);
     try {
-      const reply = await setBotStatus(bot.id, status);
+      const reply = await updateBot(bot.id, asked);
       if (!reply.ok) {
-        setFailure(reply.message ?? "Le service a refusé la demande.");
-      } else {
-        onChanged();
+        const message = reply.message ?? "Le service a refusé la demande.";
+        if (reply.field === "url") setUrlError(message);
+        else setFailure(message);
+        return;
       }
+      setDone(reply.message ?? null);
+      setEditingUrl(false);
+      onChanged();
     } catch (error) {
       setFailure(
         error instanceof Error ? error.message : "Demande impossible.",
@@ -157,14 +197,64 @@ function BotCard({
           )}
         </span>
       </p>
-      <p className="bot-card__address">
-        {/* L'adresse est une URL validée à la déclaration — https, port 443,
-            hôte public —, jamais une chaîne libre : elle peut donc servir de
-            lien sans autre précaution. */}
-        <a href={bot.adresse_service} target="_blank" rel="noreferrer">
-          {bot.adresse_service}
-        </a>
-      </p>
+      {editingUrl ? (
+        /* Le seul moyen de corriger une adresse : `authenticated` n'écrit rien
+           sur `bots`, et `update-bot` refait le contrôle de la déclaration.
+           Toucher la ligne rouvre au passage la qualification d'une IA restée
+           en attente — c'est ce que la nouvelle adresse est censée réparer. */
+        <form
+          className="tournament-field bot-card__address-form"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void change({ url: url.trim() });
+          }}
+        >
+          <label htmlFor={`adresse-${bot.id}`}>Adresse du service</label>
+          <input
+            id={`adresse-${bot.id}`}
+            type="url"
+            required
+            value={url}
+            onChange={(event) => setUrl(event.target.value)}
+            aria-describedby={urlError ? `adresse-${bot.id}-erreur` : undefined}
+          />
+          {urlError && (
+            <p className="tournament-error" id={`adresse-${bot.id}-erreur`}>
+              {urlError}
+            </p>
+          )}
+          <span className="bot-card__actions">
+            <button
+              type="submit"
+              className="secondary-button secondary-button--small"
+              disabled={busy !== null}
+            >
+              {busy === "change" ? "Enregistrement…" : "Enregistrer l’adresse"}
+            </button>
+            <button
+              type="button"
+              className="secondary-button secondary-button--small"
+              disabled={busy !== null}
+              onClick={() => {
+                setEditingUrl(false);
+                setUrl(bot.adresse_service);
+                setUrlError(null);
+              }}
+            >
+              Annuler
+            </button>
+          </span>
+        </form>
+      ) : (
+        <p className="bot-card__address">
+          {/* L'adresse est une URL validée à la déclaration — https, port 443,
+              hôte public —, jamais une chaîne libre : elle peut donc servir de
+              lien sans autre précaution. */}
+          <a href={bot.adresse_service} target="_blank" rel="noreferrer">
+            {bot.adresse_service}
+          </a>
+        </p>
+      )}
       {bot.ia_maison && (
         <p className="bot-card__summary">
           IA de la maison : elle joue les vagues avec un budget de réflexion
@@ -188,18 +278,49 @@ function BotCard({
         >
           Voir ses parties
         </Link>
-        {/* Une IA retirée ne revient pas : ne rien lui proposer vaut mieux
-            qu'un bouton dont le service refusera la demande. */}
-        {bot.statut === "sommeil" ? (
+        {/* Une IA retirée ne revient pas, et son adresse ne sert plus : ne rien
+            lui proposer vaut mieux qu'un bouton dont le service refusera la
+            demande. */}
+        {bot.statut !== "retiree" && !editingUrl && (
           <button
             type="button"
             className="secondary-button secondary-button--small"
-            onClick={() => changeStatus("en_attente")}
+            onClick={() => {
+              // Repartir de l'adresse enregistrée, et non du dernier texte
+              // saisi : le service la normalise, et c'est la sienne qui fait foi.
+              setUrl(bot.adresse_service);
+              setUrlError(null);
+              setEditingUrl(true);
+            }}
+            disabled={busy !== null}
+          >
+            Corriger l’adresse
+          </button>
+        )}
+        {/* Une qualification ratée ne se rejoue pas d'elle-même — ce serait
+            harceler une adresse morte à chaque réveil. C'est donc l'auteur qui
+            la redemande, une fois son service réparé. */}
+        {bot.statut === "en_attente" && (
+          <button
+            type="button"
+            className="secondary-button secondary-button--small"
+            onClick={() => void change({ status: "en_attente" })}
+            disabled={busy !== null}
+          >
+            Relancer la qualification
+          </button>
+        )}
+        {bot.statut === "sommeil" && (
+          <button
+            type="button"
+            className="secondary-button secondary-button--small"
+            onClick={() => void change({ status: "en_attente" })}
             disabled={busy !== null}
           >
             Réactiver
           </button>
-        ) : bot.statut === "retiree" ? null : (
+        )}
+        {bot.statut !== "retiree" && (
           <button
             type="button"
             className="secondary-button secondary-button--small"
@@ -225,7 +346,7 @@ function BotCard({
               type="button"
               className="secondary-button secondary-button--small"
               autoFocus
-              onClick={() => changeStatus("retiree")}
+              onClick={() => void change({ status: "retiree" })}
               disabled={busy !== null}
             >
               Confirmer le retrait
@@ -275,6 +396,11 @@ function BotCard({
             </pre>
           )}
         </>
+      )}
+      {done && (
+        <p className="tournament-note" role="status">
+          {done}
+        </p>
       )}
       {failure && (
         <p className="tournament-error" role="alert">
@@ -439,7 +565,7 @@ export function MyBotsScreen() {
   // Rien n'est lu avant que la session ait répondu : une lecture à vide
   // annoncerait « aucune IA » à un auteur qui en a déclaré.
   const state = useAsync<Payload>(
-    () => (session ? loadMyBots() : PENDING),
+    () => (session ? loadMyBots() : pending<Payload>()),
     [ready, session?.user.id],
   );
   // Lecture séparée de la liste des IA : elle ne concerne qu'une poignée de

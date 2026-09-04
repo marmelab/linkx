@@ -202,6 +202,7 @@ describe('passage à l’arbitre', () => {
         latencyMs: 12,
         status: 200,
         snippet: '',
+        headers: {},
       }),
     ).toEqual({ ok: true, body: '4Lsr27' })
   })
@@ -214,6 +215,7 @@ describe('passage à l’arbitre', () => {
         latencyMs: 12,
         status: 200,
         snippet: 'bonjour',
+        headers: {},
         detail: 'corps JSON illisible',
       }),
     ).toEqual({ ok: true, body: '' })
@@ -227,6 +229,7 @@ describe('passage à l’arbitre', () => {
         latencyMs: 6000,
         status: null,
         snippet: '',
+        headers: null,
         detail: 'pas de réponse en 6000 ms',
       }),
     ).toEqual({

@@ -100,9 +100,14 @@ export type QualificationAttempt = {
 
 /**
  * Une IA en attente joue une partie de qualification, et une seule à la fois.
+ *
  * Une tentative échouée n'est pas relancée d'elle-même — ce serait harceler une
  * adresse morte à chaque réveil : il faut que l'auteur ait touché sa ligne
- * depuis, en corrigeant l'adresse ou en redemandant la qualification.
+ * depuis. Deux gestes le font, et ce sont les deux seuls chemins d'écriture
+ * ouverts à un auteur (`update-bot`) : **corriger l'adresse** de son IA, ou
+ * **redemander la qualification** (`en_attente` → `en_attente`). Sans l'un ou
+ * l'autre, cette condition enfermerait pour toujours une IA dont le premier
+ * essai s'est mal passé.
  */
 export function qualificationNeeded(
   bot: { statut: string; modifie_le: string },

@@ -1,5 +1,6 @@
 /**
- * Retrait et réactivation d'une IA par son auteur (histoires 14 à 16).
+ * Ce qu'un auteur peut changer sur son IA : son adresse, et son état (histoires
+ * 14 à 16).
  *
  * `statut` est une colonne réservée au service : le déclencheur des colonnes
  * réservées (migration `plateforme_tournoi_colonnes_reservees`) refuse toute
@@ -14,14 +15,24 @@
  *
  * Ce qui se décide — quelles transitions sont ouvertes, et ce que chacune écrit
  * — vit dans `_shared/botStatus.ts`, pur et testé sans base.
+ *
+ * **L'adresse se corrige ici, et nulle part ailleurs.** `authenticated` n'a plus
+ * aucun droit d'écriture sur `bots` (migration
+ * `plateforme_tournoi_ecriture_reservee_bots`), si bien qu'une IA déclarée sur
+ * une adresse fautive était jusqu'ici sans recours : sa qualification échouait,
+ * `qualificationNeeded` refusait d'en rouvrir une tant que la ligne n'avait pas
+ * bougé, et rien ne pouvait la faire bouger. La nouvelle adresse repasse par le
+ * **même** contrôle qu'à la déclaration — https, port 443, nom public résolu
+ * hors des réseaux privés — sans quoi cette porte annulerait celle-là.
  */
 import {
-  STATUS_MESSAGES,
   checkTransition,
   isRequestable,
+  statusMessage,
   statusUpdate,
 } from '../_shared/botStatus.ts'
-import type { BotStatus } from '../_shared/botStatus.ts'
+import type { BotStatus, RequestableStatus } from '../_shared/botStatus.ts'
+import { checkBotAddressResolved } from '../_shared/denoDns.ts'
 import { currentUserId } from '../_shared/platformAuth.ts'
 import { createRest } from '../_shared/rest.ts'
 
@@ -38,7 +49,7 @@ const JSON_HEADERS = {
 
 const UUID =/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
-type Field = 'bot' | 'status'
+type Field = 'bot' | 'status' | 'url'
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: JSON_HEADERS })
@@ -74,22 +85,36 @@ Deno.serve(async (request: Request): Promise<Response> => {
   } catch {
     return refuse('Corps JSON illisible.', 400)
   }
-  const fields = payload as { bot?: unknown; status?: unknown } | null
+  const fields = payload as
+    | { bot?: unknown; status?: unknown; url?: unknown }
+    | null
 
   const botId = typeof fields?.bot === 'string' ? fields.bot.trim() : ''
   if (!UUID.test(botId)) {
     return refuse('IA inconnue : identifiant absent ou mal formé.', 400, 'bot')
   }
 
-  const asked = typeof fields?.status === 'string' ? fields.status : ''
-  if (!isRequestable(asked)) {
-    return refuse(
-      'État demandé inconnu : une IA se retire ou se réactive, rien d’autre.',
-      400,
-      'status',
-    )
+  // Les deux champs sont facultatifs, mais pas tous les deux : une demande vide
+  // toucherait `modifie_le` sans rien vouloir, et relancerait une qualification
+  // par inadvertance.
+  const askedStatus = fields?.status
+  const askedUrl = fields?.url
+  if (askedStatus === undefined && askedUrl === undefined) {
+    return refuse('Rien à changer : donnez un état ou une adresse.', 400)
   }
-  const status = asked
+
+  let status: RequestableStatus | null = null
+  if (askedStatus !== undefined) {
+    const asked = typeof askedStatus === 'string' ? askedStatus : ''
+    if (!isRequestable(asked)) {
+      return refuse(
+        'État demandé inconnu : une IA se retire, se réactive ou relance sa qualification, rien d’autre.',
+        400,
+        'status',
+      )
+    }
+    status = asked
+  }
 
   const rest = createRest({ url: supabaseUrl, serviceKey })
 
@@ -109,18 +134,54 @@ Deno.serve(async (request: Request): Promise<Response> => {
     return refuse('IA introuvable dans votre compte.', 404, 'bot')
   }
 
-  const verdict = checkTransition(bot.statut, status)
-  if (!verdict.ok) return refuse(verdict.message, 409, 'status')
+  const patch: Record<string, unknown> = {}
+  const messages: string[] = []
+
+  if (askedUrl !== undefined) {
+    // Une IA retirée ne joue plus : lui corriger son adresse n'aurait pas de
+    // sens, et `checkTransition` dit déjà que rien ne l'en sort.
+    if (bot.statut === 'retiree') {
+      return refuse(
+        'Une IA retirée ne joue plus : son adresse n’a plus d’effet.',
+        409,
+        'url',
+      )
+    }
+    const address = await checkBotAddressResolved(
+      typeof askedUrl === 'string' ? askedUrl : '',
+    )
+    if (!address.ok) return refuse(address.message, 400, 'url')
+    patch.adresse_service = address.address
+    messages.push('Adresse mise à jour.')
+  }
+
+  if (status !== null) {
+    const verdict = checkTransition(bot.statut, status)
+    if (!verdict.ok) return refuse(verdict.message, 409, 'status')
+    Object.assign(patch, statusUpdate(status))
+    messages.push(statusMessage(bot.statut, status))
+  } else if (bot.statut === 'en_attente') {
+    // Toucher la ligne suffit à rouvrir une qualification (`wavePlan.ts`) : le
+    // dire, plutôt que de laisser l'auteur le découvrir.
+    messages.push(
+      'La qualification repartira au prochain réveil, sur cette nouvelle adresse.',
+    )
+  }
 
   // Écriture conditionnée à l'état lu : deux onglets ouverts sur la même IA ne
   // peuvent pas la retirer et la réactiver dans un ordre imprévisible.
-  let updated: Array<{ id: string; nom: string; statut: BotStatus }>
+  let updated: Array<{
+    id: string
+    nom: string
+    statut: BotStatus
+    adresse_service: string
+  }>
   try {
     updated = await rest.update(
       'bots',
       `id=eq.${botId}&proprietaire=eq.${utilisateur}&statut=eq.${bot.statut}`,
-      statusUpdate(status),
-      'id,nom,statut',
+      patch,
+      'id,nom,statut,adresse_service',
     )
   } catch {
     return refuse('La demande a échoué, réessayez.', 503)
@@ -133,5 +194,5 @@ Deno.serve(async (request: Request): Promise<Response> => {
     )
   }
 
-  return json({ ok: true, bot: updated[0], message: STATUS_MESSAGES[status] })
+  return json({ ok: true, bot: updated[0], message: messages.join(' ') })
 })

@@ -9,16 +9,16 @@
  * Module pur, sans React ni `window` : c'est lui que le point d'entrée
  * interroge pour savoir s'il doit charger le morceau du tournoi.
  */
-export const TOURNAMENT_PATHS = {
-  leaderboard: '/classement',
-  login: '/connexion',
-  bots: '/mes-ia',
-  games: '/mes-parties',
-  admin: '/admin',
-} as const
+/**
+ * Les chemins eux-mêmes vivent dans `supabase/functions/_shared/`, que
+ * `wave-mail` lit pour écrire les liens du courriel hebdomadaire. Même sens de
+ * dépendance que le libellé d'une ouverture : `src/` lit `supabase/`, jamais
+ * l'inverse — ce module-ci n'est pas écrit pour Deno.
+ */
+import { TOURNAMENT_PATHS } from '../../supabase/functions/_shared/tournamentPaths.ts'
 
-export type TournamentPath =
-  (typeof TOURNAMENT_PATHS)[keyof typeof TOURNAMENT_PATHS]
+export { TOURNAMENT_PATHS }
+export type { TournamentPath } from '../../supabase/functions/_shared/tournamentPaths.ts'
 
 const PATHS: readonly string[] = Object.values(TOURNAMENT_PATHS)
 

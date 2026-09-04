@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { checkBotAddressResolved, denoDnsResolver } from './denoDns.ts'
+import { checkBotAddressResolved, denoDnsResolver, resolveWithDeno } from './denoDns.ts'
 import type { DnsResolver } from './safeUrl.ts'
 
 const resolver =
@@ -63,5 +63,90 @@ describe('contrôle d’adresse avec résolution', () => {
 describe('résolveur du runtime', () => {
   it('rend null hors de Deno', () => {
     expect(denoDnsResolver()).toBeNull()
+  })
+})
+
+/**
+ * `resolveWithDeno` s'éprouve en posant un faux `Deno` global : c'est la seule
+ * façon de vérifier ce que le module fait des deux familles d'enregistrements
+ * sans dépendre d'un vrai DNS.
+ */
+describe('résolution des deux familles', () => {
+  class NotFound extends Error {}
+
+  function withFakeDeno(
+    answers: Partial<Record<'A' | 'AAAA', string[] | Error>>,
+  ): () => void {
+    const previous = (globalThis as Record<string, unknown>).Deno
+    ;(globalThis as Record<string, unknown>).Deno = {
+      errors: { NotFound },
+      resolveDns: (_host: string, kind: 'A' | 'AAAA') => {
+        const answer = answers[kind]
+        if (answer instanceof Error) return Promise.reject(answer)
+        return Promise.resolve(answer ?? [])
+      },
+    }
+    return () => {
+      ;(globalThis as Record<string, unknown>).Deno = previous
+    }
+  }
+
+  it('réunit les deux familles', async () => {
+    const restore = withFakeDeno({ A: ['93.184.216.34'], AAAA: ['2606:2800::1'] })
+    try {
+      expect(await resolveWithDeno('ia.exemple.fr')).toEqual([
+        '93.184.216.34',
+        '2606:2800::1',
+      ])
+    } finally {
+      restore()
+    }
+  })
+
+  it('accepte une famille absente : c’est une réponse, pas une panne', async () => {
+    const restore = withFakeDeno({
+      A: ['93.184.216.34'],
+      AAAA: new NotFound('pas d’AAAA'),
+    })
+    try {
+      expect(await resolveWithDeno('ia.exemple.fr')).toEqual(['93.184.216.34'])
+    } finally {
+      restore()
+    }
+  })
+
+  /**
+   * Le cas qui comptait : un `A` public masquait un `AAAA` jamais lu, et l'hôte
+   * passait alors que son adresse IPv6 pointait sur le réseau interne.
+   */
+  it('lève quand une famille ne répond pas, même si l’autre répond', async () => {
+    const restore = withFakeDeno({
+      A: ['93.184.216.34'],
+      AAAA: new Error('délai dépassé'),
+    })
+    try {
+      await expect(resolveWithDeno('ia.exemple.fr')).rejects.toThrow(
+        /résolution AAAA indisponible/,
+      )
+    } finally {
+      restore()
+    }
+  })
+
+  it('refuse l’adresse quand la résolution lève', async () => {
+    const restore = withFakeDeno({
+      A: new Error('permission refusée'),
+      AAAA: ['2606:2800::1'],
+    })
+    try {
+      const verdict = await checkBotAddressResolved(
+        'https://ia.exemple.fr/coup',
+        resolveWithDeno,
+      )
+      expect(verdict.ok).toBe(false)
+      if (!verdict.ok) expect(verdict.reason).toBe('resolution-unavailable')
+    } finally {
+      restore()
+    }
   })
 })

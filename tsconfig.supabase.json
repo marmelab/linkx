@@ -1,0 +1,30 @@
+{
+  "compilerOptions": {
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.supabase.tsbuildinfo",
+    "target": "es2023",
+    "lib": ["ES2023", "DOM"],
+    "module": "esnext",
+    "types": [],
+    "skipLibCheck": true,
+
+    /* Bundler mode : mêmes imports que src/, extension `.ts` comprise */
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "moduleDetection": "force",
+    "noEmit": true,
+
+    /* Linting. Pas d'`erasableSyntaxOnly` ici : Deno exécute TypeScript tel
+       quel, et `searchQueue.ts` s'autorise une propriété de constructeur que
+       Vite n'aurait pas le droit d'effacer mais que rien n'oblige Deno à
+       éviter. */
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true
+  },
+  "include": [
+    "supabase/functions/deno.globals.d.ts",
+    "supabase/functions/**/*.test.ts"
+  ]
+}

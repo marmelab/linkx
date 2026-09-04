@@ -100,6 +100,21 @@ function QualificationLine({ state }: { state: QualificationState }) {
   return <>{parts.join(", ")}.</>;
 }
 
+/**
+ * Les trois états d'une vague, dits en clair.
+ *
+ * `planifiee` **n'est pas** close : c'est l'instant où ses centaines de parties
+ * se créent, juste après le clic sur « Ouvrir une vague » — l'annoncer close
+ * laissait croire à une commande sans effet et invitait à la relancer. Et rien
+ * ne se dit ici de « une vague par jeudi » : depuis `plateforme_tournoi_vague_a_
+ * la_demande`, le bouton voisin en ouvre une n'importe quel jour.
+ */
+const WAVE_STATUS_LABELS: Partial<Record<WaveRow["statut"], string>> = {
+  planifiee: "ouverte, appariements en cours de création.",
+  en_cours: "en cours.",
+  terminee: "close et classée.",
+};
+
 type QueuePayload = {
   rows: QueueRow[];
   waves: WaveRow[];
@@ -175,11 +190,9 @@ function QueueState({ state }: { state: Async<QueuePayload> }) {
       <p className="bot-card__summary">
         {wave === undefined
           ? "Aucune vague n’a encore été ouverte."
-          : wave.statut === "en_cours"
-            ? `Vague du ${formatParisDate(Date.parse(wave.debut))} : en cours.`
-            : `Vague du ${formatParisDate(
-                Date.parse(wave.debut),
-              )} : close. Il n’en existe qu’une par jeudi, la suivante n’ouvrira donc pas avant le prochain.`}
+          : `Vague du ${formatParisDate(Date.parse(wave.debut))} : ${
+              WAVE_STATUS_LABELS[wave.statut] ?? wave.statut
+            }`}
       </p>
     </div>
   );
@@ -297,20 +310,42 @@ export function AdminScreen() {
   const { admin } = useOutletContext<TournamentContext>();
 
   // **Avant** de regarder le droit : sans session, sa lecture reste suspendue
-  // pour toujours — c'est ce que `PENDING` veut dire — et l'écran afficherait
+  // pour toujours — c'est ce que `pending()` veut dire — et l'écran afficherait
   // « Chargement… » sans fin. C'est le cas d'une déconnexion faite d'ici.
   if (ready && !session) {
     return <Navigate to={TOURNAMENT_PATHS.login} replace />;
   }
 
-  if (admin.status === "loading") {
+  // Une panne se **dit**, elle ne renvoie pas au classement : `admin.data` vaut
+  // `null` aussi bien pour un refus que pour une lecture qui n'a pas abouti, et
+  // les confondre ferait croire à un administrateur qu'il a perdu ses droits —
+  // exactement ce que `api.ts:isAdministrator` refuse de faire en propageant sa
+  // panne. On reste donc sur place, avec de quoi réessayer.
+  if (admin.status === "error") {
+    return (
+      <div className="tournament-note" role="alert">
+        <p>Vos droits n’ont pas pu être vérifiés.</p>
+        {admin.error && <p className="tournament-error">{admin.error}</p>}
+        <button
+          type="button"
+          className="secondary-button secondary-button--small"
+          onClick={admin.reload}
+        >
+          Réessayer
+        </button>
+      </div>
+    );
+  }
+  // Une relecture garde la valeur précédente : un administrateur déjà reconnu ne
+  // repasse pas par l'écran de chargement à chaque `reload`.
+  if (admin.data === null) {
     return (
       <p className="tournament-note" aria-live="polite">
         Chargement…
       </p>
     );
   }
-  if (admin.data !== true) {
+  if (!admin.data) {
     return <Navigate to={TOURNAMENT_PATHS.leaderboard} replace />;
   }
 

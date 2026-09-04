@@ -43,6 +43,18 @@ describe('issue d’une partie, en toutes lettres', () => {
     ).toBe('nul technique — vague terminée')
   })
 
+  /**
+   * `resultat` et `motif_fin` sont deux colonnes indépendantes de `parties` :
+   * rien n'interdit un nul portant un motif technique. Testé avant, la branche
+   * technique l'annonçait « perdu — hors délai », sur une ligne que le filtre
+   * « Issue = nulle » venait pourtant de retenir.
+   */
+  it('reste un nul quand le motif est technique', () => {
+    expect(
+      describeOutcome(game({ result: 'draw', reason: 'timeout', moveCount: 13 })),
+    ).toBe('nul technique — hors délai au coup 14')
+  })
+
   it('situe un hors-délai au coup suivant le dernier joué', () => {
     expect(
       describeOutcome(

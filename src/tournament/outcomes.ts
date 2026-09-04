@@ -86,6 +86,18 @@ export function describeOutcome(input: OutcomeInput): string {
   if (kind === 'en_cours') return 'en cours'
 
   const reason = input.reason
+  // **Le nul se lit avant la faute technique.** `resultat` et `motif_fin` sont
+  // deux colonnes indépendantes de `parties` : rien n'interdit un nul portant un
+  // motif technique, et la branche technique l'aurait alors annoncé « perdu »
+  // sur une ligne que le filtre « Issue = nulle » vient de retenir.
+  if (kind === 'nul') {
+    if (reason === 'interrupted') return 'nul technique — vague terminée'
+    if (isTechnical(reason)) {
+      return `nul technique — ${TECHNICAL_LABELS[reason]} au coup ${input.moveCount + 1}`
+    }
+    return 'nul par blocage, zones égales'
+  }
+
   if (isTechnical(reason)) {
     const rank = input.moveCount + 1
     const detail =
@@ -96,11 +108,6 @@ export function describeOutcome(input: OutcomeInput): string {
     const who = kind === 'gagne' ? ' de l’adversaire' : ''
     const verb = kind === 'gagne' ? 'gagné' : 'perdu'
     return `${verb} — ${TECHNICAL_LABELS[reason]}${who} au coup ${rank}${detail}`
-  }
-
-  if (kind === 'nul') {
-    if (reason === 'interrupted') return 'nul technique — vague terminée'
-    return 'nul par blocage, zones égales'
   }
 
   if (reason === 'stalemate') {

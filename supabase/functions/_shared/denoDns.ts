@@ -42,20 +42,26 @@ import type { AddressVerdict, DnsResolver } from './safeUrl.ts'
 /**
  * Résolution DNS du runtime. Un nom introuvable rend une liste vide, que
  * `checkBotAddressWithDns` refuse ; une résolution *impossible* — permission
- * refusée, fonction absente — lève, et l'adresse est refusée à son tour.
+ * refusée, fonction absente, délai dépassé — lève, et l'adresse est refusée à
+ * son tour.
+ *
+ * **Les deux familles doivent répondre, ou aucune.** Un `AAAA` en échec pendant
+ * qu'un `A` répond ne se rattrape pas par le second : les enregistrements IPv6
+ * n'auraient alors jamais été inspectés, et `fetch` préfère justement IPv6. Un
+ * hôte dont l'A pointe sur une machine publique et l'AAAA sur `fd00::1` passait
+ * ainsi le contrôle pour se faire appeler sur le réseau interne. Une famille
+ * absente (`NotFound`) n'est pas un échec : c'est une réponse, et elle dit qu'il
+ * n'y a rien de ce côté-là.
  */
 export async function resolveWithDeno(host: string): Promise<readonly string[]> {
   const addresses: string[] = []
-  let unavailable = false
   for (const kind of ['A', 'AAAA'] as const) {
     try {
       addresses.push(...(await Deno.resolveDns(host, kind)))
     } catch (error) {
-      if (!(error instanceof Deno.errors.NotFound)) unavailable = true
+      if (error instanceof Deno.errors.NotFound) continue
+      throw new Error(`résolution ${kind} indisponible pour ${host}`)
     }
-  }
-  if (addresses.length === 0 && unavailable) {
-    throw new Error('résolution DNS indisponible')
   }
   return addresses
 }

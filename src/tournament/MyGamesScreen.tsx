@@ -22,7 +22,7 @@ import { COLOR_LABELS, OUTCOME_LABELS } from './outcomes'
 import { TOURNAMENT_PATHS } from './routes'
 import { formatParisDateTime, formatParisDay } from './schedule'
 import { useSession } from './session'
-import { PENDING, useAsync } from './useAsync'
+import { pending, useAsync } from './useAsync'
 import type { BotRow, WaveRow } from './types'
 
 /** Ce dont les filtres ont besoin : la liste des IA et celle des vagues. */
@@ -263,7 +263,7 @@ export function MyGamesScreen() {
   // Rien n'est lu avant que la session ait répondu : une lecture à vide
   // afficherait « aucune partie » à un auteur qui en a.
   const context = useAsync<Context>(
-    () => (session ? loadContext() : PENDING),
+    () => (session ? loadContext() : pending<Context>()),
     [ready, session?.user.id],
   )
   const [outcome, setOutcome] = useState(ANY)

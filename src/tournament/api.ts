@@ -155,16 +155,15 @@ export const MY_GAMES_LIMIT = 400
 export type MyGamesFilter = { botId?: string; waveId?: string | null }
 
 /**
- * Les parties de l'auteur. La politique de `parties` les borne déjà à ses deux
- * participants : le filtre n'est là que pour aller chercher les anciennes,
- * au-delà des quatre cents dernières.
+ * Les parties de l'auteur, **sans les noms**. La politique de `parties` les
+ * borne déjà à ses deux participants : le filtre n'est là que pour aller
+ * chercher les anciennes, au-delà des quatre cents dernières.
  *
- * Les noms sont résolus par une seconde requête plutôt que par une jointure :
- * ils viennent d'une vue, qui n'a pas de clé étrangère à emprunter. Un seul
- * chemin, donc, et l'adversaire est nommé aussi bien que la sienne — c'est
- * `games.ts` qui bascule ensuite du point de vue de l'auteur.
+ * Séparée de `fetchMyGames` parce que nommer l'adversaire coûte une seconde
+ * requête : qui ne fait que compter des issues — le bilan de vague de « Mes IA »
+ * — n'a pas à la payer.
  */
-export async function fetchMyGames(
+export async function fetchGameRows(
   filter: MyGamesFilter = {},
 ): Promise<GameRow[]> {
   let query = tournamentClient().from('parties').select(GAME_COLUMNS)
@@ -178,7 +177,7 @@ export async function fetchMyGames(
     query = query.eq('vague_id', filter.waveId)
   }
 
-  const rows = unwrap<GameRow[]>(
+  return unwrap<GameRow[]>(
     (await query
       .order('cree_le', { ascending: false })
       .limit(MY_GAMES_LIMIT)) as unknown as {
@@ -186,7 +185,19 @@ export async function fetchMyGames(
       error: { message: string } | null
     },
   )
+}
 
+/**
+ * Les mêmes, chaque camp nommé. Les noms sont résolus par une seconde requête
+ * plutôt que par une jointure : ils viennent d'une vue, qui n'a pas de clé
+ * étrangère à emprunter. Un seul chemin, donc, et l'adversaire est nommé aussi
+ * bien que la sienne — c'est `games.ts` qui bascule ensuite du point de vue de
+ * l'auteur.
+ */
+export async function fetchMyGames(
+  filter: MyGamesFilter = {},
+): Promise<GameRow[]> {
+  const rows = await fetchGameRows(filter)
   const names = await fetchBotNames(
     rows.flatMap((row) => [row.bot_bleu, row.bot_blanc]),
   )
@@ -393,18 +404,26 @@ export function probeBot(botId: string): Promise<ProbeReply> {
 }
 
 /**
- * Retrait et réactivation. `statut` est une colonne réservée au service — un
- * déclencheur refuse toute écriture cliente (migration
- * `plateforme_tournoi_colonnes_reservees`) —, l'action passe donc par
- * `supabase/functions/update-bot`, qui seule arbitre les transitions permises :
- * une IA se retire tant qu'elle vit, se réactive depuis le sommeil, et ne
- * revient pas d'un retrait.
+ * Tout ce qu'un auteur change sur son IA : son état, son adresse, ou les deux.
+ *
+ * Ni `statut` ni `adresse_service` ne s'écrivent depuis le navigateur —
+ * `authenticated` n'a aucun droit d'écriture sur `bots` (migration
+ * `plateforme_tournoi_ecriture_reservee_bots`) —, l'action passe donc par
+ * `supabase/functions/update-bot`, qui seule arbitre ce qui est permis : une IA
+ * se retire tant qu'elle vit, se réactive depuis le sommeil, relance une
+ * qualification ratée, et ne revient pas d'un retrait. Une adresse corrigée
+ * repasse par le contrôle de la déclaration.
  */
-export function setBotStatus(
+export type BotChange = {
+  status?: 'retiree' | 'en_attente'
+  url?: string
+}
+
+export function updateBot(
   botId: string,
-  status: 'retiree' | 'en_attente',
+  change: BotChange,
 ): Promise<EdgeReply> {
-  return callFunction('update-bot', { bot: botId, status })
+  return callFunction('update-bot', { bot: botId, ...change })
 }
 
 /**

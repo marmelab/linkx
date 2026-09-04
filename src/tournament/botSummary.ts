@@ -10,6 +10,24 @@ import { isTechnical } from './outcomes'
 import type { MyGame } from './games'
 import type { BotHistoryRow } from './types'
 
+/**
+ * Dernière vague classée d'une IA, dans l'ordre de la vue `classement` : la
+ * date, puis l'identifiant. Deux vagues closes dans la même seconde se
+ * départagent ainsi toujours pareil.
+ *
+ * Exportée pour que l'écran sache **quelles** parties lire : sans elle il
+ * chargeait toutes les siennes pour n'en compter qu'une vague.
+ */
+export function lastWaveRow(
+  botId: string,
+  history: readonly BotHistoryRow[],
+): BotHistoryRow | null {
+  const rows = history
+    .filter((row) => row.bot_id === botId)
+    .sort((a, b) => b.cree_le.localeCompare(a.cree_le) || b.id - a.id)
+  return rows[0] ?? null
+}
+
 export type WaveSummary = {
   waveId: string
   elo: number
@@ -26,12 +44,7 @@ export function summarizeLastWave(
   history: readonly BotHistoryRow[],
   games: readonly MyGame[],
 ): WaveSummary | null {
-  // Même ordre que la vue `classement` : la date, puis l'identifiant. Deux
-  // vagues closes dans la même seconde se départagent ainsi toujours pareil.
-  const rows = history
-    .filter((row) => row.bot_id === botId)
-    .sort((a, b) => b.cree_le.localeCompare(a.cree_le) || b.id - a.id)
-  const last = rows[0]
+  const last = lastWaveRow(botId, history)
   if (!last) return null
 
   const technical = games.filter(

@@ -73,6 +73,20 @@ function App() {
   const [playback, setPlayback] = useState<Playback | null>(() =>
     loaded?.source === 'moves' ? startPlayback(loaded.states) : null,
   )
+  // La partie lue se poursuit au dernier coup : un coup joué allonge la suite et
+  // laisse le curseur à la fin. Une nouvelle partie, elle, sort de la lecture.
+  //
+  // Ajusté **pendant le rendu**, et non par un effet : `fallingPieceId` vient de
+  // `playback.falling`, qui doit donc porter la pièce dès le premier rendu qui la
+  // montre. Reporté à un effet, il valait encore `null` au commit du coup — la
+  // pièce se peignait à sa place d'arrivée avant de tomber, si bien qu'une partie
+  // ouverte par `?moves=` puis poursuivie n'avait pas la chute des autres. React
+  // reprend le rendu aussitôt, sans rien peindre entre les deux.
+  const [seenState, setSeenState] = useState(state)
+  if (state !== seenState) {
+    setSeenState(state)
+    setPlayback((current) => (current ? extendPlayback(current, state) : null))
+  }
   const { request: requestAiMove, cancel: cancelAiMove } = useAiMove()
   const [pointedColumn, setPointedColumn] = useState<number | null>(null)
   const [rulesOpen, setRulesOpen] = useState(false)
@@ -98,6 +112,7 @@ function App() {
   // qui se poursuivra dès le retour à la fin. Les deux ne font qu'un au dernier
   // rang, si bien que tout le rendu peut lire `view` sans rien changer au jeu.
   const replaying = playback !== null && isReplaying(playback)
+  const hasPlayback = playback !== null
   const view = useMemo(
     () => (playback ? playbackState(playback, state) : state),
     [playback, state],
@@ -152,12 +167,6 @@ function App() {
   useEffect(() => {
     setPointedColumn(null)
   }, [view.activePlayer, view.selection?.shapeId])
-
-  // La partie lue se poursuit au dernier coup : un coup joué allonge la suite et
-  // laisse le curseur à la fin. Une nouvelle partie, elle, sort de la lecture.
-  useEffect(() => {
-    setPlayback((current) => (current ? extendPlayback(current, state) : null))
-  }, [state])
 
   // Tour de l'ordinateur. La recherche part dans un worker quand le navigateur
   // en offre un (voir `useAiMove`), sinon elle reste synchrone et bloque
@@ -231,11 +240,15 @@ function App() {
     return () => clearTimeout(timer)
   }, [aiPlacedPieceId])
 
-  // Hors du dernier coup, aucune visée n'est possible : les flèches y pilotent
-  // donc toujours le curseur, sans conflit avec la visée de colonne. Sur la
-  // barre elle-même, le curseur porte déjà ses propres flèches.
+  // Les flèches pilotent le curseur **dès qu'aucune pièce n'est en main**, et
+  // non pendant la seule lecture : au chargement d'un `?moves=` le curseur est à
+  // la fin et rien n'est sélectionné, si bien qu'une condition sur la lecture
+  // rendait ← inerte tant qu'on n'avait pas cliqué ◀ à la souris — la touche
+  // n'ouvrait jamais ce qu'elle était censée parcourir. La visée de colonne
+  // garde la priorité quand une pièce est en main : les deux ne se disputent
+  // donc jamais la touche.
   useEffect(() => {
-    if (!replaying) return
+    if (!hasPlayback || aiming) return
     const handleKeyDown = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement
       if (target.matches('input, textarea, select')) return
@@ -251,7 +264,7 @@ function App() {
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [replaying])
+  }, [hasPlayback, aiming])
 
   useEffect(() => {
     if (view.phase !== 'playing') return

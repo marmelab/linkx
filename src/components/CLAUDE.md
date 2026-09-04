@@ -36,8 +36,10 @@ Ce que doit **montrer** l'interface est spécifié dans `plan.md` (histoires 7, 
 `PlaybackBar` déroule une partie ouverte depuis une notation (plan.md, histoire 13). Trois points s'y tiennent :
 
 - La barre n'existe **que** si `createGameStateFromSearch` a rendu une provenance `moves` ; c'est cette provenance, et non une relecture de la query string, qui décide. Elle est donc rendue dès le premier rendu et sa hauteur est fixe, comme celle de `play-head` et pour la même raison : le bord haut du plateau est en dessous.
-- En lecture, `fallingPieceId` vient de `playback.falling`, jamais de `state.lastPlacedPieceId` : seul `stepPlayback` en désigne une. Un saut remonte les pièces sans la classe de chute — sans quoi tout le plateau retomberait à chaque déplacement du curseur.
+- Dès qu'une barre existe, `fallingPieceId` vient de `playback.falling` et **jamais** de `state.lastPlacedPieceId` : seuls `stepPlayback` et `extendPlayback` en désignent une. Un saut remonte les pièces sans la classe de chute — sans quoi tout le plateau retomberait à chaque déplacement du curseur.
+- Corollaire : `extendPlayback` s'applique **pendant le rendu** (`if (state !== seenState) …`), pas dans un `useEffect`. Un effet ne court qu'après le commit, si bien que la pièce qu'on vient de poser était peinte une fois à sa place d'arrivée avant de recevoir sa classe de chute — une partie ouverte par `?moves=` puis poursuivie n'avait pas la chute des autres. React reprend le rendu aussitôt, sans rien peindre entre les deux.
 - `App.tsx` rend `view` et dispatche sur `state`. Les deux sont le même objet au dernier rang ; ailleurs `view` est une position passée sans sélection, ce qui suffit à fermer la pose : le ghost, la bande de visée et les raccourcis clavier de coup en dépendent tous.
+- Les flèches pilotent le curseur **dès qu'aucune pièce n'est en main**, et non pendant la seule lecture. Conditionnées à la lecture, elles étaient mortes au chargement — curseur à la fin, rien de sélectionné — et n'ouvraient donc jamais ce qu'elles devaient parcourir. La visée de colonne garde la priorité quand une pièce est en main : les deux effets clavier s'excluent sur ce seul critère.
 
 ## Bande de visée au doigt
 
