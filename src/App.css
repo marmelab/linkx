@@ -288,6 +288,18 @@ a.mini-brand { text-decoration: none; }
 .bot-list { display: grid; gap: 0.8rem; margin: 0 0 1rem; padding: 0; list-style: none; }
 .bot-card { padding: 0.9rem 1rem; border: 1px solid var(--line); border-radius: 6px; background: #fff; }
 .bot-card__head { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem; margin: 0; }
+.tournament-shell__notice {
+  max-width: 720px;
+  margin: 0.8rem auto 0;
+  padding: 0.6rem 0.8rem;
+  border-radius: 6px;
+  background: #fff;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.bot-card__elo { margin-left: auto; color: var(--muted); white-space: nowrap; }
+.bot-card__elo strong { font-size: 1.3rem; color: var(--ink); }
 .bot-card__address { margin: 0.35rem 0 0; color: var(--muted); overflow-wrap: anywhere; }
 .bot-card__summary { margin: 0.35rem 0 0; color: var(--muted); line-height: 1.5; }
 .bot-card__actions { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 0.8rem 0 0; }
@@ -319,6 +331,9 @@ a.mini-brand { text-decoration: none; }
    rendu est du JSON : il se **replie** plutôt que de défiler, l'histoire 16
    interdisant tout débordement horizontal jusqu'à 375px. */
 .admin-panel { margin-top: 1.6rem; padding-top: 0.6rem; border-top: 1px solid var(--line); }
+.admin-queue { margin: 0 0 1.2rem; }
+.admin-queue > .bot-card__summary:first-child { margin-top: 0; }
+
 .admin-panel__force { margin: 0.7rem 0 0; color: var(--muted); }
 .admin-panel__force label { display: inline-flex; align-items: center; gap: 0.15rem; }
 .probe-report,

@@ -10,6 +10,7 @@ import { createClient } from '@supabase/supabase-js'
 import type { Session, SupabaseClient } from '@supabase/supabase-js'
 import { tournamentConfig } from './config'
 import { authRedirectUrl, normalizeAuthCallbackUrl } from './routes'
+import type { QueueRow } from './queue'
 import type {
   BotHistoryRow,
   BotRow,
@@ -237,6 +238,45 @@ export async function isAdministrator(): Promise<boolean> {
     .limit(1)
   if (error) throw new Error(error.message)
   return (data ?? []).length > 0
+}
+
+/**
+ * Parties encore à arbitrer, telles quelles : l'écran d'administration les
+ * découpe lui-même (`queue.ts`). Une vague en cours en compte quelques dizaines,
+ * la borne est donc large et son dépassement sans conséquence — le total affiché
+ * serait seulement tronqué.
+ *
+ * Réservé de fait aux administrateurs : la politique de `parties` n'ouvre la
+ * table entière qu'à eux, un auteur ordinaire ne lirait que les siennes.
+ */
+export const QUEUE_LIMIT = 500
+
+export async function fetchQueue(): Promise<QueueRow[]> {
+  return unwrap<QueueRow[]>(
+    await tournamentClient()
+      .from('parties')
+      .select('statut, vague_id, modifie_le')
+      .neq('statut', 'terminee')
+      .order('modifie_le', { ascending: true })
+      .limit(QUEUE_LIMIT),
+  )
+}
+
+/**
+ * IA qui attendent leur qualification, c'est-à-dire tout le travail que
+ * l'ordonnanceur a devant lui hors de la fenêtre du jeudi. Sans ce chiffre, un
+ * réveil qui ne fait rien ne se distingue pas d'un réveil en panne.
+ *
+ * Réservé de fait aux administrateurs : la politique de `bots` n'ouvre la table
+ * entière qu'à eux, un auteur ordinaire ne compterait que les siennes.
+ */
+export async function countAwaitingQualification(): Promise<number> {
+  const { count, error } = await tournamentClient()
+    .from('bots')
+    .select('id', { count: 'exact', head: true })
+    .eq('statut', 'en_attente')
+  if (error) throw new Error(error.message)
+  return count ?? 0
 }
 
 /* Authentification ------------------------------------------------------- */

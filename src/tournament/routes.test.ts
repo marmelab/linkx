@@ -16,8 +16,14 @@ describe('adresse d’un écran de tournoi', () => {
     expect(pathFromHash('')).toBe('/')
   })
 
-  it('reconnaît les quatre écrans, et eux seuls', () => {
-    for (const path of ['#/classement', '#/connexion', '#/mes-ia', '#/mes-parties']) {
+  it('reconnaît les cinq écrans, et eux seuls', () => {
+    for (const path of [
+      '#/classement',
+      '#/connexion',
+      '#/mes-ia',
+      '#/mes-parties',
+      '#/admin',
+    ]) {
       expect(isTournamentLocation(path, '')).toBe(true)
     }
     expect(isTournamentLocation('', '')).toBe(false)

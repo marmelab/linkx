@@ -7,13 +7,11 @@ import {
   fetchBotHistory,
   fetchMyBots,
   fetchMyGames,
-  isAdministrator,
   probeBot,
   registerBot,
-  runCron,
   setBotStatus,
 } from "./api";
-import type { CronFunction, EdgeReply, ProbeReply, RegisterReply } from "./api";
+import type { ProbeReply, RegisterReply } from "./api";
 import { summarizeLastWave } from "./botSummary";
 import type { WaveSummary } from "./botSummary";
 import { toMyGames } from "./games";
@@ -46,6 +44,11 @@ async function loadMyBots(): Promise<Payload> {
   };
 }
 
+/** Accord du participe : singulier jusqu’à un, pluriel au-delà. */
+function plural(count: number): string {
+  return count > 1 ? "s" : "";
+}
+
 function Summary({ summary }: { summary: WaveSummary | null }) {
   if (!summary) {
     return (
@@ -56,9 +59,16 @@ function Summary({ summary }: { summary: WaveSummary | null }) {
   }
   return (
     <p className="bot-card__summary">
-      Dernière vague : {summary.elo} points d’Elo ({formatGap(summary.gap)}),{" "}
-      {summary.wins} gagnées, {summary.draws} nulles, {summary.losses} perdues,
-      dont {summary.technical} sur faute technique.
+      Dernière vague :{" "}
+      {summary.gap === 0
+        ? "Elo inchangé"
+        : `${formatGap(summary.gap)} points d’Elo`}
+      , {summary.wins} gagnée{plural(summary.wins)}, {summary.draws} nulle
+      {plural(summary.draws)}, {summary.losses} perdue{plural(summary.losses)}
+      {summary.technical > 0
+        ? `, dont ${summary.technical} sur faute technique`
+        : ""}
+      .
     </p>
   );
 }
@@ -119,8 +129,29 @@ function BotCard({
         <span className={`badge badge--${bot.statut}`}>
           {STATUS_LABELS[bot.statut]}
         </span>
+        {/* Le chiffre qu'on vient chercher se lit à côté du nom, et non au fil
+            d'une phrase de bilan. L'écart, lui, appartient au rappel de la
+            dernière vague : il n'a de sens que rapporté à elle. Tant qu'aucune
+            partie n'est classée, l'Elo n'est qu'une valeur de départ, et
+            l'afficher laisserait croire à un rang gagné. */}
+        <span className="bot-card__elo">
+          {bot.parties_classees > 0 ? (
+            <>
+              <strong>{bot.elo}</strong> Elo
+            </>
+          ) : (
+            "pas encore classée"
+          )}
+        </span>
       </p>
-      <p className="bot-card__address">{bot.adresse_service}</p>
+      <p className="bot-card__address">
+        {/* L'adresse est une URL validée à la déclaration — https, port 443,
+            hôte public —, jamais une chaîne libre : elle peut donc servir de
+            lien sans autre précaution. */}
+        <a href={bot.adresse_service} target="_blank" rel="noreferrer">
+          {bot.adresse_service}
+        </a>
+      </p>
       {bot.ia_maison && (
         <p className="bot-card__summary">
           IA de la maison : elle joue les vagues avec un budget de réflexion
@@ -238,91 +269,6 @@ function BotCard({
         </p>
       )}
     </li>
-  );
-}
-
-const CRON_LABELS: Record<CronFunction, string> = {
-  scheduler: "Lancer l’ordonnanceur",
-  "referee-tick": "Faire jouer un tour d’arbitrage",
-};
-
-/**
- * Déclenchement à la main des deux réveils de cron, pour les seuls
- * administrateurs — la détection est une lecture de `administrateurs`, dont la
- * politique ne rend une ligne qu'à un membre. Un utilisateur ordinaire ne voit
- * rien de ce bloc.
- *
- * Le compte rendu est celui du cron, rendu tel quel : c'est exactement ce qu'un
- * administrateur vient chercher, et le résumer en perdrait la substance.
- */
-function AdminPanel() {
-  const [busy, setBusy] = useState<CronFunction | null>(null);
-  const [force, setForce] = useState(false);
-  const [report, setReport] = useState<{
-    name: CronFunction;
-    reply: EdgeReply;
-  } | null>(null);
-
-  const run = async (name: CronFunction) => {
-    setBusy(name);
-    setReport(null);
-    try {
-      setReport({ name, reply: await runCron(name, force) });
-    } catch (error) {
-      setReport({
-        name,
-        reply: {
-          ok: false,
-          message: error instanceof Error ? error.message : "Appel impossible.",
-        },
-      });
-    } finally {
-      setBusy(null);
-    }
-  };
-
-  return (
-    <section className="admin-panel">
-      <h2 className="overline tournament-subtitle">Administration</h2>
-      <p className="tournament-hint">
-        Les deux fonctions que <code>pg_cron</code> réveille chaque minute. Le
-        compte rendu est le même que le sien.
-      </p>
-      <p className="bot-card__actions">
-        {(Object.keys(CRON_LABELS) as CronFunction[]).map((name) => (
-          <button
-            key={name}
-            type="button"
-            className="secondary-button secondary-button--small"
-            onClick={() => run(name)}
-            disabled={busy !== null}
-          >
-            {busy === name ? "En cours…" : CRON_LABELS[name]}
-          </button>
-        ))}
-      </p>
-      <p className="admin-panel__force">
-        <label>
-          <input
-            type="checkbox"
-            checked={force}
-            onChange={(event) => setForce(event.target.checked)}
-            disabled={busy !== null}
-          />{" "}
-          Hors de la fenêtre du jeudi (<code>force</code>)
-        </label>
-      </p>
-      {report && (
-        <pre
-          className="admin-panel__report"
-          role={report.reply.ok ? "status" : "alert"}
-        >
-          {CRON_LABELS[report.name]}
-          {"\n"}
-          {JSON.stringify(report.reply, null, 2)}
-        </pre>
-      )}
-    </section>
   );
 }
 
@@ -485,10 +431,6 @@ export function MyBotsScreen() {
   );
   // Lecture séparée de la liste des IA : elle ne concerne qu'une poignée de
   // comptes, et une panne de son côté ne doit pas priver l'auteur de ses IA.
-  const admin = useAsync<boolean>(
-    () => (session ? isAdministrator() : PENDING),
-    [ready, session?.user.id],
-  );
   // Le formulaire est **appelé**, jamais posé d'office : l'écran s'ouvre sur ce
   // que l'auteur a déjà, pas sur ce qu'il pourrait ajouter.
   const [declaring, setDeclaring] = useState(false);
@@ -544,22 +486,6 @@ export function MyBotsScreen() {
         </button>
       )}
 
-      {/* Une vérification qui n'a pas abouti se dit, sans quoi un administrateur
-          croirait avoir perdu ses droits. La phrase reste muette sur qui en a :
-          elle ne parle que de la lecture. */}
-      {admin.status === "error" && (
-        <p className="tournament-note" role="alert">
-          Vos droits n’ont pas pu être vérifiés.{" "}
-          <button
-            type="button"
-            className="secondary-button secondary-button--small"
-            onClick={admin.reload}
-          >
-            Réessayer
-          </button>
-        </p>
-      )}
-      {admin.data === true && <AdminPanel />}
     </>
   );
 }

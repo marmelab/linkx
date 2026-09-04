@@ -14,7 +14,8 @@ const PARIS = 'Europe/Paris'
 /** Jeudi, au sens de `Date.prototype.getUTCDay` (0 = dimanche). */
 export const WAVE_WEEKDAY = 4
 export const WAVE_START_HOUR = 0
-export const WAVE_START_LABEL = 'jeudi à 0 h'
+/** Heure seule : le jour vient de la date formatée, qui le nomme déjà. */
+export const WAVE_START_TIME_LABEL = '0 h'
 
 type WallClock = {
   year: number

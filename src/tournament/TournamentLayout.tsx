@@ -1,7 +1,9 @@
 import { NavLink, Outlet } from 'react-router'
-import { signOut } from './api'
+import { isAdministrator, signOut } from './api'
 import { TOURNAMENT_PATHS } from './routes'
 import { useSession } from './session'
+import { PENDING, useAsync } from './useAsync'
+import type { Async } from './useAsync'
 
 /**
  * Mise en page commune aux quatre écrans : le fond de l'écran d'accueil, une
@@ -15,8 +17,22 @@ import { useSession } from './session'
 const navClass = ({ isActive }: { isActive: boolean }) =>
   isActive ? 'text-button is-active' : 'text-button'
 
+/**
+ * Ce que la mise en page établit une fois pour les écrans qu'elle enveloppe.
+ * Le droit d'administration en fait partie : elle en a besoin pour son entrée
+ * de navigation, et l'écran d'administration pour se garder — une seule lecture
+ * sert les deux.
+ */
+export type TournamentContext = {
+  admin: Async<boolean>
+}
+
 export function TournamentLayout() {
-  const { session } = useSession()
+  const { session, ready } = useSession()
+  const admin = useAsync<boolean>(
+    () => (session ? isAdministrator() : PENDING),
+    [ready, session?.user.id],
+  )
 
   return (
     <div className="tournament-shell">
@@ -34,6 +50,11 @@ export function TournamentLayout() {
           <NavLink className={navClass} to={TOURNAMENT_PATHS.games}>
             Mes parties
           </NavLink>
+          {admin.data === true && (
+            <NavLink className={navClass} to={TOURNAMENT_PATHS.admin}>
+              Admin
+            </NavLink>
+          )}
           {session ? (
             <button
               type="button"
@@ -53,9 +74,26 @@ export function TournamentLayout() {
         </nav>
       </header>
 
+      {/* Une vérification qui n'a pas abouti se dit, sans quoi un
+          administrateur croirait avoir perdu ses droits en ne voyant plus son
+          entrée. La phrase reste muette sur qui en a : elle ne parle que de la
+          lecture. */}
+      {admin.status === 'error' && (
+        <p className="tournament-shell__notice" role="alert">
+          Vos droits n’ont pas pu être vérifiés.{' '}
+          <button
+            type="button"
+            className="secondary-button secondary-button--small"
+            onClick={admin.reload}
+          >
+            Réessayer
+          </button>
+        </p>
+      )}
+
       <main className="setup-screen tournament-screen">
         <section className="setup-card tournament-card">
-          <Outlet />
+          <Outlet context={{ admin } satisfies TournamentContext} />
         </section>
       </main>
     </div>

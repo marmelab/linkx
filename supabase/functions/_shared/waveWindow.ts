@@ -18,6 +18,12 @@ export const WAVE_WEEKDAY = 4
 export const WAVE_START_HOUR = 0
 export const WAVE_END_HOUR = 12
 
+/**
+ * Durée de jeu d'une vague. Le cron du jeudi l'ouvre à minuit et elle finit à
+ * midi ; une vague ouverte à la main dure autant, à compter de son ouverture.
+ */
+export const WAVE_DURATION_MS = (WAVE_END_HOUR - WAVE_START_HOUR) * 3_600_000
+
 const MS_PER_DAY = 86_400_000
 
 /** Date et heure civiles dans un fuseau, telles qu'une horloge murale les lit. */

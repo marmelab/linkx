@@ -14,6 +14,7 @@ export const TOURNAMENT_PATHS = {
   login: '/connexion',
   bots: '/mes-ia',
   games: '/mes-parties',
+  admin: '/admin',
 } as const
 
 export type TournamentPath =

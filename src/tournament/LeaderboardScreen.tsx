@@ -9,7 +9,7 @@ import {
   formatParisTime,
   nextWaveStart,
   openWave,
-  WAVE_START_LABEL,
+  WAVE_START_TIME_LABEL,
   waveProgress,
 } from './schedule'
 import { PROTOCOL_URL } from './protocol'
@@ -72,8 +72,8 @@ function WaveBanner({
     <p className="wave-banner">
       <span className="overline">Prochaine vague</span>
       <strong>
-        dans {formatCountdown(start - now)} — {WAVE_START_LABEL},{' '}
-        {formatParisDate(start)}, heure de Paris.
+        dans {formatCountdown(start - now)} — {formatParisDate(start)} à{' '}
+        {WAVE_START_TIME_LABEL}, heure de Paris.
       </strong>
     </p>
   )

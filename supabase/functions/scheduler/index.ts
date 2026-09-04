@@ -58,8 +58,7 @@ import {
   qualificationVerdict,
 } from '../_shared/wavePlan.ts'
 import type { BotBefore, BotRow, WaveGameRecord } from '../_shared/wavePlan.ts'
-import { waveWindowAt } from '../_shared/waveWindow.ts'
-import type { WaveWindow } from '../_shared/waveWindow.ts'
+import { WAVE_DURATION_MS, waveWindowAt } from '../_shared/waveWindow.ts'
 import type { PlayerId } from '../../../src/game/types.ts'
 
 const JSON_HEADERS = { 'content-type': 'application/json; charset=utf-8' }
@@ -145,8 +144,16 @@ async function enqueue(rest: Rest, ids: readonly string[]): Promise<void> {
 }
 
 /**
- * Ouvre la vague du jeudi, ou rend celle qu'un autre réveil vient d'ouvrir.
- * `created` distingue les deux : seul l'ouvreur crée les parties.
+ * Ouvre une vague **à l'instant présent**, ou rend celle qu'un autre réveil
+ * vient d'ouvrir. `created` distingue les deux : seul l'ouvreur crée les parties.
+ *
+ * Une vague commence quand elle est ouverte, et non au jeudi qu'elle vise : le
+ * cron du jeudi l'ouvre à minuit, un administrateur peut l'ouvrir un mardi. Le
+ * calendrier ne décide plus que du réveil automatique.
+ *
+ * Deux réveils concurrents ne produisant plus le même `debut`, ce n'est plus lui
+ * qui les départage mais l'index d'unicité de la vague **vivante** (migration
+ * `plateforme_tournoi_vague_a_la_demande`) : le perdant relit celle qui existe.
  *
  * **La vague naît `planifiee`.** Née `en_cours`, elle serait close à vide par un
  * réveil concurrent : celui-ci ne la crée pas, appelle la clôture, ne voit
@@ -156,15 +163,14 @@ async function enqueue(rest: Rest, ids: readonly string[]): Promise<void> {
  */
 async function ensureWave(
   rest: Rest,
-  window: WaveWindow,
+  now: Date,
 ): Promise<{ wave: WaveDbRow; created: boolean }> {
-  const debut = window.start.toISOString()
   try {
     const [created] = await rest.insert<WaveDbRow>(
       'vagues',
       [{
-        debut,
-        fin: window.end.toISOString(),
+        debut: now.toISOString(),
+        fin: new Date(now.getTime() + WAVE_DURATION_MS).toISOString(),
         graine: crypto.randomUUID(),
         statut: 'planifiee',
       }],
@@ -176,10 +182,24 @@ async function ensureWave(
   }
 
   const [existing] = await rest.select<WaveDbRow>(
-    `vagues?debut=eq.${encodeURIComponent(debut)}&select=id,debut,fin,graine,statut&limit=1`,
+    'vagues?statut=in.(planifiee,en_cours)&select=id,debut,fin,graine,statut&limit=1',
   )
   if (!existing) throw new Error('Vague introuvable après un conflit d’unicité.')
   return { wave: existing, created: false }
+}
+
+/**
+ * Une vague a-t-elle déjà été ouverte depuis cet instant ?
+ *
+ * C'est ce qui empêche le cron de rouvrir une vague chaque minute de la fenêtre
+ * du jeudi une fois la première close. L'index d'unicité n'y suffit plus : il ne
+ * borne que les vagues vivantes.
+ */
+async function waveOpenedSince(rest: Rest, since: Date): Promise<boolean> {
+  const [row] = await rest.select<{ id: string }>(
+    `vagues?debut=gte.${encodeURIComponent(since.toISOString())}&select=id&limit=1`,
+  )
+  return row !== undefined
 }
 
 /**
@@ -575,17 +595,13 @@ Deno.serve(async (request: Request): Promise<Response> => {
   const rest = createRest({ url: supabaseUrl, serviceKey })
   const now = new Date()
   const window = waveWindowAt(now)
-  // `force` ne déplace pas l'horloge : il ouvre la fenêtre. La vague visée reste
-  // celle que `waveWindowAt` désigne — le jeudi en cours ou le prochain —, si
-  // bien qu'un déclenchement forcé et le réveil du jeudi parlent de la même.
-  const windowOpen = window.inWindow || force
   const report: Record<string, unknown> = {
     ok: true,
     declenchement: caller.kind === 'service' ? 'cron' : 'administrateur',
     force,
     now: now.toISOString(),
-    fenetre: window.inWindow ? 'ouverte' : force ? 'fermée (forcée)' : 'fermée',
-    vague: window.waveDay,
+    fenetre: window.inWindow ? 'ouverte' : 'fermée',
+    prochain_jeudi: window.waveDay,
   }
 
   const bots = await selectAll<BotDbRow>(rest, `bots?select=${BOT_COLUMNS}&order=id.asc`)
@@ -618,13 +634,38 @@ Deno.serve(async (request: Request): Promise<Response> => {
   report.qualifications = await runQualifications(rest, bots, now)
   report.remises_en_file = await requeueStaleGames(rest, now)
 
-  if (!windowOpen) {
-    report.prochaine_vague = window.start.toISOString()
+  // Une vague vivante se poursuit : on la reprend là où elle en est, quel que
+  // soit le jour. Le calendrier ne décide que de l'ouverture, jamais de la
+  // conduite d'une vague déjà ouverte.
+  if (running) {
+    report.vague_id = running.id
+    if (running.statut === 'planifiee') {
+      report.ouverture = await createWaveGames(rest, running, bots)
+      running.statut = 'en_cours'
+    } else {
+      report.ouverture = 'déjà ouverte'
+    }
+    const reprise = await closeWaveIfDone(rest, running, bots, false)
+    report.cloture = reprise
+    if (reprise.closed) {
+      report.courriels = await requestWaveMail(supabaseUrl, serviceKey, running.id)
+    }
     return json(report)
   }
 
-  const { wave, created } = await ensureWave(rest, window)
+  // Aucune vague vivante. Le cron n'en ouvre une que dans la fenêtre du jeudi,
+  // et une seule par fenêtre ; `force` en ouvre une **maintenant**, sans
+  // attendre le jeudi — c'est tout ce qu'il fait.
+  if (!force) {
+    if (!window.inWindow || (await waveOpenedSince(rest, window.start))) {
+      report.prochaine_vague = window.start.toISOString()
+      return json(report)
+    }
+  }
+
+  const { wave, created } = await ensureWave(rest, now)
   report.vague_id = wave.id
+  report.vague_ouverte_le = wave.debut
   // Une vague encore `planifiee` que ce réveil n'a pas créée est celle d'un
   // ouvreur mort en chemin : la création étant rejouable, on la reprend.
   if (created || wave.statut === 'planifiee') {

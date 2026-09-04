@@ -1,4 +1,5 @@
 import { createHashRouter, Navigate, RouterProvider } from 'react-router'
+import { AdminScreen } from './AdminScreen'
 import { LeaderboardScreen } from './LeaderboardScreen'
 import { LoginScreen } from './LoginScreen'
 import { MyBotsScreen } from './MyBotsScreen'
@@ -35,6 +36,7 @@ const router = createHashRouter([
       { path: 'connexion', element: <LoginScreen /> },
       { path: 'mes-ia', element: <MyBotsScreen /> },
       { path: 'mes-parties', element: <MyGamesScreen /> },
+      { path: 'admin', element: <AdminScreen /> },
       {
         path: '*',
         element: <Navigate to={TOURNAMENT_PATHS.leaderboard} replace />,

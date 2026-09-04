@@ -22,15 +22,15 @@
  * latence, code HTTP, coup rendu, erreur. C'est ce que l'auteur d'un bot vient
  * lire après une défaite, et rien d'autre ne le lui dira.
  *
- * **Hors de la fenêtre du jeudi, la fonction ne se tait pas : elle ne joue que
- * les qualifications**, qui n'appartiennent à aucune vague et que l'histoire 14
- * veut immédiates. Une partie de vague dépilée hors fenêtre est simplement
- * remise en attente.
+ * **Le calendrier ne le concerne pas.** Une partie dépilée se joue, qu'elle
+ * appartienne à une vague ou à une qualification : une vague n'existe que parce
+ * qu'elle a été ouverte — par le cron du jeudi ou à la main —, et une vague
+ * ouverte est faite pour être jouée. C'est l'ordonnanceur qui décide d'en
+ * ouvrir une, jamais l'arbitre de la retenir.
  *
  * **Deux appelants** : `pg_cron`, qui présente la clé de service, et un
  * administrateur connecté, qui déclenche le même tour à la main et reçoit le
- * même compte rendu (`_shared/platformAuth.ts`). Lui seul peut demander
- * `force`, qui fait jouer les parties de vague hors du jeudi.
+ * même compte rendu (`_shared/platformAuth.ts`).
  */
 import { callBot } from '../_shared/botClient.ts'
 import type { BotCallResult } from '../_shared/botClient.ts'
@@ -62,9 +62,6 @@ const JSON_HEADERS = { 'content-type': 'application/json; charset=utf-8' }
 /** Attente d'un message dont l'IA tient déjà ses deux appels. */
 const BUSY_RETRY_S = 2
 
-/** Attente d'un message de vague dépilé hors de la fenêtre du jeudi. */
-const OUT_OF_WAVE_RETRY_S = 60
-
 type QueueMessage = { msg_id: number; tentatives: number; partie_id: string }
 
 type GameDbRow = {
@@ -87,7 +84,6 @@ type Verdict =
   | 'coup joué'
   | 'partie terminée'
   | 'IA occupée'
-  | 'hors fenêtre'
   | 'partie absente'
   | 'écriture périmée'
   | 'erreur'
@@ -157,7 +153,6 @@ async function playOneMove(
   rest: Rest,
   message: QueueMessage,
   now: () => Date,
-  qualificationsOnly: boolean,
 ): Promise<Verdict> {
   const [row] = await rest.select<GameDbRow>(
     `parties?id=eq.${message.partie_id}` +
@@ -171,17 +166,6 @@ async function playOneMove(
     await rest.rpc('file_coups_supprimer', { msg: message.msg_id })
     return 'partie terminée'
   }
-  // Hors fenêtre, seules les qualifications se jouent : elles n'appartiennent à
-  // aucune vague et l'histoire 14 les veut immédiates. Une partie de vague
-  // attend son jeudi plutôt que d'être perdue.
-  if (qualificationsOnly && row.vague_id !== null) {
-    await rest.rpc('file_coups_replanifier', {
-      msg: message.msg_id,
-      delai_s: OUT_OF_WAVE_RETRY_S,
-    })
-    return 'hors fenêtre'
-  }
-
   const stored = storedOf(row)
   const step = planGameStep(stored)
 
@@ -283,11 +267,6 @@ Deno.serve(async (request: Request): Promise<Response> => {
 
   const now = new Date(startedAt)
   const window = waveWindowAt(now)
-  // Hors fenêtre, le tour ne s'arrête pas : il ne joue que les qualifications,
-  // qui n'attendent pas le jeudi (histoire 14). `force`, réservé à un
-  // administrateur, fait jouer aussi les parties de vague : c'est le seul moyen
-  // d'éprouver une vague un autre jour que le jeudi.
-  const qualificationsOnly = !window.inWindow && !force
 
   const rest = createRest({ url: supabaseUrl, serviceKey })
   // Les jetons d'une invocation morte ne doivent pas attendre qu'une autre
@@ -306,7 +285,7 @@ Deno.serve(async (request: Request): Promise<Response> => {
 
     const played = await Promise.all(
       messages.map((message) =>
-        playOneMove(rest, message, () => new Date(), qualificationsOnly).catch((error): Verdict => {
+        playOneMove(rest, message, () => new Date()).catch((error): Verdict => {
           // Une partie qui échoue ne doit pas emporter les sept autres. Son
           // message n'est ni supprimé ni replanifié : il redeviendra visible à
           // l'expiration de son invisibilité, jeton d'appel déjà périmé.
@@ -319,23 +298,17 @@ Deno.serve(async (request: Request): Promise<Response> => {
       verdicts[verdict] = (verdicts[verdict] ?? 0) + 1
     }
 
-    // Rien que des messages qui attendent — une IA occupée, ou le jeudi :
-    // inutile de tourner en boucle sur eux, ils reviendront visibles d'eux-mêmes.
-    if (
-      played.every(
-        (verdict) => verdict === 'IA occupée' || verdict === 'hors fenêtre',
-      )
-    ) break
+    // Rien que des messages qui attendent une IA occupée : inutile de tourner
+    // en boucle sur eux, ils redeviendront visibles d'eux-mêmes.
+    if (played.every((verdict) => verdict === 'IA occupée')) break
   }
 
   return json({
     ok: true,
     declenchement: caller.kind === 'service' ? 'cron' : 'administrateur',
     force,
-    fenetre: qualificationsOnly
-      ? 'fermée (qualifications seules)'
-      : window.inWindow ? 'ouverte' : 'fermée (forcée)',
-    vague: window.waveDay,
+    fenetre: window.inWindow ? 'ouverte' : 'fermée',
+    prochain_jeudi: window.waveDay,
     jetons_purges: purges,
     lots: batches,
     verdicts,
