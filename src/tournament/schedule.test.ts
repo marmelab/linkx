@@ -130,3 +130,21 @@ describe('avancement d’une vague', () => {
     expect(waveProgress(3, 0)).toBeNull()
   })
 })
+
+describe('vague en cours d’ouverture', () => {
+  const fenetre = {
+    debut: '2026-09-10T00:00:00+02:00',
+    fin: '2026-09-10T12:00:00+02:00',
+  }
+  const jeudiMatin = Date.parse('2026-09-10T00:00:10+02:00')
+
+  it('compte une vague « planifiee » : elle naît ainsi avant que ses parties existent', () => {
+    const vague = { id: 'v1', ...fenetre, statut: 'planifiee' } as WaveRow
+    expect(openWave([vague], jeudiMatin)?.id).toBe('v1')
+  })
+
+  it('ne compte pas une vague terminée, même dans sa fenêtre', () => {
+    const vague = { id: 'v1', ...fenetre, statut: 'terminee' } as WaveRow
+    expect(openWave([vague], jeudiMatin)).toBeNull()
+  })
+})

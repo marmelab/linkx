@@ -186,10 +186,18 @@ export function formatParisDateTime(instant: number): string {
 }
 
 /**
- * La vague réellement ouverte : une **ligne** au statut `en_cours`, dans sa
- * fenêtre. Le calendrier seul ne suffit pas — l'ordonnanceur peut être arrêté,
- * et une vague close avant midi resterait « en cours » jusqu'à midi.
+ * La vague réellement ouverte : une **ligne**, dans sa fenêtre, au statut
+ * `en_cours` ou `planifiee`. Le calendrier seul ne suffit pas — l'ordonnanceur
+ * peut être arrêté, et une vague close avant midi resterait « en cours »
+ * jusqu'à midi.
+ *
+ * `planifiee` compte parce qu'une vague naît ainsi et ne passe `en_cours`
+ * qu'une fois ses centaines de parties créées : sans elle, l'écran annoncerait
+ * « aucune vague » pendant les quelques secondes de cette création, juste après
+ * minuit — l'instant où l'on regarde.
  */
+const OPEN_WAVE_STATUSES: readonly string[] = ['en_cours', 'planifiee']
+
 export function openWave(
   waves: readonly WaveRow[],
   now: number,
@@ -197,7 +205,7 @@ export function openWave(
   return (
     waves.find(
       (wave) =>
-        wave.statut === 'en_cours' &&
+        OPEN_WAVE_STATUSES.includes(wave.statut) &&
         Date.parse(wave.debut) <= now &&
         now < Date.parse(wave.fin),
     ) ?? null
