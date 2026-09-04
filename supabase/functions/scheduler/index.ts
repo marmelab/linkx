@@ -31,11 +31,22 @@
  * échoue en 23505, et cet échec **est** le verrou. Une vague naît `planifiee` et
  * ne passe `en_cours` qu'une fois ses parties créées, sans quoi un réveil
  * concurrent la clôrait à vide avant qu'aucune rencontre n'existe.
+ *
+ * **Deux appelants** : `pg_cron`, qui présente la clé de service, et un
+ * administrateur connecté, qui déclenche le même réveil à la main et reçoit le
+ * même compte rendu (`_shared/platformAuth.ts`). Lui seul peut demander
+ * `force`, qui traite l'instant comme s'il tombait dans la fenêtre du jeudi :
+ * la vague s'ouvre, avance et se clôt un autre jour. C'est ce qui rend la
+ * plateforme éprouvable sans attendre un jeudi, et c'est une capacité réelle,
+ * tracée dans le compte rendu et dans le journal de la fonction.
  */
-import { essaiInstant, readJsonBody } from '../_shared/essaiLocal.ts'
 import { moveCountOf, interruptMutation } from '../_shared/gameTick.ts'
 import type { StoredGame } from '../_shared/gameTick.ts'
-import { fromPlatform } from '../_shared/platformAuth.ts'
+import {
+  authorizePlatformCall,
+  forceAsked,
+  readJsonBody,
+} from '../_shared/platformAuth.ts'
 import type { GameOutcome, OutcomeReason } from '../_shared/referee.ts'
 import { UNIQUE_VIOLATION, RestError, createRest } from '../_shared/rest.ts'
 import type { Rest } from '../_shared/rest.ts'
@@ -544,17 +555,36 @@ Deno.serve(async (request: Request): Promise<Response> => {
   if (!serviceKey || !supabaseUrl) {
     return json({ ok: false, message: 'Service mal configuré.' }, 500)
   }
-  if (!fromPlatform(request, serviceKey)) {
+  const anonKey = Deno.env.get('SUPABASE_ANON_KEY') ?? ''
+  const body = await readJsonBody(request)
+  const caller = await authorizePlatformCall(request, {
+    supabaseUrl,
+    anonKey,
+    serviceKey,
+  })
+  if (!caller) {
     return json({ ok: false, message: 'Réservé à la plateforme.' }, 401)
+  }
+  const force = forceAsked(body, caller)
+  if (caller.kind === 'admin') {
+    console.warn(
+      `scheduler déclenché à la main par ${caller.userId}${force ? ', force' : ''}.`,
+    )
   }
 
   const rest = createRest({ url: supabaseUrl, serviceKey })
-  const now = essaiInstant(await readJsonBody(request)) ?? new Date()
+  const now = new Date()
   const window = waveWindowAt(now)
+  // `force` ne déplace pas l'horloge : il ouvre la fenêtre. La vague visée reste
+  // celle que `waveWindowAt` désigne — le jeudi en cours ou le prochain —, si
+  // bien qu'un déclenchement forcé et le réveil du jeudi parlent de la même.
+  const windowOpen = window.inWindow || force
   const report: Record<string, unknown> = {
     ok: true,
+    declenchement: caller.kind === 'service' ? 'cron' : 'administrateur',
+    force,
     now: now.toISOString(),
-    fenetre: window.inWindow ? 'ouverte' : 'fermée',
+    fenetre: window.inWindow ? 'ouverte' : force ? 'fermée (forcée)' : 'fermée',
     vague: window.waveDay,
   }
 
@@ -588,7 +618,7 @@ Deno.serve(async (request: Request): Promise<Response> => {
   report.qualifications = await runQualifications(rest, bots, now)
   report.remises_en_file = await requeueStaleGames(rest, now)
 
-  if (!window.inWindow) {
+  if (!windowOpen) {
     report.prochaine_vague = window.start.toISOString()
     return json(report)
   }

@@ -431,11 +431,12 @@ verify_jwt = false
 # fonctions exigent donc la clé de service. Hors de la fenêtre du jeudi, elles
 # ne mènent que les qualifications, qui n'attendent pas la vague (histoire 14).
 #
-# Deux entrées d'essai, fermées par défaut et décrites dans
-# `_shared/essaiLocal.ts` : TOURNOI_ESSAI_HORLOGE laisse ces deux fonctions lire
-# l'instant dans le corps de la requête, TOURNOI_ESSAI_ADRESSES dérive des hôtes
-# nommément listés vers un service local. Elles ne se posent qu'en local, par
-# `supabase functions serve --env-file`, jamais sur un projet distant.
+# Second appelant, à côté du cron : un administrateur connecté — une ligne de
+# `public.administrateurs` — déclenche le même réveil à la main et reçoit le
+# même compte rendu. Il est le seul à pouvoir demander `force` dans le corps,
+# qui ouvre la fenêtre du jeudi hors du jeudi. `verify_jwt` reste à false : la
+# clé de service n'est pas un jeton d'utilisateur, et les deux chemins sont
+# vérifiés par la fonction elle-même (`_shared/platformAuth.ts`).
 [functions.scheduler]
 enabled = true
 verify_jwt = false

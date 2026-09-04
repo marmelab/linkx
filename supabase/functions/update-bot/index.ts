@@ -11,7 +11,18 @@
  * Comme `register-bot`, elle ne décode jamais le jeton elle-même : seul
  * `/auth/v1/user` sait s'il est signé, non révoqué et non expiré. Et elle ne
  * fait jamais confiance au corps de la requête pour savoir **qui** demande.
+ *
+ * Ce qui se décide — quelles transitions sont ouvertes, et ce que chacune écrit
+ * — vit dans `_shared/botStatus.ts`, pur et testé sans base.
  */
+import {
+  STATUS_MESSAGES,
+  checkTransition,
+  isRequestable,
+  statusUpdate,
+} from '../_shared/botStatus.ts'
+import type { BotStatus } from '../_shared/botStatus.ts'
+import { currentUserId } from '../_shared/platformAuth.ts'
 import { createRest } from '../_shared/rest.ts'
 
 const CORS_HEADERS = {
@@ -25,12 +36,7 @@ const JSON_HEADERS = {
   'content-type': 'application/json; charset=utf-8',
 }
 
-type BotStatus = 'en_attente' | 'active' | 'sommeil' | 'retiree'
-
-/** Les deux seuls statuts qu'un auteur peut demander. */
-const REQUESTABLE: readonly BotStatus[] = ['retiree', 'en_attente']
-
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+const UUID =/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 type Field = 'bot' | 'status'
 
@@ -40,59 +46,6 @@ function json(body: unknown, status = 200): Response {
 
 function refuse(message: string, status: number, field: Field | null = null) {
   return json({ ok: false, field, message }, status)
-}
-
-/** Identité de l'appelant, telle que le service d'authentification la confirme. */
-async function currentUserId(
-  request: Request,
-  supabaseUrl: string,
-  anonKey: string,
-): Promise<string | null> {
-  const authorization = request.headers.get('authorization') ?? ''
-  if (!/^Bearer\s+\S+$/i.test(authorization)) return null
-
-  const response = await fetch(`${supabaseUrl}/auth/v1/user`, {
-    headers: { authorization, apikey: anonKey },
-  })
-  if (!response.ok) return null
-  const user = (await response.json()) as { id?: unknown }
-  return typeof user.id === 'string' ? user.id : null
-}
-
-/**
- * Ce qu'une transition demandée vaut, et pourquoi elle est refusée le cas
- * échéant. Deux règles, et rien d'autre :
- *
- * - **`retiree` est terminal.** « Retirer une IA est possible à tout moment »
- *   (histoire 14), depuis n'importe quel état vivant — une IA restée en
- *   qualification faute d'adresse joignable doit pouvoir disparaître, sans quoi
- *   son nom reste réservé à jamais. Mais elle ne revient pas : réactiver, ce
- *   serait revenir sur des classements déjà calculés.
- * - **`en_attente` ne s'atteint que depuis `sommeil`.** C'est la réactivation
- *   de l'histoire 15, qui repasse par la qualification de l'histoire 14. Aucune
- *   demande ne mène à `active` : cela reste le verdict de l'ordonnanceur.
- */
-function checkTransition(
-  from: BotStatus,
-  to: BotStatus,
-): { ok: true } | { ok: false; message: string } {
-  if (from === to) {
-    return { ok: false, message: 'Cette IA est déjà dans cet état.' }
-  }
-  if (from === 'retiree') {
-    return {
-      ok: false,
-      message:
-        'Une IA retirée ne revient pas : déclarez-en une nouvelle si vous voulez la remettre au tournoi.',
-    }
-  }
-  if (to === 'retiree') return { ok: true }
-  if (from === 'sommeil') return { ok: true }
-  return {
-    ok: false,
-    message:
-      'Seule une IA en sommeil se réactive : celle-ci ne l’est pas, il n’y a rien à relancer.',
-  }
 }
 
 Deno.serve(async (request: Request): Promise<Response> => {
@@ -129,14 +82,14 @@ Deno.serve(async (request: Request): Promise<Response> => {
   }
 
   const asked = typeof fields?.status === 'string' ? fields.status : ''
-  if (!REQUESTABLE.includes(asked as BotStatus)) {
+  if (!isRequestable(asked)) {
     return refuse(
       'État demandé inconnu : une IA se retire ou se réactive, rien d’autre.',
       400,
       'status',
     )
   }
-  const status = asked as BotStatus
+  const status = asked
 
   const rest = createRest({ url: supabaseUrl, serviceKey })
 
@@ -161,20 +114,12 @@ Deno.serve(async (request: Request): Promise<Response> => {
 
   // Écriture conditionnée à l'état lu : deux onglets ouverts sur la même IA ne
   // peuvent pas la retirer et la réactiver dans un ordre imprévisible.
-  //
-  // Seul le statut change. L'Elo n'est **pas** remis à 1200 : une IA réactivée
-  // reprend le classement qui avait été gelé (histoire 15). Le compteur de
-  // vagues échouées, lui, repart de zéro — il a rempli son office en prononçant
-  // la mise en sommeil, et le laisser à trois ferait redormir l'IA à son
-  // premier échec de vague, avant même qu'elle ait eu sa chance.
   let updated: Array<{ id: string; nom: string; statut: BotStatus }>
   try {
     updated = await rest.update(
       'bots',
       `id=eq.${botId}&proprietaire=eq.${utilisateur}&statut=eq.${bot.statut}`,
-      status === 'en_attente'
-        ? { statut: status, vagues_echouees_consecutives: 0 }
-        : { statut: status },
+      statusUpdate(status),
       'id,nom,statut',
     )
   } catch {
@@ -188,12 +133,5 @@ Deno.serve(async (request: Request): Promise<Response> => {
     )
   }
 
-  return json({
-    ok: true,
-    bot: updated[0],
-    message:
-      status === 'retiree'
-        ? 'IA retirée. Elle sort des appariements dès maintenant ; ses parties passées restent consultables.'
-        : 'IA réactivée. Elle repasse par la qualification contre l’IA de la maison et reprend au classement qui avait été gelé.',
-  })
+  return json({ ok: true, bot: updated[0], message: STATUS_MESSAGES[status] })
 })

@@ -9,8 +9,8 @@ import {
 } from './wavePlan.ts'
 import type { BotBefore, BotRow, WaveGameRecord } from './wavePlan.ts'
 import { INITIAL_RATING } from './elo.ts'
-import { closeInterruptedGame } from './referee.ts'
-import type { GameOutcome } from './referee.ts'
+import { TECHNICAL_REASONS, closeInterruptedGame } from './referee.ts'
+import type { GameOutcome, OutcomeReason } from './referee.ts'
 
 function bot(id: string, overrides: Partial<BotRow> = {}): BotRow {
   return {
@@ -264,5 +264,182 @@ describe('clôture d’une vague', () => {
     ]
     const start = [before('a', { ratedGames: 3 }), before('b')]
     expect(closeWave(start, games)).toEqual(closeWave(start, games))
+  })
+})
+
+/**
+ * Mise en sommeil (histoire 15). C'est le comportement le plus lourd de
+ * conséquences pour un participant — son IA sort des appariements —, et le
+ * moins visible : il ne se prononce qu'à la clôture, après trois vagues.
+ */
+describe('mise en sommeil', () => {
+  const ORDINAIRES: readonly OutcomeReason[] = [
+    'connection',
+    'stalemate',
+    'draw',
+    'interrupted',
+  ]
+
+  it('ne compte comme technique que les motifs de TECHNICAL_REASONS', () => {
+    for (const reason of TECHNICAL_REASONS) {
+      const closures = closeWave(
+        [before('a'), before('b')],
+        [{ blue: 'a', white: 'b', winner: 'white', reason, offender: 'a' }],
+      )
+      const a = closures.find((closure) => closure.bot === 'a')
+      expect(a?.technicalLosses, reason).toBe(1)
+      expect(a?.failureStreak, reason).toBe(1)
+    }
+  })
+
+  // Une fin de partie ordinaire n'est pas une faute, même si la ligne portait
+  // par erreur une IA fautive : c'est le motif qui décide, et lui seul.
+  it('ne retient aucune fin de partie ordinaire, fût-elle imputée', () => {
+    for (const reason of ORDINAIRES) {
+      const closures = closeWave(
+        [before('a', { failureStreak: 2 }), before('b')],
+        [{ blue: 'a', white: 'b', winner: 'white', reason, offender: 'a' }],
+      )
+      const a = closures.find((closure) => closure.bot === 'a')
+      expect(a?.technicalLosses, reason).toBe(0)
+      expect(a?.failureStreak, reason).toBe(0)
+      expect(a?.asleep, reason).toBe(false)
+    }
+  })
+
+  // « La totalité, et non une majorité, parce qu'une IA qui répond parfois est
+  // une IA vivante. » Neuf échecs sur dix remettent donc la série à zéro.
+  it('remet la série à zéro dès une seule partie non technique', () => {
+    const games: WaveGameRecord[] = [
+      ...Array.from({ length: 9 }, () => technicalLoss('a', 'b')),
+      { blue: 'b', white: 'a', winner: 'blue', reason: 'connection', offender: null },
+    ]
+    const a = closeWave([before('a', { failureStreak: 2 }), before('b')], games)
+      .find((closure) => closure.bot === 'a')
+    expect(a?.technicalLosses).toBe(9)
+    expect(a?.failureStreak).toBe(0)
+    expect(a?.asleep).toBe(false)
+  })
+
+  it('endort à la troisième vague entièrement échouée, trois vagues de suite', () => {
+    const games = [technicalLoss('a', 'b'), technicalLoss('a', 'b')]
+    let streak = 0
+    const observed: Array<{ streak: number; asleep: boolean }> = []
+    for (let vague = 0; vague < SLEEP_WAVES; vague += 1) {
+      const a = closeWave([before('a', { failureStreak: streak }), before('b')], games)
+        .find((closure) => closure.bot === 'a')
+      streak = a?.failureStreak ?? 0
+      observed.push({ streak, asleep: a?.asleep ?? false })
+    }
+    expect(observed).toEqual([
+      { streak: 1, asleep: false },
+      { streak: 2, asleep: false },
+      { streak: 3, asleep: true },
+    ])
+  })
+
+  // La série compte les vagues **consécutives** : une vague vivante au milieu
+  // efface les deux précédentes, et il en faut trois nouvelles pour endormir.
+  it('ne cumule pas des vagues échouées séparées par une vague vivante', () => {
+    const vivante: WaveGameRecord[] = [
+      { blue: 'a', white: 'b', winner: 'blue', reason: 'connection', offender: null },
+    ]
+    const a = closeWave([before('a', { failureStreak: 2 }), before('b')], vivante)
+      .find((closure) => closure.bot === 'a')
+    expect(a?.failureStreak).toBe(0)
+
+    const ensuite = closeWave(
+      [before('a', { failureStreak: a?.failureStreak ?? 0 }), before('b')],
+      [technicalLoss('a', 'b')],
+    ).find((closure) => closure.bot === 'a')
+    expect(ensuite?.asleep).toBe(false)
+  })
+
+  it('gèle le classement de l’IA endormie à sa dernière valeur', () => {
+    const a = closeWave(
+      [before('a', { rating: 1180, failureStreak: SLEEP_WAVES - 1 }), before('b')],
+      [technicalLoss('a', 'b'), technicalLoss('a', 'b')],
+    ).find((closure) => closure.bot === 'a')
+    expect(a?.asleep).toBe(true)
+    expect(a?.eloBefore).toBe(1180)
+    // Elle a perdu ces parties : le gel porte sur la valeur d'après la vague,
+    // et surtout pas sur un retour à 1200.
+    expect(a?.elo).toBeLessThan(1180)
+    expect(a?.elo).not.toBe(INITIAL_RATING)
+
+    // Endormie, elle ne joue plus : plus aucune vague ne réécrit son Elo.
+    const gele = a?.elo ?? 0
+    const suivante = closeWave(
+      [before('a', { rating: gele, statut: 'sommeil' }), before('b')],
+      [{ blue: 'b', white: 'c', winner: 'blue', reason: 'connection', offender: null }],
+    )
+    expect(suivante.map((closure) => closure.bot)).not.toContain('a')
+  })
+
+  it('sort l’IA endormie des appariements de la vague suivante', () => {
+    const plan = planWaveOpening(
+      [bot('a', { statut: 'sommeil' }), bot('b'), bot('c')],
+      'graine',
+    )
+    expect(plan.botIds).toEqual(['b', 'c'])
+    expect(plan.games.some((game) => game.blue === 'a' || game.white === 'a'))
+      .toBe(false)
+  })
+
+  /*
+   * Une IA sans aucune partie dans la vague — le cas de l'IA seule active — ne
+   * reçoit **aucun bilan** : elle n'a rien échoué, sa série ne monte pas ; elle
+   * n'a rien prouvé non plus, sa série ne retombe pas ; et faute de partie
+   * classée, son Elo ne bouge pas. C'est le seul traitement qui ne fasse pas
+   * dépendre le sort d'une IA de ce qui est arrivé aux autres.
+   */
+  it('ne prononce rien sur une IA qui n’a joué aucune partie de la vague', () => {
+    const closures = closeWave(
+      [before('a', { failureStreak: SLEEP_WAVES - 1 }), before('b'), before('c')],
+      [{ blue: 'b', white: 'c', winner: 'blue', reason: 'connection', offender: null }],
+    )
+    expect(closures.map((closure) => closure.bot)).toEqual(['b', 'c'])
+    expect(closures.find((closure) => closure.bot === 'a')).toBeUndefined()
+  })
+
+  it('n’endort pas l’adversaire d’une IA muette', () => {
+    const closures = closeWave(
+      [before('a', { failureStreak: SLEEP_WAVES - 1 }), before('b', { failureStreak: 2 })],
+      [technicalLoss('a', 'b'), technicalLoss('a', 'b')],
+    )
+    const b = closures.find((closure) => closure.bot === 'b')
+    expect(b?.technicalLosses).toBe(0)
+    expect(b?.failureStreak).toBe(0)
+    expect(b?.asleep).toBe(false)
+  })
+})
+
+/**
+ * Écart corrigé : `BotBefore.statut` était transmis à `closeWave` et jamais lu.
+ * Une IA retirée pendant la vague — ses parties continuent de se jouer — se
+ * retrouvait donc endormie par la clôture, ce qui la sortait de `retiree` et
+ * rouvrait à son auteur une réactivation que l'histoire 14 interdit.
+ */
+describe('sommeil et statut de l’IA', () => {
+  const echouee = [technicalLoss('a', 'b'), technicalLoss('a', 'b')]
+  const derniere = { failureStreak: SLEEP_WAVES - 1 }
+
+  it('endort une IA encore active', () => {
+    const a = closeWave(
+      [before('a', { ...derniere, statut: 'active' }), before('b')],
+      echouee,
+    ).find((closure) => closure.bot === 'a')
+    expect(a?.asleep).toBe(true)
+  })
+
+  it('n’endort pas une IA retirée pendant la vague : le retrait est terminal', () => {
+    const a = closeWave(
+      [before('a', { ...derniere, statut: 'retiree' }), before('b')],
+      echouee,
+    ).find((closure) => closure.bot === 'a')
+    expect(a?.failureStreak).toBe(SLEEP_WAVES)
+    expect(a?.asleep).toBe(false)
+    // Son bilan de vague est calculé quand même : les parties ont eu lieu.
+    expect(a?.technicalLosses).toBe(2)
   })
 })

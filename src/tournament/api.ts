@@ -217,6 +217,23 @@ export async function fetchGameEvents(gameId: string): Promise<GameEventRow[]> {
   )
 }
 
+/**
+ * L'utilisateur connecté est-il administrateur ?
+ *
+ * On le demande à la base plutôt qu'à une fonction : la politique de
+ * `administrateurs` ne rend une ligne qu'à un administrateur, si bien que la
+ * réponse **est** le droit. Un utilisateur ordinaire reçoit une liste vide, pas
+ * un refus, et n'apprend rien de plus.
+ */
+export async function isAdministrator(): Promise<boolean> {
+  const { data, error } = await tournamentClient()
+    .from('administrateurs')
+    .select('utilisateur_id')
+    .limit(1)
+  if (error) return false
+  return (data ?? []).length > 0
+}
+
 /* Authentification ------------------------------------------------------- */
 
 export async function currentSession(): Promise<Session | null> {
@@ -309,4 +326,18 @@ export function setBotStatus(
   status: 'retiree' | 'en_attente',
 ): Promise<EdgeReply> {
   return callFunction('update-bot', { bot: botId, status })
+}
+
+/**
+ * Déclenchement à la main d'un réveil de cron, réservé aux administrateurs.
+ *
+ * Les deux fonctions rendent **le compte rendu du cron**, tel quel : c'est ce
+ * que l'administrateur vient chercher. `force` ouvre la fenêtre du jeudi hors
+ * du jeudi, et n'est honoré que d'un administrateur ; sans lui, le
+ * déclenchement se comporte exactement comme un réveil ordinaire.
+ */
+export type CronFunction = 'scheduler' | 'referee-tick'
+
+export function runCron(name: CronFunction, force: boolean): Promise<EdgeReply> {
+  return callFunction(name, { force })
 }

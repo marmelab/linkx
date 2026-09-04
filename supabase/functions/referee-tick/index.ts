@@ -26,11 +26,15 @@
  * les qualifications**, qui n'appartiennent à aucune vague et que l'histoire 14
  * veut immédiates. Une partie de vague dépilée hors fenêtre est simplement
  * remise en attente.
+ *
+ * **Deux appelants** : `pg_cron`, qui présente la clé de service, et un
+ * administrateur connecté, qui déclenche le même tour à la main et reçoit le
+ * même compte rendu (`_shared/platformAuth.ts`). Lui seul peut demander
+ * `force`, qui fait jouer les parties de vague hors du jeudi.
  */
 import { callBot } from '../_shared/botClient.ts'
 import type { BotCallResult } from '../_shared/botClient.ts'
 import { checkBotAddressResolved } from '../_shared/denoDns.ts'
-import { essaiInstant, essaiTarget, readJsonBody } from '../_shared/essaiLocal.ts'
 import {
   interruptMutation,
   planGameStep,
@@ -38,7 +42,11 @@ import {
   settleMutation,
 } from '../_shared/gameTick.ts'
 import type { GameMutation, StoredGame } from '../_shared/gameTick.ts'
-import { fromPlatform } from '../_shared/platformAuth.ts'
+import {
+  authorizePlatformCall,
+  forceAsked,
+  readJsonBody,
+} from '../_shared/platformAuth.ts'
 import { createRest } from '../_shared/rest.ts'
 import type { Rest } from '../_shared/rest.ts'
 import {
@@ -213,8 +221,7 @@ async function playOneMove(
     result = address.ok
       ? await callBot(
         {
-          // Hors passe d'intégration locale, `essaiTarget` rend toujours `null`.
-          address: essaiTarget(address.host) ?? address.address,
+          address: address.address,
           secret: bot.secret_signature,
           gameId: row.id,
           color: step.color,
@@ -255,15 +262,30 @@ Deno.serve(async (request: Request): Promise<Response> => {
   if (!serviceKey || !supabaseUrl) {
     return json({ ok: false, message: 'Service mal configuré.' }, 500)
   }
-  if (!fromPlatform(request, serviceKey)) {
+  const anonKey = Deno.env.get('SUPABASE_ANON_KEY') ?? ''
+  const body = await readJsonBody(request)
+  const caller = await authorizePlatformCall(request, {
+    supabaseUrl,
+    anonKey,
+    serviceKey,
+  })
+  if (!caller) {
     return json({ ok: false, message: 'Réservé à la plateforme.' }, 401)
   }
+  const force = forceAsked(body, caller)
+  if (caller.kind === 'admin') {
+    console.warn(
+      `referee-tick déclenché à la main par ${caller.userId}${force ? ', force' : ''}.`,
+    )
+  }
 
-  const now = essaiInstant(await readJsonBody(request)) ?? new Date(startedAt)
+  const now = new Date(startedAt)
   const window = waveWindowAt(now)
   // Hors fenêtre, le tour ne s'arrête pas : il ne joue que les qualifications,
-  // qui n'attendent pas le jeudi (histoire 14).
-  const qualificationsOnly = !window.inWindow
+  // qui n'attendent pas le jeudi (histoire 14). `force`, réservé à un
+  // administrateur, fait jouer aussi les parties de vague : c'est le seul moyen
+  // d'éprouver une vague un autre jour que le jeudi.
+  const qualificationsOnly = !window.inWindow && !force
 
   const rest = createRest({ url: supabaseUrl, serviceKey })
   // Les jetons d'une invocation morte ne doivent pas attendre qu'une autre
@@ -306,7 +328,11 @@ Deno.serve(async (request: Request): Promise<Response> => {
 
   return json({
     ok: true,
-    fenetre: window.inWindow ? 'ouverte' : 'fermée (qualifications seules)',
+    declenchement: caller.kind === 'service' ? 'cron' : 'administrateur',
+    force,
+    fenetre: qualificationsOnly
+      ? 'fermée (qualifications seules)'
+      : window.inWindow ? 'ouverte' : 'fermée (forcée)',
     vague: window.waveDay,
     jetons_purges: purges,
     lots: batches,

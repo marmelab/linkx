@@ -11,7 +11,9 @@
  * refusée. C'est le contraire de ce que ce module faisait : il retombait alors
  * sur le seul contrôle d'écriture, c'est-à-dire sur rien du tout pour qui tient
  * son propre DNS — un nom public bien écrit passait sans qu'on sache jamais
- * vers quelle machine il pointe.
+ * vers quelle machine il pointe. **Aucune exception** : il n'existe plus de
+ * liste d'hôtes dispensés de résolution, et le refus des réseaux privés vaut
+ * pour toute adresse, sans variable d'environnement pour l'entrouvrir.
  *
  * **Limite connue : la résolution n'est pas épinglée.** L'adresse retenue ici
  * n'est pas celle qu'emploiera `botClient.ts` : `fetch` résout à nouveau, et un
@@ -30,7 +32,6 @@
  *     `reponse_brute` du journal sont réservées au propriétaire de l'IA appelée
  *     (migration `plateforme_tournoi_journal_prive`).
  */
-import { essaiTarget } from './essaiLocal.ts'
 import {
   ADDRESS_MESSAGES,
   checkBotAddress,
@@ -82,10 +83,6 @@ export async function checkBotAddressResolved(
 ): Promise<AddressVerdict> {
   const verdict = checkBotAddress(raw)
   if (!verdict.ok) return verdict
-  // Hôte d'essai de la passe d'intégration locale : il n'existe dans aucun DNS,
-  // et l'appel sera dérivé vers un service local (`essaiLocal.ts`). Hors essai,
-  // la liste est vide et ce test ne change rien.
-  if (essaiTarget(verdict.host)) return verdict
   if (!resolve) return UNAVAILABLE
   return await checkBotAddressWithDns(raw, resolve)
 }

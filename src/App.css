@@ -313,6 +313,24 @@ a.mini-brand { text-decoration: none; }
 .secret-panel__value { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem; }
 .secret-panel__value code { overflow-wrap: anywhere; }
 
+/* Déclenchement à la main du cron, visible des seuls administrateurs. Le compte
+   rendu est du JSON : il se **replie** plutôt que de défiler, l'histoire 16
+   interdisant tout débordement horizontal jusqu'à 375px. */
+.admin-panel { margin-top: 1.6rem; padding-top: 0.6rem; border-top: 1px solid var(--line); }
+.admin-panel__force { margin: 0.7rem 0 0; color: var(--muted); }
+.admin-panel__force label { display: inline-flex; align-items: center; gap: 0.15rem; }
+.admin-panel__report {
+  margin: 0.8rem 0 0;
+  padding: 0.7rem 0.8rem;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #f2f4f8;
+  font-size: 0.85rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 /* Sous 720px le tableau se **replie en cartes** : une ligne devient un bloc,
    chaque cellule portant son intitulé. C'est ce qui évite le défilement
    horizontal exigé par l'histoire 16 — l'en-tête devient inutile et disparaît.

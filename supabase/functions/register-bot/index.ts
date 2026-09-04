@@ -12,6 +12,7 @@
  * en `en_attente`, et la réponse le dit.
  */
 import { checkBotAddressResolved } from '../_shared/denoDns.ts'
+import { currentUserId } from '../_shared/platformAuth.ts'
 
 const CORS_HEADERS = {
   'access-control-allow-origin': '*',
@@ -50,27 +51,6 @@ function json(body: unknown, status = 200): Response {
 
 function refuse(message: string, status: number, field: Field | null = null) {
   return json({ ok: false, field, message }, status)
-}
-
-/**
- * Identité de l'appelant, telle que le service d'authentification la confirme.
- * Le jeton n'est jamais décodé ici : seul `/auth/v1/user` sait s'il est signé,
- * non révoqué et non expiré.
- */
-async function currentUserId(
-  request: Request,
-  supabaseUrl: string,
-  anonKey: string,
-): Promise<string | null> {
-  const authorization = request.headers.get('authorization') ?? ''
-  if (!/^Bearer\s+\S+$/i.test(authorization)) return null
-
-  const response = await fetch(`${supabaseUrl}/auth/v1/user`, {
-    headers: { authorization, apikey: anonKey },
-  })
-  if (!response.ok) return null
-  const user = (await response.json()) as { id?: unknown }
-  return typeof user.id === 'string' ? user.id : null
 }
 
 function newSecret(): string {

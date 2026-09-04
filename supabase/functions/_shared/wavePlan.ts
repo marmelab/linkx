@@ -229,12 +229,19 @@ export function closeWave(
   }
 
   const streaks = new Map(before.map((bot) => [bot.id, bot.failureStreak]))
+  const statuses = new Map(before.map((bot) => [bot.id, bot.statut]))
 
   return summaries.map((summary) => {
     const faults = technical.get(summary.bot) ?? []
     const total = played.get(summary.bot) ?? 0
     const fullyFailed = total > 0 && faults.length === total
     const streak = fullyFailed ? (streaks.get(summary.bot) ?? 0) + 1 : 0
+    // **Le sommeil ne se prononce que sur une IA encore active.** Retirer son IA
+    // est possible à tout moment (histoire 14), y compris pendant une vague dont
+    // ses parties continuent de se jouer ; sans ce test, la clôture ferait
+    // passer une IA `retiree` en `sommeil` — d'où son auteur pourrait la
+    // réactiver, alors que le retrait est terminal.
+    const asleep = streak >= SLEEP_WAVES && statuses.get(summary.bot) === 'active'
     return {
       bot: summary.bot,
       eloBefore: summary.before,
@@ -247,7 +254,7 @@ export function closeWave(
       technicalLosses: faults.length,
       dominantReason: dominantReasonOf(faults),
       failureStreak: streak,
-      asleep: streak >= SLEEP_WAVES,
+      asleep,
     }
   })
 }

@@ -7,11 +7,13 @@ import {
   fetchBotHistory,
   fetchMyBots,
   fetchMyGames,
+  isAdministrator,
   probeBot,
   registerBot,
+  runCron,
   setBotStatus,
 } from './api'
-import type { ProbeReply, RegisterReply } from './api'
+import type { CronFunction, EdgeReply, ProbeReply, RegisterReply } from './api'
 import { summarizeLastWave } from './botSummary'
 import type { WaveSummary } from './botSummary'
 import { toMyGames } from './games'
@@ -210,6 +212,90 @@ function BotCard({
   )
 }
 
+const CRON_LABELS: Record<CronFunction, string> = {
+  scheduler: 'Lancer l’ordonnanceur',
+  'referee-tick': 'Faire jouer un tour d’arbitrage',
+}
+
+/**
+ * Déclenchement à la main des deux réveils de cron, pour les seuls
+ * administrateurs — la détection est une lecture de `administrateurs`, dont la
+ * politique ne rend une ligne qu'à un membre. Un utilisateur ordinaire ne voit
+ * rien de ce bloc.
+ *
+ * Le compte rendu est celui du cron, rendu tel quel : c'est exactement ce qu'un
+ * administrateur vient chercher, et le résumer en perdrait la substance.
+ */
+function AdminPanel() {
+  const [busy, setBusy] = useState<CronFunction | null>(null)
+  const [force, setForce] = useState(false)
+  const [report, setReport] = useState<{ name: CronFunction; reply: EdgeReply } | null>(
+    null,
+  )
+
+  const run = async (name: CronFunction) => {
+    setBusy(name)
+    setReport(null)
+    try {
+      setReport({ name, reply: await runCron(name, force) })
+    } catch (error) {
+      setReport({
+        name,
+        reply: {
+          ok: false,
+          message: error instanceof Error ? error.message : 'Appel impossible.',
+        },
+      })
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  return (
+    <section className="admin-panel">
+      <h2 className="overline tournament-subtitle">Administration</h2>
+      <p className="tournament-hint">
+        Les deux fonctions que <code>pg_cron</code> réveille chaque minute. Le
+        compte rendu est le même que le sien.
+      </p>
+      <p className="bot-card__actions">
+        {(Object.keys(CRON_LABELS) as CronFunction[]).map((name) => (
+          <button
+            key={name}
+            type="button"
+            className="secondary-button secondary-button--small"
+            onClick={() => run(name)}
+            disabled={busy !== null}
+          >
+            {busy === name ? 'En cours…' : CRON_LABELS[name]}
+          </button>
+        ))}
+      </p>
+      <p className="admin-panel__force">
+        <label>
+          <input
+            type="checkbox"
+            checked={force}
+            onChange={(event) => setForce(event.target.checked)}
+            disabled={busy !== null}
+          />{' '}
+          Hors de la fenêtre du jeudi (<code>force</code>)
+        </label>
+      </p>
+      {report && (
+        <pre
+          className="admin-panel__report"
+          role={report.reply.ok ? 'status' : 'alert'}
+        >
+          {CRON_LABELS[report.name]}
+          {'\n'}
+          {JSON.stringify(report.reply, null, 2)}
+        </pre>
+      )}
+    </section>
+  )
+}
+
 function DeclareForm({ onDeclared }: { onDeclared: () => void }) {
   const [name, setName] = useState('')
   const [url, setUrl] = useState('')
@@ -332,6 +418,12 @@ export function MyBotsScreen() {
     () => (session ? loadMyBots() : PENDING),
     [ready, session?.user.id],
   )
+  // Lecture séparée de la liste des IA : elle ne concerne qu'une poignée de
+  // comptes, et une panne de son côté ne doit pas priver l'auteur de ses IA.
+  const admin = useAsync<boolean>(
+    () => (session ? isAdministrator() : PENDING),
+    [ready, session?.user.id],
+  )
 
   if (ready && !session) return <Navigate to={TOURNAMENT_PATHS.login} replace />
 
@@ -369,6 +461,8 @@ export function MyBotsScreen() {
           de la liste qui suit une déclaration ne doit pas démonter le
           formulaire, qui porte le secret affiché une seule fois. */}
       <DeclareForm onDeclared={state.reload} />
+
+      {admin.data === true && <AdminPanel />}
     </>
   )
 }
