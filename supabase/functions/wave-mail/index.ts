@@ -429,7 +429,13 @@ Deno.serve(async (request: Request): Promise<Response> => {
     return json({ ok: false, message: `Préparation impossible : ${detail}` }, 503)
   }
 
-  const site = baseUrl(Deno.env.get('WAVE_MAIL_SITE_URL') ?? 'https://example.invalid/')
+  // L'adresse publiée porte les trois liens du bilan. Sans elle, ils menaient
+  // tous à `example.invalid` — un courriel parti, lu, et dont chaque lien tombe
+  // en 404, sans que rien ne le signale. Elle rejoint donc les deux autres
+  // variables d'envoi : composée quand même, pour que le compte rendu montre le
+  // courriel tel qu'il serait, mais jamais postée.
+  const siteUrl = Deno.env.get('WAVE_MAIL_SITE_URL') ?? ''
+  const site = baseUrl(siteUrl || 'https://example.invalid/')
   const historyByBot = new Map(history.map((row) => [row.bot_id, row]))
   const input = {
     waveId: wave.id,
@@ -445,15 +451,17 @@ Deno.serve(async (request: Request): Promise<Response> => {
 
   const apiKey = Deno.env.get('RESEND_API_KEY') ?? ''
   const from = Deno.env.get('WAVE_MAIL_FROM') ?? ''
-  if (dryRun || !apiKey || !from) {
+  if (dryRun || !apiKey || !from || !siteUrl) {
     // Sans compte Resend, le dépôt reste utilisable : on compose tout, on
     // n'envoie rien, et le compte rendu dit pourquoi. Aucune réservation n'est
     // prise, pour qu'un envoi ultérieur reste possible.
     const raison = dryRun
       ? 'essai à blanc demandé'
-      : apiKey
-        ? 'WAVE_MAIL_FROM absent'
-        : 'RESEND_API_KEY absent'
+      : !apiKey
+        ? 'RESEND_API_KEY absent'
+        : !from
+          ? 'WAVE_MAIL_FROM absent'
+          : 'WAVE_MAIL_SITE_URL absent : les liens du bilan seraient morts'
     console.warn(
       `wave-mail : aucun envoi (${raison}), ` +
         `${input.recipients.length} destinataire(s) préparé(s).`,
