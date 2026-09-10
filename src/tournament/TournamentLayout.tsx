@@ -1,9 +1,9 @@
+import { skipToken, useQuery } from '@tanstack/react-query'
+import type { UseQueryResult } from '@tanstack/react-query'
 import { NavLink, Outlet } from 'react-router'
 import { isAdministrator, signOut } from './api'
 import { TOURNAMENT_PATHS } from './routes'
 import { useSession } from './session'
-import { pending, useAsync } from './useAsync'
-import type { Async } from './useAsync'
 
 /**
  * Mise en page commune aux quatre écrans : le fond de l'écran d'accueil, une
@@ -24,15 +24,15 @@ const navClass = ({ isActive }: { isActive: boolean }) =>
  * sert les deux.
  */
 export type TournamentContext = {
-  admin: Async<boolean>
+  admin: UseQueryResult<boolean>
 }
 
 export function TournamentLayout() {
-  const { session, ready } = useSession()
-  const admin = useAsync<boolean>(
-    () => (session ? isAdministrator() : pending<boolean>()),
-    [ready, session?.user.id],
-  )
+  const { session } = useSession()
+  const admin = useQuery({
+    queryKey: ['administrateur', session?.user.id],
+    queryFn: session ? isAdministrator : skipToken,
+  })
 
   return (
     <div className="tournament-shell">
@@ -88,13 +88,13 @@ export function TournamentLayout() {
           administrateur croirait avoir perdu ses droits en ne voyant plus son
           entrée. La phrase reste muette sur qui en a : elle ne parle que de la
           lecture. */}
-      {admin.status === 'error' && (
+      {admin.isError && !admin.isFetching && (
         <p className="tournament-shell__notice" role="alert">
           Vos droits n’ont pas pu être vérifiés.{' '}
           <button
             type="button"
             className="secondary-button secondary-button--small"
-            onClick={admin.reload}
+            onClick={() => void admin.refetch()}
           >
             Réessayer
           </button>

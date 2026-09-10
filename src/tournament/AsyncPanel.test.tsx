@@ -1,17 +1,18 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import { AsyncPanel } from './AsyncPanel'
-import type { Async } from './useAsync'
+import type { QueryState } from './AsyncPanel'
 
-const state = <T,>(overrides: Partial<Async<T>>): Async<T> => ({
-  status: 'loading',
-  data: null,
+const state = <T,>(overrides: Partial<QueryState<T>>): QueryState<T> => ({
+  data: undefined,
+  isError: false,
+  isFetching: false,
   error: null,
-  reload: () => {},
+  refetch: () => {},
   ...overrides,
 })
 
-const render = (given: Async<string[]>) =>
+const render = (given: QueryState<string[]>) =>
   renderToStaticMarkup(
     <AsyncPanel state={given}>
       {(data) => <p>{data.length} lignes</p>}
@@ -20,12 +21,14 @@ const render = (given: Async<string[]>) =>
 
 describe('les trois états d’un écran', () => {
   it('annonce le chargement', () => {
-    expect(render(state<string[]>({}))).toContain('Chargement…')
+    expect(render(state<string[]>({ isFetching: true }))).toContain(
+      'Chargement…',
+    )
   })
 
   it('rend une panne réseau avec sa reprise', () => {
     const html = render(
-      state<string[]>({ status: 'error', error: 'Réseau coupé.' }),
+      state<string[]>({ isError: true, error: new Error('Réseau coupé.') }),
     )
     expect(html).toContain('Réseau coupé.')
     expect(html).toContain('Réessayer')
@@ -33,14 +36,31 @@ describe('les trois états d’un écran', () => {
   })
 
   it('passe la main à l’écran dès que la donnée est là', () => {
-    expect(render(state({ status: 'ready', data: ['a', 'b'] }))).toContain(
+    expect(render(state({ data: ['a', 'b'] }))).toContain('2 lignes')
+  })
+
+  it('garde à l’écran ce qu’il montrait pendant une revalidation', () => {
+    expect(render(state({ data: ['a', 'b'], isFetching: true }))).toContain(
       '2 lignes',
     )
   })
 
-  it('traite une donnée absente comme une panne, jamais comme un vide', () => {
-    expect(
-      render(state<string[]>({ status: 'ready', data: null })),
-    ).toContain('Réessayer')
+  it('dit la panne d’une revalidation plutôt que de laisser croire à jour', () => {
+    const html = render(
+      state({ data: ['a'], isError: true, error: new Error('Réseau coupé.') }),
+    )
+    expect(html).toContain('Réessayer')
+    expect(html).not.toContain('1 lignes')
+  })
+
+  it('montre le chargement le temps d’une reprise demandée', () => {
+    const html = render(
+      state<string[]>({
+        isError: true,
+        isFetching: true,
+        error: new Error('Réseau coupé.'),
+      }),
+    )
+    expect(html).toContain('Chargement…')
   })
 })

@@ -1,3 +1,4 @@
+import { skipToken, useQuery } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
 import { AsyncPanel } from './AsyncPanel'
 import { fetchLeaderboard, fetchWaveProgress, fetchWaves } from './api'
@@ -13,7 +14,6 @@ import {
   waveProgress,
 } from './schedule'
 import { PROTOCOL_URL } from './protocol'
-import { useAsync } from './useAsync'
 import type { WaveProgressRow } from './api'
 import type { LeaderboardRow, WaveRow } from './types'
 
@@ -80,15 +80,18 @@ function WaveBanner({
 }
 
 export function LeaderboardScreen() {
-  const state = useAsync<Payload>(loadLeaderboard, [])
+  const state = useQuery({ queryKey: ['classement'], queryFn: loadLeaderboard })
   const now = useMinute()
   const open = state.data ? openWave(state.data.waves, now) : null
-  // L'avancement suit l'horloge, comme le compte à rebours : lu une seule fois,
-  // « 42 parties sur 120 » ne bougerait plus de toute la vague.
-  const progress = useAsync<WaveProgressRow>(
-    () => (open ? fetchWaveProgress(open.id) : Promise.resolve(null)),
-    [open?.id, now],
-  )
+  // L'avancement se relit à la minute, comme le compte à rebours : lu une seule
+  // fois, « 42 parties sur 120 » ne bougerait plus de toute la vague. C'est un
+  // intervalle, et non la minute glissée dans la clé, qui vaudrait une entrée
+  // de cache neuve à chaque tour d'horloge — et donc un vide à chaque minute.
+  const progress = useQuery({
+    queryKey: ['avancement-vague', open?.id],
+    queryFn: open ? () => fetchWaveProgress(open.id) : skipToken,
+    refetchInterval: 60_000,
+  })
 
   return (
     <>
@@ -105,7 +108,7 @@ export function LeaderboardScreen() {
       <AsyncPanel state={state}>
         {(payload) => (
           <>
-            <WaveBanner open={open} progress={progress.data} now={now} />
+            <WaveBanner open={open} progress={progress.data ?? null} now={now} />
             {payload.rows.length === 0 ? (
               <p className="tournament-note">
                 Aucune IA n’est encore inscrite. La première déclarée ouvrira ce

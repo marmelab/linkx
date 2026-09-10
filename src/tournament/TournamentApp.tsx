@@ -1,3 +1,4 @@
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { createHashRouter, Navigate, RouterProvider } from 'react-router'
 import { AdminScreen } from './AdminScreen'
 import { LeaderboardScreen } from './LeaderboardScreen'
@@ -45,6 +46,26 @@ const router = createHashRouter([
   },
 ])
 
+/**
+ * Le magasin des lectures, tenu hors du routeur : il survit donc au démontage
+ * d'un écran, et c'est de là que vient l'affichage immédiat au retour.
+ *
+ * Rien n'y est tenu pour frais : chaque montage relit, et c'est la réponse
+ * précédente qui occupe l'écran en attendant la nouvelle. Ce n'est pas un cache
+ * qui dispenserait de demander — un classement d'il y a deux minutes serait
+ * périmé —, seulement de quoi ne plus montrer un écran vide.
+ *
+ * Et **aucune reprise automatique** : les écrans en offrent une, explicite, et
+ * trois tentatives silencieuses ne feraient que retarder l'aveu de la panne.
+ */
+const queryClient = new QueryClient({
+  defaultOptions: { queries: { retry: false } },
+})
+
 export default function TournamentApp() {
-  return <RouterProvider router={router} />
+  return (
+    <QueryClientProvider client={queryClient}>
+      <RouterProvider router={router} />
+    </QueryClientProvider>
+  )
 }

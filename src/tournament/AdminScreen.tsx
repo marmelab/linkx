@@ -1,3 +1,4 @@
+import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { Navigate, useOutletContext } from "react-router";
 import {
@@ -11,8 +12,7 @@ import { summarizeQueue } from "./queue";
 import type { QueueRow } from "./queue";
 import { formatParisDate } from "./schedule";
 import type { WaveRow } from "./types";
-import { useAsync } from "./useAsync";
-import type { Async } from "./useAsync";
+import type { QueryState } from "./AsyncPanel";
 import { TOURNAMENT_PATHS } from "./routes";
 import { useSession } from "./session";
 import type { TournamentContext } from "./TournamentLayout";
@@ -126,23 +126,27 @@ type QueuePayload = {
  * depuis combien de temps rien n'a bougé. C'est ce qui dit s'il faut relancer
  * un tour, et si l'immobilité vient d'une file vide ou d'un blocage.
  */
-function QueueState({ state }: { state: Async<QueuePayload> }) {
-  if (state.status === "error") {
+function QueueState({ state }: { state: QueryState<QueuePayload> }) {
+  if (state.isError && !state.isFetching) {
     return (
       <div className="tournament-note" role="alert">
         <p>L’état de la file n’a pas pu être lu.</p>
-        {state.error && <p className="tournament-error">{state.error}</p>}
+        {state.error && (
+          <p className="tournament-error">
+            {state.error.message || "Erreur inconnue."}
+          </p>
+        )}
         <button
           type="button"
           className="secondary-button secondary-button--small"
-          onClick={state.reload}
+          onClick={state.refetch}
         >
           Réessayer
         </button>
       </div>
     );
   }
-  if (state.data === null) {
+  if (state.data === undefined) {
     return (
       <p className="tournament-note" aria-live="polite">
         Lecture de la file…
@@ -215,8 +219,9 @@ function CronPanel() {
     reply: EdgeReply;
   } | null>(null);
 
-  const queue = useAsync<QueuePayload>(
-    async () => {
+  const queue = useQuery({
+    queryKey: ["file-attente"],
+    queryFn: async (): Promise<QueuePayload> => {
       const [rows, waves, qualifications] = await Promise.all([
         fetchQueue(),
         fetchWaves(1),
@@ -224,8 +229,7 @@ function CronPanel() {
       ]);
       return { rows, waves, qualifications };
     },
-    [],
-  );
+  });
 
   const run = async (action: (typeof CRON_ACTIONS)[number]) => {
     setBusy(action.id);
@@ -234,7 +238,7 @@ function CronPanel() {
       setReport({ id: action.id, reply: await runCron(action.name, action.force) });
       // Le décompte a bougé : un tour d'arbitrage termine des parties, et
       // l'ordonnanceur en crée.
-      queue.reload();
+      void queue.refetch();
     } catch (error) {
       setReport({
         id: action.id,
@@ -316,20 +320,24 @@ export function AdminScreen() {
     return <Navigate to={TOURNAMENT_PATHS.login} replace />;
   }
 
-  // Une panne se **dit**, elle ne renvoie pas au classement : `admin.data` vaut
-  // `null` aussi bien pour un refus que pour une lecture qui n'a pas abouti, et
-  // les confondre ferait croire à un administrateur qu'il a perdu ses droits —
-  // exactement ce que `api.ts:isAdministrator` refuse de faire en propageant sa
-  // panne. On reste donc sur place, avec de quoi réessayer.
-  if (admin.status === "error") {
+  // Une panne se **dit**, elle ne renvoie pas au classement : une lecture sans
+  // réponse et un refus se confondraient, et un administrateur croirait avoir
+  // perdu ses droits — exactement ce que `api.ts:isAdministrator` refuse de
+  // faire en propageant sa panne. On reste donc sur place, avec de quoi
+  // réessayer.
+  if (admin.isError && !admin.isFetching) {
     return (
       <div className="tournament-note" role="alert">
         <p>Vos droits n’ont pas pu être vérifiés.</p>
-        {admin.error && <p className="tournament-error">{admin.error}</p>}
+        {admin.error && (
+          <p className="tournament-error">
+            {admin.error.message || "Erreur inconnue."}
+          </p>
+        )}
         <button
           type="button"
           className="secondary-button secondary-button--small"
-          onClick={admin.reload}
+          onClick={() => void admin.refetch()}
         >
           Réessayer
         </button>
@@ -337,8 +345,8 @@ export function AdminScreen() {
     );
   }
   // Une relecture garde la valeur précédente : un administrateur déjà reconnu ne
-  // repasse pas par l'écran de chargement à chaque `reload`.
-  if (admin.data === null) {
+  // repasse pas par l'écran de chargement à chaque revalidation.
+  if (admin.data === undefined) {
     return (
       <p className="tournament-note" aria-live="polite">
         Chargement…

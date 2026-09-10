@@ -1,3 +1,4 @@
+import { skipToken, useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import type { FormEvent } from "react";
 import { Link, Navigate } from "react-router";
@@ -20,7 +21,6 @@ import { STATUS_LABELS } from "./outcomes";
 import { TOURNAMENT_PATHS } from "./routes";
 import { PROTOCOL_URL } from "./protocol";
 import { useSession } from "./session";
-import { pending, useAsync } from "./useAsync";
 import type { BotRow } from "./types";
 
 type Payload = {
@@ -564,10 +564,10 @@ export function MyBotsScreen() {
   const { session, ready } = useSession();
   // Rien n'est lu avant que la session ait répondu : une lecture à vide
   // annoncerait « aucune IA » à un auteur qui en a déclaré.
-  const state = useAsync<Payload>(
-    () => (session ? loadMyBots(session.user.id) : pending<Payload>()),
-    [ready, session?.user.id],
-  );
+  const state = useQuery({
+    queryKey: ["mes-ia", session?.user.id],
+    queryFn: session ? () => loadMyBots(session.user.id) : skipToken,
+  });
   // Lecture séparée de la liste des IA : elle ne concerne qu'une poignée de
   // comptes, et une panne de son côté ne doit pas priver l'auteur de ses IA.
   // Le formulaire est **appelé**, jamais posé d'office : l'écran s'ouvre sur ce
@@ -599,7 +599,7 @@ export function MyBotsScreen() {
                   key={bot.id}
                   bot={bot}
                   summary={payload.summaries.get(bot.id) ?? null}
-                  onChanged={state.reload}
+                  onChanged={state.refetch}
                 />
               ))}
             </ul>
@@ -612,7 +612,7 @@ export function MyBotsScreen() {
           formulaire, qui porte le secret affiché une seule fois. */}
       {declaring ? (
         <DeclareForm
-          onDeclared={state.reload}
+          onDeclared={state.refetch}
           onClose={() => setDeclaring(false)}
         />
       ) : (

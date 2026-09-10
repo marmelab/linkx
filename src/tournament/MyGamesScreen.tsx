@@ -1,3 +1,4 @@
+import { skipToken, useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import { Navigate, useSearchParams } from 'react-router'
 import { AsyncPanel } from './AsyncPanel'
@@ -23,7 +24,6 @@ import { COLOR_LABELS, OUTCOME_LABELS } from './outcomes'
 import { TOURNAMENT_PATHS } from './routes'
 import { formatParisDateTime, formatParisDay } from './schedule'
 import { useSession } from './session'
-import { pending, useAsync } from './useAsync'
 import type { BotRow, WaveRow } from './types'
 
 /** Ce dont les filtres ont besoin : la liste des IA et celle des vagues. */
@@ -75,7 +75,10 @@ function GameJournal({
   names: Map<string, string>
   mine: ReadonlySet<string>
 }) {
-  const state = useAsync(() => fetchGameEvents(game.id), [game.id])
+  const state = useQuery({
+    queryKey: ['journal-partie', game.id],
+    queryFn: () => fetchGameEvents(game.id),
+  })
 
   return (
     <AsyncPanel state={state}>
@@ -206,11 +209,14 @@ function GamesTable({
   bots: readonly BotRow[]
   filters: GameFilters
 }) {
-  const state = useAsync<Games>(
-    () => loadGames(bots, filters),
-    [bots, filters.botId, filters.waveId],
-  )
-  const mine = new Set(bots.map((bot) => bot.id))
+  const ids = bots.map((bot) => bot.id)
+  // Les IA de l'auteur font partie de la clé : elles décident des parties lues
+  // autant que les filtres, et une IA déclarée depuis change la réponse.
+  const state = useQuery({
+    queryKey: ['mes-parties', ids, filters.botId, filters.waveId],
+    queryFn: () => loadGames(bots, filters),
+  })
+  const mine = new Set(ids)
 
   return (
     <AsyncPanel state={state}>
@@ -278,10 +284,10 @@ export function MyGamesScreen() {
   const [params, setParams] = useSearchParams()
   // Rien n'est lu avant que la session ait répondu : une lecture à vide
   // afficherait « aucune partie » à un auteur qui en a.
-  const context = useAsync<Context>(
-    () => (session ? loadContext(session.user.id) : pending<Context>()),
-    [ready, session?.user.id],
-  )
+  const context = useQuery({
+    queryKey: ['contexte-parties', session?.user.id],
+    queryFn: session ? () => loadContext(session.user.id) : skipToken,
+  })
   const [outcome, setOutcome] = useState(ANY)
   const [wave, setWave] = useState(ANY)
   const [exporting, setExporting] = useState(false)
