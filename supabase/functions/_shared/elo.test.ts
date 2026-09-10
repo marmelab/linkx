@@ -61,10 +61,13 @@ describe('barème', () => {
 
 describe('application d’une vague', () => {
   it('classe une IA inconnue à 1200', () => {
+    // Dix-huit points, non vingt : à l'équilibre, l'espérance se relit sur les
+    // classements obtenus, où le gagnant est déjà passé devant. Le coefficient
+    // reste le plafond de ce qu'une vague peut déplacer, jamais le montant.
     const result = applyWave(new Map(), [game('a', 'b', 'blue')])
     expect(summary(result, 'a').before).toBe(1200)
-    expect(summary(result, 'a').after).toBe(1220)
-    expect(summary(result, 'b').after).toBe(1180)
+    expect(summary(result, 'a').after).toBe(1218)
+    expect(summary(result, 'b').after).toBe(1182)
   })
 
   it('compte un nul pour une demi-victoire de chacun', () => {
@@ -79,11 +82,14 @@ describe('application d’une vague', () => {
     const result = applyWave(start({ a: [1200, 30], b: [1200, 30] }), [
       game('a', 'b', 'blue'),
     ])
-    expect(summary(result, 'a').after).toBe(1210)
-    expect(summary(result, 'b').after).toBe(1190)
+    expect(summary(result, 'a').after).toBe(1209)
+    expect(summary(result, 'b').after).toBe(1191)
   })
 
   it('lit le coefficient à l’ouverture de la vague, pas sur un compteur qui monte', () => {
+    // Trois victoires sur cinq pour la jeune IA. Son coefficient double celui de
+    // la rodée, si bien qu'elle gagne plus de points que l'autre n'en perd : à
+    // l'équilibre 1214 contre 1193, et non deux écarts opposés.
     const games = [
       game('jeune', 'rodee', 'blue'),
       game('rodee', 'jeune', 'blue'),
@@ -96,27 +102,38 @@ describe('application d’une vague', () => {
       games,
     )
 
-    // Référence : coefficients **et** classements figés sur toute la vague — 40
-    // pour la jeune IA, 20 pour la rodée, et une espérance d'une demie partout,
-    // les deux partant de 1200.
-    let youngDelta = 0
-    let seasonedDelta = 0
-    for (const played of games) {
-      const youngIsBlue = played.blue === 'jeune'
-      const youngExpected = expectedScore(1200, 1200)
-      const youngObtained =
-        played.winner === null
-          ? 0.5
-          : (played.winner === 'blue') === youngIsBlue
-            ? 1
-            : 0
-      youngDelta += PROVISIONAL_K_FACTOR * (youngObtained - youngExpected)
-      seasonedDelta += ESTABLISHED_K_FACTOR * (youngExpected - youngObtained)
+    expect(summary(result, 'jeune').after).toBe(1214)
+    expect(summary(result, 'rodee').after).toBe(1193)
+    expect(summary(result, 'jeune').delta).toBeGreaterThan(
+      Math.abs(summary(result, 'rodee').delta),
+    )
+    expect(summary(result, 'jeune').ratedGames).toBe(14)
+  })
+
+  it('tient un écart dans les bornes sur une vague massive', () => {
+    // Le cas qui a bloqué une vague de production : quinze IA, quatre-vingt-
+    // quatre parties chacune, deux d'entre elles n'en gagnant que trois. Jugée
+    // sur les seuls classements de départ, la vague leur retirait 1560 points et
+    // les envoyait sous le zéro que la base interdit.
+    const noms = Array.from({ length: 15 }, (_, index) => `ia-${index}`)
+    const games: ReturnType<typeof game>[] = []
+    for (const [index, nom] of noms.entries()) {
+      for (const autre of noms) {
+        if (autre === nom) continue
+        // La dernière perd tout, les autres se partagent le reste.
+        for (let tour = 0; tour < 3; tour += 1) {
+          const perdante = index === noms.length - 1
+          games.push(game(nom, autre, perdante ? 'white' : 'blue'))
+        }
+      }
     }
 
-    expect(summary(result, 'jeune').after).toBe(Math.round(1200 + youngDelta))
-    expect(summary(result, 'rodee').after).toBe(Math.round(1200 + seasonedDelta))
-    expect(summary(result, 'jeune').ratedGames).toBe(14)
+    const result = applyWave(new Map(), games)
+    for (const bot of noms) {
+      const after = summary(result, bot).after
+      expect(after).toBeGreaterThan(0)
+      expect(after).toBeLessThan(4000)
+    }
   })
 
   it('tient le compte des victoires, nuls et défaites', () => {

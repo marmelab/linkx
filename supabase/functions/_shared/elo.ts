@@ -79,6 +79,72 @@ function blueScore(winner: PlayerId | null): number {
 }
 
 /**
+ * Amortissement de l'itération. Réinjecter le résultat tel quel fait **osciller**
+ * sans jamais converger, et la moitié n'y suffit pas non plus : mesuré sur une
+ * vague de quinze IA, seul un tiers ou moins atteint l'équilibre — en soixante-
+ * huit passes à ce réglage, contre aucune convergence en cinq mille au-delà.
+ */
+const RELAXATION = 0.3
+
+/** Écart en deçà duquel les classements sont tenus pour stables, en points. */
+const CONVERGENCE = 1e-9
+
+/**
+ * Plafond de sécurité : l'équilibre est atteint bien avant, mais une fonction de
+ * domaine ne boucle pas sans borne. Il ne mord sur aucune vague mesurée.
+ */
+const MAX_ITERATIONS = 500
+
+/**
+ * Classements d'équilibre de la vague, écrits dans `deltas`.
+ *
+ * On cherche les classements tels que, pour chacun, l'écart appliqué soit
+ * exactement celui que ses propres résultats justifient **une fois ces
+ * classements admis** — le point fixe de l'Elo. À chaque passe, les espérances
+ * se relisent sur les classements courants ; l'amortissement empêche l'aller-
+ * retour autour de la solution.
+ */
+function solveRatings(
+  bots: ReadonlySet<string>,
+  before: ReadonlyMap<string, BotRating>,
+  kFactors: ReadonlyMap<string, number>,
+  obtained: ReadonlyMap<string, number>,
+  games: readonly RatedGame[],
+  deltas: Map<string, number>,
+): void {
+  const current = new Map<string, number>()
+  for (const bot of bots) current.set(bot, required(before, bot).rating)
+
+  for (let pass = 0; pass < MAX_ITERATIONS; pass += 1) {
+    const expected = new Map<string, number>()
+    for (const bot of bots) expected.set(bot, 0)
+    for (const game of games) {
+      const blueExpected = expectedScore(
+        required(current, game.blue),
+        required(current, game.white),
+      )
+      expected.set(game.blue, required(expected, game.blue) + blueExpected)
+      expected.set(game.white, required(expected, game.white) + (1 - blueExpected))
+    }
+
+    let move = 0
+    for (const bot of bots) {
+      const delta = required(kFactors, bot) *
+        (required(obtained, bot) - required(expected, bot))
+      const target = required(before, bot).rating + delta
+      const rating = required(current, bot)
+      move = Math.max(move, Math.abs(target - rating))
+      current.set(bot, rating + RELAXATION * (target - rating))
+    }
+    if (move < CONVERGENCE) break
+  }
+
+  for (const bot of bots) {
+    deltas.set(bot, required(current, bot) - required(before, bot).rating)
+  }
+}
+
+/**
  * Applique une vague entière, **en un seul coup**.
  *
  * Chaque partie se juge sur les classements d'**avant la vague** : l'espérance
@@ -95,9 +161,17 @@ function blueScore(winner: PlayerId | null): number {
  * 19 victoires sur 34 pouvaient rendre un écart **négatif**. Mesuré sur une
  * vague réelle, pas supposé.
  *
- * Fonction pure, et désormais **commutative** : l'ordre des parties ne change
- * plus rien, ce que le coefficient promettait déjà sans que les classements le
- * tiennent.
+ * Les classements se cherchent par **point fixe** : on lit les espérances sur
+ * les classements obtenus, on les réinjecte, et l'on recommence jusqu'à ce
+ * qu'ils ne bougent plus. Juger la vague sur les seuls classements de départ
+ * supprimait en effet le frein de l'Elo — l'espérance d'une IA qui descend
+ * baisse, donc ses défaites suivantes lui coûtent moins — et rendait l'écart
+ * proportionnel au **nombre** de parties : à quinze IA et quatre-vingt-quatre
+ * parties chacune, trois victoires valaient −1560 points, sous le zéro que la
+ * base interdit. L'équilibre rend le même ordre, sans l'emballement : la même
+ * vague donne 855 au lieu de −360, et 1389 au lieu de 2240.
+ *
+ * Fonction pure et **commutative** : l'ordre des parties ne change rien.
  */
 export function applyWave(
   start: ReadonlyMap<string, BotRating>,
@@ -121,22 +195,15 @@ export function applyWave(
     tally.set(bot, { wins: 0, draws: 0, losses: 0 })
   }
 
-  for (const game of games) {
-    const blueRating = required(before, game.blue).rating
-    const whiteRating = required(before, game.white).rating
-    const blueExpected = expectedScore(blueRating, whiteRating)
-    const blueObtained = blueScore(game.winner)
+  // Score obtenu, et décompte : ni l'un ni l'autre ne dépend des classements,
+  // ils se comptent donc une seule fois.
+  const obtained = new Map<string, number>()
+  for (const bot of bots) obtained.set(bot, 0)
 
-    deltas.set(
-      game.blue,
-      required(deltas, game.blue) +
-        required(kFactors, game.blue) * (blueObtained - blueExpected),
-    )
-    deltas.set(
-      game.white,
-      required(deltas, game.white) +
-        required(kFactors, game.white) * (blueExpected - blueObtained),
-    )
+  for (const game of games) {
+    const blueObtained = blueScore(game.winner)
+    obtained.set(game.blue, required(obtained, game.blue) + blueObtained)
+    obtained.set(game.white, required(obtained, game.white) + (1 - blueObtained))
 
     const blueTally = required(tally, game.blue)
     const whiteTally = required(tally, game.white)
@@ -151,6 +218,8 @@ export function applyWave(
       whiteTally.draws += 1
     }
   }
+
+  solveRatings(bots, before, kFactors, obtained, games, deltas)
 
   const ratings = new Map<string, BotRating>(start)
   const summaries: BotSummary[] = []
