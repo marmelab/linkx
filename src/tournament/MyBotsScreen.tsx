@@ -53,8 +53,8 @@ function withdrawnLast(bots: readonly BotRow[]): BotRow[] {
  * Les IA d'un même auteur partagent presque toujours leur dernière vague : c'est
  * donc une requête, bornée par le plafond de dix IA par compte.
  */
-async function loadMyBots(): Promise<Payload> {
-  const bots = withdrawnLast(await fetchMyBots());
+async function loadMyBots(owner: string): Promise<Payload> {
+  const bots = withdrawnLast(await fetchMyBots(owner));
   const ids = bots.map((bot) => bot.id);
   const history = await fetchBotHistory(ids);
 
@@ -565,7 +565,7 @@ export function MyBotsScreen() {
   // Rien n'est lu avant que la session ait répondu : une lecture à vide
   // annoncerait « aucune IA » à un auteur qui en a déclaré.
   const state = useAsync<Payload>(
-    () => (session ? loadMyBots() : pending<Payload>()),
+    () => (session ? loadMyBots(session.user.id) : pending<Payload>()),
     [ready, session?.user.id],
   );
   // Lecture séparée de la liste des IA : elle ne concerne qu'une poignée de

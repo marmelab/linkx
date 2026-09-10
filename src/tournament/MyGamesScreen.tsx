@@ -28,8 +28,8 @@ import type { BotRow, WaveRow } from './types'
 /** Ce dont les filtres ont besoin : la liste des IA et celle des vagues. */
 type Context = { bots: BotRow[]; waves: WaveRow[] }
 
-async function loadContext(): Promise<Context> {
-  const [bots, waves] = await Promise.all([fetchMyBots(), fetchWaves(24)])
+async function loadContext(owner: string): Promise<Context> {
+  const [bots, waves] = await Promise.all([fetchMyBots(owner), fetchWaves(24)])
   return { bots, waves }
 }
 
@@ -263,7 +263,7 @@ export function MyGamesScreen() {
   // Rien n'est lu avant que la session ait répondu : une lecture à vide
   // afficherait « aucune partie » à un auteur qui en a.
   const context = useAsync<Context>(
-    () => (session ? loadContext() : pending<Context>()),
+    () => (session ? loadContext(session.user.id) : pending<Context>()),
     [ready, session?.user.id],
   )
   const [outcome, setOutcome] = useState(ANY)

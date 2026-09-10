@@ -98,11 +98,24 @@ export async function fetchWaveProgress(waveId: string): Promise<WaveProgressRow
   return { jouees: row.parties_jouees, total: row.parties_totales }
 }
 
-export async function fetchMyBots(): Promise<BotRow[]> {
+/**
+ * Les IA d'un auteur, **filtrées sur lui**.
+ *
+ * La politique de `bots` ne borne pas cet écran : elle ouvre la table entière à
+ * un administrateur (`ou est_administrateur()`), si bien que « Mes IA » lui
+ * montrait celles de tout le monde — avec leurs adresses, et des boutons
+ * « Retirer » que `update-bot` aurait de toute façon refusés. « Mes parties »
+ * suivait, ses identifiants venant d'ici.
+ *
+ * Une politique dit ce qu'on a le **droit** de lire, jamais ce qu'un écran
+ * **demande**. Le filtre est donc écrit ici, où il énonce l'intention.
+ */
+export async function fetchMyBots(owner: string): Promise<BotRow[]> {
   return unwrap<BotRow[]>(
     await tournamentClient()
       .from('bots')
       .select(BOT_COLUMNS)
+      .eq('proprietaire', owner)
       .order('cree_le', { ascending: true }),
   )
 }
