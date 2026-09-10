@@ -393,7 +393,22 @@ a.mini-brand { text-decoration: none; }
 }
 
 @media (max-width: 720px) {
-  .tournament-card { padding: 1.4rem 1.1rem 1.6rem; }
+  /* La carte disparaît : elle vient de l'accueil du jeu, une vitrine posée sur
+     une photo, quand ces écrans-là sont des pages qu'on lit. Sur un téléphone,
+     son cadre et ses marges ne faisaient que rogner la largeur utile — les
+     blocs qu'elle contient portent déjà leur propre fond. */
+  /* La gouttière de l'écran s'ajoutait au creux de la carte : près de deux
+     centimètres perdus de chaque côté sur un téléphone. Elle se resserre ici
+     seulement — celle du jeu tient à sa photo de fond. */
+  .tournament-screen { --safe-gutter: 0.5rem; }
+  .tournament-card {
+    width: 100%;
+    padding: 1rem 0.6rem 1.4rem;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+  }
   .tournament-table,
   .tournament-table tbody,
   .tournament-table tr,
@@ -413,6 +428,25 @@ a.mini-brand { text-decoration: none; }
   .journal-row > td::before { content: none; }
   .tournament-filters { gap: 0.7rem; }
   .tournament-filters .tournament-field { flex: 1 1 12rem; }
+  /* La carte du classement tient sur **une ligne** : rang, nom, Elo, plutôt que
+     six lignes intitulées pour six valeurs qui tiennent en un mot. Les intitulés
+     disparaissent — un rang, un nom et un classement se lisent sans étiquette —
+     et deux colonnes s'effacent : l'écart et le nombre de parties classées, que
+     l'on vient rarement chercher sur un téléphone. L'état, quand il y en a un,
+     prend une seconde ligne sous le nom. */
+  .tournament-table--ranking tr {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: baseline;
+    gap: 0.15rem 0.6rem;
+    padding: 0.45rem 0.7rem;
+  }
+  .tournament-table--ranking td { display: block; padding: 0; }
+  .tournament-table--ranking td::before { content: none; }
+  .tournament-table--ranking td[data-label='Rang'] { color: var(--muted); }
+  .tournament-table--ranking td[data-label='Elo'] { font-weight: 700; }
+  .tournament-table--ranking td[data-label='État'] { grid-column: 2 / -1; }
+  .tournament-table--ranking td.ranking-detail { display: none; }
 }
 
 /* Game chrome */

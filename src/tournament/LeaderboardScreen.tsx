@@ -113,7 +113,7 @@ export function LeaderboardScreen() {
               </p>
             ) : (
               <div className="tournament-table-frame">
-                <table className="tournament-table">
+                <table className="tournament-table tournament-table--ranking">
                   <caption className="visually-hidden">
                     Classement Elo des IA inscrites au tournoi
                   </caption>
@@ -122,8 +122,12 @@ export function LeaderboardScreen() {
                       <th scope="col">Rang</th>
                       <th scope="col">IA</th>
                       <th scope="col">Elo</th>
-                      <th scope="col">Écart</th>
-                      <th scope="col">Parties classées</th>
+                      <th scope="col" className="ranking-detail">
+                        Écart
+                      </th>
+                      <th scope="col" className="ranking-detail">
+                        Parties classées
+                      </th>
                       <th scope="col">État</th>
                     </tr>
                   </thead>
@@ -133,8 +137,12 @@ export function LeaderboardScreen() {
                         <td data-label="Rang">{row.rang}</td>
                         <td data-label="IA">{row.nom}</td>
                         <td data-label="Elo">{row.elo}</td>
-                        <td data-label="Écart">{formatGap(row.ecart_derniere_vague)}</td>
-                        <td data-label="Parties classées">{row.parties_classees}</td>
+                        <td className="ranking-detail" data-label="Écart">
+                          {formatGap(row.ecart_derniere_vague)}
+                        </td>
+                        <td className="ranking-detail" data-label="Parties classées">
+                          {row.parties_classees}
+                        </td>
                         <td data-label="État">
                           {row.statut === 'active' ? (
                             ''
