@@ -606,10 +606,47 @@ async function requestWaveMail(
   }
 }
 
+/**
+ * Ce qu'une panne doit dire, et où.
+ *
+ * Une exception qui remonte au runtime rend une 500 nue, dont le message
+ * n'existe que dans les journaux de la fonction. Or l'appelant ordinaire est le
+ * cron, et `pg_net` archive chaque réponse dans `net._http_response` : rendre le
+ * motif met le diagnostic à portée d'une requête SQL, au lieu d'une console
+ * qu'il faut savoir ouvrir. Une vague de production est restée bloquée un jour
+ * entier faute de cela — la contrainte violée était nommée, mais nulle part où
+ * on la cherchait.
+ *
+ * Le détail se rend sans réserve : les deux seuls appelants possibles sont le
+ * cron et un administrateur, tout autre ayant déjà été refusé.
+ */
+function panne(nom: string, error: unknown): Response {
+  console.error(nom, error)
+  const detail = error instanceof Error ? error.message : String(error)
+  const code = (error as { code?: unknown } | null)?.code
+  return json(
+    {
+      ok: false,
+      message: `${nom} s’est interrompu.`,
+      detail,
+      ...(typeof code === 'string' ? { code } : {}),
+    },
+    500,
+  )
+}
+
 Deno.serve(async (request: Request): Promise<Response> => {
   if (request.method === 'OPTIONS') {
     return new Response(null, { status: 204, headers: CORS_HEADERS })
   }
+  try {
+    return await handle(request)
+  } catch (error) {
+    return panne('scheduler', error)
+  }
+})
+
+async function handle(request: Request): Promise<Response> {
   const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
   const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? ''
   if (!serviceKey || !supabaseUrl) {
@@ -727,4 +764,4 @@ Deno.serve(async (request: Request): Promise<Response> => {
   }
 
   return json(report)
-})
+}
