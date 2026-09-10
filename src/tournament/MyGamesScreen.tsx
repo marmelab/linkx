@@ -18,6 +18,7 @@ import {
   toMyGames,
 } from './games'
 import type { GameFilters, MyGame } from './games'
+import { buildGamesExport, gamesExportFileName } from './gamesExport'
 import { COLOR_LABELS, OUTCOME_LABELS } from './outcomes'
 import { TOURNAMENT_PATHS } from './routes'
 import { formatParisDateTime, formatParisDay } from './schedule'
@@ -183,6 +184,21 @@ function GameRows({
  * Les parties, relues à chaque changement d'IA ou de vague : ces deux filtres
  * partent à la requête, l'issue seule se départage ici.
  */
+/**
+ * Remet un fichier au visiteur. Le lien est créé, cliqué et défait aussitôt :
+ * l'adresse d'un objet reste sinon en mémoire tant que le document vit.
+ */
+function download(name: string, content: string): void {
+  const url = URL.createObjectURL(
+    new Blob([content], { type: 'application/json' }),
+  )
+  const link = document.createElement('a')
+  link.href = url
+  link.download = name
+  link.click()
+  URL.revokeObjectURL(url)
+}
+
 function GamesTable({
   bots,
   filters,
@@ -268,6 +284,8 @@ export function MyGamesScreen() {
   )
   const [outcome, setOutcome] = useState(ANY)
   const [wave, setWave] = useState(ANY)
+  const [exporting, setExporting] = useState(false)
+  const [exportError, setExportError] = useState<string | null>(null)
 
   if (ready && !session) return <Navigate to={TOURNAMENT_PATHS.login} replace />
 
@@ -347,6 +365,46 @@ export function MyGamesScreen() {
                     <option value="en_cours">{OUTCOME_LABELS.en_cours}</option>
                   </select>
                 </p>
+                {/* L'export suit les filtres, et lit les parties au clic :
+                    l'action est rare, et ce qui part est alors exactement l'état
+                    du moment plutôt qu'un instantané gardé pour lui. */}
+                <p className="tournament-field tournament-field--action">
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    disabled={exporting}
+                    onClick={async () => {
+                      setExporting(true)
+                      setExportError(null)
+                      try {
+                        const { games } = await loadGames(ctx.bots, filters)
+                        const now = new Date()
+                        download(
+                          gamesExportFileName(now),
+                          JSON.stringify(
+                            buildGamesExport(
+                              filterGames(games, filters),
+                              new Map(ctx.bots.map((row) => [row.id, row.nom])),
+                              now,
+                            ),
+                            null,
+                            2,
+                          ),
+                        )
+                      } catch (error) {
+                        setExportError(
+                          error instanceof Error
+                            ? error.message
+                            : 'Export impossible.',
+                        )
+                      } finally {
+                        setExporting(false)
+                      }
+                    }}
+                  >
+                    {exporting ? 'Export…' : 'Exporter'}
+                  </button>
+                </p>
               </div>
 
               {asked !== ANY && !known && (
@@ -356,6 +414,11 @@ export function MyGamesScreen() {
                 </p>
               )}
 
+              {exportError && (
+                <p className="tournament-error" role="alert">
+                  {exportError}
+                </p>
+              )}
               <GamesTable bots={ctx.bots} filters={filters} />
             </>
           )

@@ -109,6 +109,7 @@ src/
     outcomes.ts         vocabulaire de la base traduit en français, à un seul endroit
     ranking.ts          ordre du classement et écart signé
     games.ts            parties vues du côté de l'auteur, et filtres
+    gamesExport.ts      export JSON des parties affichées, module pur
     botSummary.ts       bilan de la dernière vague d'une IA
     types.ts            lignes lues de la base
     api.ts              client Supabase, lectures et fonctions edge

@@ -288,6 +288,11 @@ a.mini-brand { text-decoration: none; }
 .tournament-card code { font-size: inherit; }
 .tournament-hint { color: var(--muted); }
 .tournament-filters { display: flex; flex-wrap: wrap; gap: 1rem; margin: 0 0 1.2rem; }
+/* Le bouton se cale au bas de la rangée et à droite : il agit sur ce que les
+   filtres ont retenu, il vient donc après eux. Sans `align-content` il
+   s'étirait sur le libellé que les sélecteurs portent au-dessus. */
+.tournament-field--action { align-content: end; margin-left: auto; }
+.tournament-field--action .secondary-button { padding-block: 0.63rem; }
 
 .bot-list { display: grid; gap: 0.8rem; margin: 0 0 1rem; padding: 0; list-style: none; }
 .bot-card { padding: 0.9rem 1rem; border: 1px solid var(--line); border-radius: 6px; background: #fff; }
