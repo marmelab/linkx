@@ -3,6 +3,7 @@ import {
   MAX_MOVES,
   MOVE_MASK,
   applyMove,
+  countMoves,
   createEnginePosition,
   filledCells,
   flipSide,
@@ -30,8 +31,11 @@ import {
   EDGE_TOP,
   LIMBS,
   LIMB_MASK,
+  FLOOD,
   createLayers,
   fillLayers,
+  fillLayersWeighted,
+  floodFrom,
   setTerrain,
   popcount,
 } from './bitboard.ts'
@@ -73,7 +77,7 @@ const BLOCKED = 1 << 24
 const AXIS_UNREACHABLE = N + 1
 /**
  * L'axe le plus court domine : on gagne sur l'un *ou* l'autre. Le second compte
- * aussi, mais moins — voir `SECONDARY_AXIS_WEIGHT`, qui est l'écart entre cette
+ * aussi, mais moins — voir `SECONDARY_WEIGHT`, qui est l'écart entre cette
  * évaluation et celle de `evaluation.ts`, restée lexicographique pour les trois
  * premiers niveaux.
  */
@@ -95,13 +99,20 @@ const CONNECTION_WEIGHT = 100
  * un axe et bloquée sur l'autre, alors qu'elle est bien plus difficile à
  * couper. Le poids est donc un réglage à mesurer, pas une évidence.
  *
- * **Mesuré.** À 3 contre 1, 30 victoires à 18 sur 48 parties appariées, et
- * 7 ouvertures gagnées des deux couleurs contre 1 (test des signes p = 0,07).
- * À 5 contre 3, en revanche, 49 % — les deux se valent. Le gain vient donc de
- * sortir de l'ordre lexicographique, pas du réglage fin du poids ; 3 est retenu
- * comme la plus petite valeur qui le fasse.
+ * **Mesuré.** À 3 crans contre 1, 30 victoires à 18 sur 48 parties appariées,
+ * et 7 ouvertures gagnées des deux couleurs contre 1 (test des signes p = 0,07).
+ * Le gain venait de sortir de l'ordre lexicographique, pas du réglage fin.
+ *
+ * **Ajusté** ensuite avec tous les autres poids de ce module, par régression
+ * logistique sur ~75 000 coups de valeur exacte tirés des parties du tournoi
+ * (méthode Texel) : le second axe pesait trop lourd, et 94 points — un peu moins
+ * d'un cran — suffisent. Ce jeu de poids, avec les critères de
+ * `DEFAULT_CRITERIA`, bat l'ancien en parties appariées à coût égal : 59,6 %
+ * sur 400 parties au budget de l'IA de la maison, 57,6 % à celui du jeu.
+ * `secondaryAxisWeight` l'exprime encore en crans d'axe, pour rejouer les
+ * mesures d'avant.
  */
-const SECONDARY_AXIS_WEIGHT = 3
+const SECONDARY_WEIGHT = 94
 
 /**
  * Poids du départage au blocage, croissant avec le remplissage du plateau.
@@ -116,8 +127,8 @@ const SECONDARY_AXIS_WEIGHT = 3
  * négligeable ; c'est pourtant sur ce critère que se sont jouées les fins de
  * partie fermées.
  */
-const ZONE_WEIGHT_BASE = 20
-const ZONE_WEIGHT_FILL = 60
+const ZONE_WEIGHT_BASE = 32
+const ZONE_WEIGHT_FILL = 96
 
 /**
  * Largeur d'un chemin : nombre de cases vides situées sur **au moins un** plus
@@ -134,7 +145,7 @@ const ZONE_WEIGHT_FILL = 60
  * pèse plus lourd qu'un cran d'avance réel.
  */
 const PATH_WIDTH_CAP = 16
-const PATH_WIDTH_WEIGHT = 30
+const PATH_WIDTH_WEIGHT = 79
 
 /**
  * Avantage du trait, en points d'évaluation.
@@ -156,14 +167,16 @@ const PATH_WIDTH_WEIGHT = 30
  * avec celui-ci. Le recalibrer après **toute** modification de l'évaluation —
  * changer le poids du second axe a déplacé l'écart de 200 points. La correction
  * à appliquer est la moitié de l'écart moyen constaté, et un test garde cet
- * étalonnage.
+ * étalonnage. Après l'ajustement des poids (voir `SECONDARY_WEIGHT`), 819
+ * laissait un écart de +628 points entre les paliers 5 et 4 ; 1 133 le ramène
+ * à +24.
  *
  * La correction n'est pas parfaite — une passe forcée récurse sans changer le
  * trait et retourne le signe pour ce sous-arbre, et l'écart réel varie d'une
  * position à l'autre — mais elle annule le biais **en moyenne**, ce qui suffit
  * à rendre une profondeur impaire aussi jouable qu'une paire.
  */
-export const TEMPO = 819
+export const TEMPO = 1133
 
 /**
  * L'évaluation travaille sur des **plateaux de bits** (`bitboard.ts`) : les 81
@@ -271,9 +284,14 @@ function axisWidth(
   exit: Int32Array,
   entry: Int32Array,
   best: number,
+  weighted = false,
 ): number {
   if (best >= BLOCKED) return 0
-  fillLayers(exit, entry, returnLayers)
+  // Pondéré, le retour ne voit sur un plus court chemin que ses cases légères :
+  // une case lourde y vérifie `aller + retour = best + 2`. La largeur n'en est
+  // qu'approchée, ce qui suffit à un critère à l'essai.
+  if (weighted) fillLayersWeighted(exit, entry, returnLayers, heavy0, heavy1, heavy2)
+  else fillLayers(exit, entry, returnLayers)
   let width = 0
   for (let depth = 1; depth <= best; depth += 1) {
     const here = depth * LIMBS
@@ -286,29 +304,149 @@ function axisWidth(
   return width
 }
 
+/**
+ * Cases vides **suspendues** : `k` cases vides ou plus sous elles. Aucune pièce
+ * ne les atteint avant que leur colonne soit comblée jusque-là, et celui qui la
+ * comble offre la case à l'adversaire. Voir `EvaluationCriteria.hanging`.
+ */
+let heavy0 = 0
+let heavy1 = 0
+let heavy2 = 0
+
+function suspendedMask(position: EnginePosition, k: number): void {
+  const top = position.top
+  let low0 = 0
+  let low1 = 0
+  let low2 = 0
+  for (let x = 0; x < N; x += 1) {
+    const from = top[x] - k
+    const slot = (x * (N + 1) + (from > 0 ? from : 0)) * LIMBS
+    low0 |= COLUMN_FROM[slot]
+    low1 |= COLUMN_FROM[slot + 1]
+    low2 |= COLUMN_FROM[slot + 2]
+  }
+  heavy0 = empty0 & ~low0
+  heavy1 = empty1 & ~low1
+  heavy2 = empty2 & ~low2
+}
+
+/**
+ * Distance de l'axe vertical quand les cases suspendues coûtent deux pas
+ * (`hanging`) ou sont infranchissables (`hangingWall`). Laisse le terrain et
+ * les cases vides de cet axe en place, pour la largeur ; `measurePlayer` rétablit
+ * le terrain complet si c'est l'autre axe qui domine.
+ */
+function suspendedVertical(position: EnginePosition, side: number, hanging: number, hangingWall: number): number {
+  const base = (side - 1) * LIMBS
+  const bits = position.bits
+  if (hangingWall > 0) {
+    suspendedMask(position, hangingWall)
+    empty0 &= ~heavy0
+    empty1 &= ~heavy1
+    empty2 &= ~heavy2
+    setTerrain(bits[base], bits[base + 1], bits[base + 2], empty0, empty1, empty2)
+  }
+  if (hanging > 0) {
+    suspendedMask(position, hanging)
+    const distance = fillLayersWeighted(EDGE_TOP, EDGE_BOTTOM, verticalLayers, heavy0, heavy1, heavy2)
+    return distance < 0 ? BLOCKED : distance
+  }
+  heavy0 = 0
+  heavy1 = 0
+  heavy2 = 0
+  return axisDistance(EDGE_TOP, EDGE_BOTTOM, verticalLayers)
+}
+
 const finiteAxis = (value: number): number =>
   value >= AXIS_UNREACHABLE ? AXIS_UNREACHABLE : value
 
 // Potentiel et largeur du dernier joueur mesuré.
-let playerPotential = 0
+let playerPrimary = 0
+let playerSecondary = 0
 let playerWidth = 0
+let playerRobust = false
+
+/** Distance sous laquelle une menace compte pour `EvaluationCriteria.robust`. */
+const THREAT_DISTANCE = 2
+const cutLayers = createLayers()
+
+/**
+ * La menace de l'axe dominant, à `THREAT_DISTANCE` au plus, survit-elle à la
+ * perte de n'importe laquelle de ses cases vides ? On ne retire qu'une case à
+ * la fois : une pièce adverse en couvre jusqu'à quatre, c'est donc une borne
+ * optimiste, mais c'est ce qu'on sait calculer sans jouer les réponses.
+ * `returnLayers` doit tenir le parcours retour de cet axe, laissé par
+ * `axisWidth`, et le terrain celui du joueur mesuré.
+ */
+function threatSurvivesOneCut(
+  own0: number,
+  own1: number,
+  own2: number,
+  near: Int32Array,
+  entry: Int32Array,
+  exit: Int32Array,
+  best: number,
+): boolean {
+  let u0 = 0
+  let u1 = 0
+  let u2 = 0
+  for (let depth = 1; depth <= best; depth += 1) {
+    const here = depth * LIMBS
+    const back = (best + 1 - depth) * LIMBS
+    u0 |= near[here] & returnLayers[back] & empty0
+    u1 |= near[here + 1] & returnLayers[back + 1] & empty1
+    u2 |= near[here + 2] & returnLayers[back + 2] & empty2
+  }
+  const cuts = [u0, u1, u2]
+  let survives = true
+  for (let limb = 0; limb < LIMBS && survives; limb += 1) {
+    let rest = cuts[limb]
+    while (rest !== 0) {
+      const bit = rest & -rest
+      rest ^= bit
+      setTerrain(
+        own0,
+        own1,
+        own2,
+        limb === 0 ? empty0 & ~bit : empty0,
+        limb === 1 ? empty1 & ~bit : empty1,
+        limb === 2 ? empty2 & ~bit : empty2,
+      )
+      const distance = fillLayers(entry, exit, cutLayers)
+      if (distance < 0 || distance > THREAT_DISTANCE) {
+        survives = false
+        break
+      }
+    }
+  }
+  setTerrain(own0, own1, own2, empty0, empty1, empty2)
+  return survives
+}
 
 /**
  * Potentiel de connexion d'un joueur — bas vaut mieux — et largeur de son axe
  * dominant. L'axe le plus court pèse `PRIMARY_AXIS_WEIGHT`, le second
- * `SECONDARY_AXIS_WEIGHT`.
+ * `SECONDARY_WEIGHT`.
  */
 function measurePlayer(
   position: EnginePosition,
   side: number,
   ownBudget: number,
   stackBudget: number,
-  secondaryWeight: number,
+  robust = false,
+  hanging = 0,
+  hangingWall = 0,
 ): void {
   fillMasks(position, side, stackBudget)
 
   const horizontal = axisDistance(EDGE_LEFT, EDGE_RIGHT, horizontalLayers)
-  const vertical = axisDistance(EDGE_TOP, EDGE_BOTTOM, verticalLayers)
+  const suspended = hanging > 0 || hangingWall > 0
+  const full0 = empty0
+  const full1 = empty1
+  const full2 = empty2
+  const vertical = suspended
+    ? suspendedVertical(position, side, hanging, hangingWall)
+    : axisDistance(EDGE_TOP, EDGE_BOTTOM, verticalLayers)
 
   // Un axe qui demande plus de cases qu'il n'en reste en réserve est mort : le
   // joueur doit **posséder** chaque case du chemin, et il ne peut pas en poser
@@ -323,48 +461,451 @@ function measurePlayer(
   const horizontalLeads = horizontalReach <= verticalReach
   const primary = finiteAxis(horizontalLeads ? horizontalReach : verticalReach)
   const secondary = finiteAxis(horizontalLeads ? verticalReach : horizontalReach)
-  playerPotential = primary * PRIMARY_AXIS_WEIGHT + secondary * secondaryWeight
+  playerPrimary = primary
+  playerSecondary = secondary
+  if (suspended && horizontalLeads) {
+    const base = (side - 1) * LIMBS
+    empty0 = full0
+    empty1 = full1
+    empty2 = full2
+    setTerrain(position.bits[base], position.bits[base + 1], position.bits[base + 2], full0, full1, full2)
+  }
   playerWidth = Math.min(
     horizontalLeads
       ? axisWidth(horizontalLayers, EDGE_RIGHT, EDGE_LEFT, horizontal)
-      : axisWidth(verticalLayers, EDGE_BOTTOM, EDGE_TOP, vertical),
+      : axisWidth(verticalLayers, EDGE_BOTTOM, EDGE_TOP, vertical, hanging > 0),
     PATH_WIDTH_CAP,
   )
+  playerRobust = false
+  if (robust && primary <= THREAT_DISTANCE) {
+    const base = (side - 1) * LIMBS
+    const bits = position.bits
+    playerRobust =
+      secondary <= THREAT_DISTANCE ||
+      (horizontalLeads
+        ? threatSurvivesOneCut(bits[base], bits[base + 1], bits[base + 2], horizontalLayers, EDGE_LEFT, EDGE_RIGHT, primary)
+        : threatSurvivesOneCut(bits[base], bits[base + 1], bits[base + 2], verticalLayers, EDGE_TOP, EDGE_BOTTOM, primary))
+  }
 }
 
-/** Évaluation statique, du point de vue du joueur au trait. */
+/**
+ * Critères tirés de l'analyse des parties du tournoi
+ * (`scripts/analyse-parties.ts`) et de l'autopsie des défaites de l'IA de la
+ * maison, chacun avec son poids en points d'évaluation. À zéro, un critère
+ * n'est pas calculé. Ceux que la mesure a retenus forment `DEFAULT_CRITERIA` ;
+ * les autres restent des options, pour être remesurés.
+ */
+export type EvaluationCriteria = {
+  /** Par demi-case d'avance à la distance pondérée par la gravité. */
+  gravity: number
+  /** Par zone distincte de moins que l'adversaire. */
+  zoneCount: number
+  /** Par case posée sur une case adverse, de plus que l'adversaire. */
+  caps: number
+  /** Menace à deux cases qu'aucune case adverse seule ne coupe (H12). */
+  robust: number
+  /** Par coup légal d'avance, plafonné à `MOBILITY_CAP`, une fois le plateau à moitié plein (H20). */
+  mobility: number
+  /**
+   * Par barre de 3 gardée en réserve ; la moitié en moins par grand L gardé (H14).
+   *
+   * **Mesuré** contre l'ancienne évaluation : à 300, à 1 s par coup, 61 % sur
+   * 400 parties et 57 ouvertures gagnées des deux couleurs contre 15 ; 55,8 % à
+   * 6 s, non concluant. L'ajustement Texel a ensuite montré que seule la moitié
+   * `bar3` porte l'information, à un poids quatre fois plus lourd : c'est elle
+   * que `DEFAULT_CRITERIA` retient, et `largeL` n'y apporte rien.
+   */
+  reserve: number
+  /** Les deux moitiés de `reserve`, à mesurer séparément : par barre de 3 gardée… */
+  bar3: number
+  /** … et par grand L gardé, négatif pour un malus. */
+  largeL: number
+  /** Par case dans les trois lignes du haut, en début de partie : un malus (H16, carte des cases). */
+  topRows: number
+  /**
+   * **Un seuil, pas un poids** : dans la distance de l'axe vertical, une case
+   * vide ayant au moins `hanging` cases vides sous elle coûte deux pas au lieu
+   * d'un. L'autopsie des défaites de l'IA de la maison y a vu la faute la plus
+   * fréquente : une menace à une case sans gravité, à trois ou plus une fois
+   * comptées les cases à combler dessous, que l'adversaire laisse vides.
+   */
+  hanging: number
+  /** Même seuil, mais la case suspendue devient **infranchissable** pour l'axe vertical. */
+  hangingWall: number
+  /**
+   * Par case de plus grande zone, ajouté au poids du départage au blocage pour
+   * chaque cran où la distance principale **des deux** joueurs dépasse
+   * `ZONE_STALL_FROM` : personne ne connectera, la partie se jouera au blocage.
+   */
+  zoneStall: number
+}
+
+export const NO_CRITERIA: EvaluationCriteria = {
+  gravity: 0,
+  zoneCount: 0,
+  caps: 0,
+  robust: 0,
+  mobility: 0,
+  reserve: 0,
+  bar3: 0,
+  largeL: 0,
+  topRows: 0,
+  hanging: 0,
+  hangingWall: 0,
+  zoneStall: 0,
+}
+
+/**
+ * Critères du maître. Tous sont nés comme options à l'essai ; ceux-ci ont passé
+ * le banc de positions exactes (`scripts/banc-positions.ts`) et l'ajustement
+ * Texel. `hangingWall` seul fait 56,9 % contre l'ancienne évaluation sur 400
+ * parties appariées ; les autres ajoutent 54,6 % par-dessus. Les critères
+ * absents d'ici n'ont rien apporté, ou rien que l'axe vertical à mur ne porte
+ * déjà.
+ */
+export const DEFAULT_CRITERIA: EvaluationCriteria = {
+  ...NO_CRITERIA,
+  hangingWall: 3,
+  zoneStall: 57,
+  caps: 84,
+  bar3: 1199,
+}
+
+const MOBILITY_CAP = 8
+const ZONE_STALL_FROM = 2
+const MOBILITY_FROM = 40
+const TOP_ROWS_UNTIL = 40
+const BAR3 = 2
+const LARGE_L = 6
+
+const GRAVITY_UNREACHABLE = 4 * N * N
+const gravityDistance = new Int32Array(CELLS)
+const gravityHeap = new Int32Array(CELLS * 9)
+
+/**
+ * Distance de connexion d'un axe où une case vide coûte, en demi-cases, deux
+ * plus le nombre de cases vides sous elle : on ne l'atteint qu'une fois sa
+ * colonne comblée. Les colonnes n'ayant jamais de trou, ce nombre se lit sur
+ * `top`. Dijkstra sur un tas binaire, les coûts n'étant plus unitaires.
+ */
+function gravityAxis(position: EnginePosition, side: number, vertical: boolean): number {
+  const { board, top } = position
+  const cost = (cell: number): number => {
+    const occupant = board[cell]
+    if (occupant === side) return 0
+    if (occupant !== 0) return -1
+    const x = cell % N
+    return 2 + top[x] - 1 - ((cell / N) | 0)
+  }
+  gravityDistance.fill(GRAVITY_UNREACHABLE)
+  let size = 0
+  const push = (distance: number, cell: number): void => {
+    let i = size
+    size += 1
+    const key = distance * 128 + cell
+    while (i > 0) {
+      const parent = (i - 1) >> 1
+      if (gravityHeap[parent] <= key) break
+      gravityHeap[i] = gravityHeap[parent]
+      i = parent
+    }
+    gravityHeap[i] = key
+  }
+  const pop = (): number => {
+    const head = gravityHeap[0]
+    size -= 1
+    const last = gravityHeap[size]
+    let i = 0
+    for (;;) {
+      let child = 2 * i + 1
+      if (child >= size) break
+      if (child + 1 < size && gravityHeap[child + 1] < gravityHeap[child]) child += 1
+      if (gravityHeap[child] >= last) break
+      gravityHeap[i] = gravityHeap[child]
+      i = child
+    }
+    gravityHeap[i] = last
+    return head
+  }
+  for (let k = 0; k < N; k += 1) {
+    const cell = vertical ? k : k * N
+    const c = cost(cell)
+    if (c < 0) continue
+    gravityDistance[cell] = c
+    push(c, cell)
+  }
+  while (size > 0) {
+    const key = pop()
+    const cell = key & 127
+    const distance = key >> 7
+    if (distance > gravityDistance[cell]) continue
+    const x = cell % N
+    const y = (cell / N) | 0
+    if (vertical ? y === N - 1 : x === N - 1) return distance
+    for (let dy = -1; dy <= 1; dy += 1) {
+      const ny = y + dy
+      if (ny < 0 || ny >= N) continue
+      for (let dx = -1; dx <= 1; dx += 1) {
+        const nx = x + dx
+        if ((dx === 0 && dy === 0) || nx < 0 || nx >= N) continue
+        const next = ny * N + nx
+        const c = cost(next)
+        if (c < 0 || distance + c >= gravityDistance[next]) continue
+        gravityDistance[next] = distance + c
+        push(distance + c, next)
+      }
+    }
+  }
+  return GRAVITY_UNREACHABLE
+}
+
+const gravityReach = (position: EnginePosition, side: number): number =>
+  Math.min(gravityAxis(position, side, false), gravityAxis(position, side, true))
+
+function zoneCount(position: EnginePosition, side: number): number {
+  const base = (side - 1) * LIMBS
+  const own0 = position.bits[base]
+  const own1 = position.bits[base + 1]
+  const own2 = position.bits[base + 2]
+  let rest0 = own0
+  let rest1 = own1
+  let rest2 = own2
+  let count = 0
+  while ((rest0 | rest1 | rest2) !== 0) {
+    let seed0 = 0
+    let seed1 = 0
+    let seed2 = 0
+    if (rest0 !== 0) seed0 = rest0 & -rest0
+    else if (rest1 !== 0) seed1 = rest1 & -rest1
+    else seed2 = rest2 & -rest2
+    floodFrom(seed0, seed1, seed2, own0, own1, own2)
+    count += 1
+    rest0 &= ~FLOOD[0]
+    rest1 &= ~FLOOD[1]
+    rest2 &= ~FLOOD[2]
+  }
+  return count
+}
+
+/** Cases de `side` posées sur une case adverse, moins l'inverse. */
+function capBalance(position: EnginePosition, side: number): number {
+  const board = position.board
+  let balance = 0
+  for (let cell = 0; cell < CELLS - N; cell += 1) {
+    const above = board[cell]
+    const below = board[cell + N]
+    if (above === 0 || below === 0 || above === below) continue
+    balance += above === side ? 1 : -1
+  }
+  return balance
+}
+
+function criteriaValue(position: EnginePosition, criteria: EvaluationCriteria): number {
+  const side = position.side
+  const opponent = otherSide(side)
+  let value = 0
+  if (criteria.gravity !== 0) {
+    value += (gravityReach(position, opponent) - gravityReach(position, side)) * criteria.gravity
+  }
+  if (criteria.zoneCount !== 0) {
+    value += (zoneCount(position, opponent) - zoneCount(position, side)) * criteria.zoneCount
+  }
+  if (criteria.caps !== 0) value += capBalance(position, side) * criteria.caps
+  const filled = filledCells(position)
+  if (criteria.mobility !== 0 && filled >= MOBILITY_FROM) {
+    value +=
+      (countMoves(position, side, MOBILITY_CAP) - countMoves(position, opponent, MOBILITY_CAP)) *
+      criteria.mobility
+  }
+  const bar3 = criteria.reserve + criteria.bar3
+  const largeL = criteria.largeL - criteria.reserve / 2
+  if (bar3 !== 0 || largeL !== 0) {
+    const mine = (side - 1) * 7
+    const theirs = (opponent - 1) * 7
+    const inventory = position.inventory
+    value +=
+      (inventory[mine + BAR3] - inventory[theirs + BAR3]) * bar3 +
+      (inventory[mine + LARGE_L] - inventory[theirs + LARGE_L]) * largeL
+  }
+  if (criteria.topRows !== 0 && filled < TOP_ROWS_UNTIL) {
+    // Le premier mot du plateau de bits porte exactement les lignes 0 à 2.
+    value -=
+      (popcount(position.bits[(side - 1) * LIMBS]) - popcount(position.bits[(opponent - 1) * LIMBS])) *
+      criteria.topRows
+  }
+  return value
+}
+
+/**
+ * Poids de l'évaluation de base, en points. Les valeurs par défaut sont celles
+ * des constantes ci-dessus, `primary` et `secondary` valant le poids de chaque
+ * axe multiplié par `CONNECTION_WEIGHT`. Des poids entiers gardent l'évaluation
+ * entière, ce qu'exige la table de transposition.
+ */
+export type EvaluationWeights = {
+  /** Par cran d'avance sur l'axe dominant. */
+  primary: number
+  /** Par cran d'avance sur le second axe. */
+  secondary: number
+  pathWidth: number
+  zoneBase: number
+  zoneFill: number
+  tempo: number
+}
+
+/** `secondaryAxisWeight`, fourni, exprime le second axe en crans d'axe. */
+export function evaluationWeights(
+  secondaryAxisWeight?: number,
+  weights: Partial<EvaluationWeights> = {},
+): EvaluationWeights {
+  return {
+    primary: PRIMARY_AXIS_WEIGHT * CONNECTION_WEIGHT,
+    secondary:
+      secondaryAxisWeight === undefined ? SECONDARY_WEIGHT : secondaryAxisWeight * CONNECTION_WEIGHT,
+    pathWidth: PATH_WIDTH_WEIGHT,
+    zoneBase: ZONE_WEIGHT_BASE,
+    zoneFill: ZONE_WEIGHT_FILL,
+    tempo: TEMPO,
+    ...weights,
+  }
+}
+
+export const DEFAULT_WEIGHTS: EvaluationWeights = evaluationWeights()
+
+/**
+ * Évaluation statique, du point de vue du joueur au trait. `weights`, fourni,
+ * l'emporte sur `secondaryAxisWeight`.
+ */
 export function evaluate(
   position: EnginePosition,
-  secondaryWeight: number = SECONDARY_AXIS_WEIGHT,
+  secondaryAxisWeight?: number,
+  criteria: EvaluationCriteria = DEFAULT_CRITERIA,
+  weights?: EvaluationWeights,
 ): number {
+  const w =
+    weights ?? (secondaryAxisWeight === undefined ? DEFAULT_WEIGHTS : evaluationWeights(secondaryAxisWeight))
   const side = position.side
   const opponent = otherSide(side)
 
   const stackBudget = totalRemainingCells(position)
-  measurePlayer(position, side, remainingCells(position, side), stackBudget, secondaryWeight)
-  const myPotential = playerPotential
+  const robust = criteria.robust !== 0
+  const { hanging, hangingWall } = criteria
+  measurePlayer(position, side, remainingCells(position, side), stackBudget, robust, hanging, hangingWall)
+  const mySecondary = playerSecondary
   const myWidth = playerWidth
+  const myRobust = playerRobust
+  const myPrimary = playerPrimary
 
-  measurePlayer(
-    position,
-    opponent,
-    remainingCells(position, opponent),
-    stackBudget,
-    secondaryWeight,
-  )
-  const connection = playerPotential - myPotential
+  measurePlayer(position, opponent, remainingCells(position, opponent), stackBudget, robust, hanging, hangingWall)
   const width = myWidth - playerWidth
+  const threats = robust ? (Number(myRobust) - Number(playerRobust)) * criteria.robust : 0
 
+  const stall = Math.min(myPrimary, playerPrimary) - ZONE_STALL_FROM
   const zoneWeight =
-    ZONE_WEIGHT_BASE + Math.round((ZONE_WEIGHT_FILL * filledCells(position)) / CELLS)
+    w.zoneBase +
+    Math.round((w.zoneFill * filledCells(position)) / CELLS) +
+    (criteria.zoneStall !== 0 && stall > 0 ? criteria.zoneStall * stall : 0)
   const zone = largestZone(position, side) - largestZone(position, opponent)
 
   return (
-    connection * CONNECTION_WEIGHT +
-    width * PATH_WIDTH_WEIGHT +
+    (playerPrimary - myPrimary) * w.primary +
+    (playerSecondary - mySecondary) * w.secondary +
+    width * w.pathWidth +
     zone * zoneWeight +
-    TEMPO
+    criteriaValue(position, criteria) +
+    threats +
+    w.tempo
   )
+}
+
+/**
+ * Termes bruts de l'évaluation, du point de vue du joueur au trait, pour ajuster
+ * ses poids hors ligne. Chaque écart se lit « adversaire moins joueur » pour une
+ * distance, « joueur moins adversaire » pour le reste : un terme positif est
+ * favorable. Les termes des critères sont ceux qu'`evaluate` multiplie par leur
+ * poids, fenêtres de remplissage comprises. `hanging` et `hangingWall` sont les
+ * seuils du même nom dans `EvaluationCriteria` : ils changent les distances, pas
+ * un poids. Avec eux, `evaluate(position, s, criteria, weights)` vaut la somme
+ * des termes pondérés et de `weights.tempo`.
+ */
+export type EvaluationTerms = {
+  primary: number
+  secondary: number
+  width: number
+  zone: number
+  /** `zone` fois le remplissage, en part du plateau. */
+  zoneFill: number
+  /** `zone` fois l'excès de la plus petite distance principale sur `ZONE_STALL_FROM`. */
+  zoneStall: number
+  filled: number
+  ownReserve: number
+  opponentReserve: number
+  ownPieces: number
+  opponentPieces: number
+  /** 1 si le joueur au trait est celui qui a ouvert la partie. */
+  opener: number
+  gravity: number
+  zoneCount: number
+  caps: number
+  mobility: number
+  bar3: number
+  largeL: number
+  topRows: number
+  robust: number
+}
+
+export function evaluationTerms(
+  position: EnginePosition,
+  { hanging = 0, hangingWall = 0 }: Partial<Pick<EvaluationCriteria, 'hanging' | 'hangingWall'>> = {},
+): EvaluationTerms {
+  const side = position.side
+  const opponent = otherSide(side)
+  const stackBudget = totalRemainingCells(position)
+  const ownReserve = remainingCells(position, side)
+  const opponentReserve = remainingCells(position, opponent)
+  const measure = (who: number, robust: boolean, hanging: number, wall: number) => {
+    measurePlayer(position, who, who === side ? ownReserve : opponentReserve, stackBudget, robust, hanging, wall)
+    return { primary: playerPrimary, secondary: playerSecondary, width: playerWidth, robust: Number(playerRobust) }
+  }
+  const mine = measure(side, true, hanging, hangingWall)
+  const theirs = measure(opponent, true, hanging, hangingWall)
+
+  const filled = filledCells(position)
+  const zone = largestZone(position, side) - largestZone(position, opponent)
+  const stall = Math.min(mine.primary, theirs.primary) - ZONE_STALL_FROM
+  const inventory = position.inventory
+  const pieces = (who: number): number => {
+    let total = 0
+    for (let shape = 0; shape < 7; shape += 1) total += inventory[(who - 1) * 7 + shape]
+    return total
+  }
+  const shapeGap = (shape: number): number => inventory[(side - 1) * 7 + shape] - inventory[(opponent - 1) * 7 + shape]
+  return {
+    primary: theirs.primary - mine.primary,
+    secondary: theirs.secondary - mine.secondary,
+    width: mine.width - theirs.width,
+    zone,
+    zoneFill: (zone * filled) / CELLS,
+    zoneStall: stall > 0 ? zone * stall : 0,
+    filled,
+    ownReserve,
+    opponentReserve,
+    ownPieces: pieces(side),
+    opponentPieces: pieces(opponent),
+    opener: side === BLUE ? 1 : 0,
+    gravity: gravityReach(position, opponent) - gravityReach(position, side),
+    zoneCount: zoneCount(position, opponent) - zoneCount(position, side),
+    caps: capBalance(position, side),
+    mobility:
+      filled >= MOBILITY_FROM ? countMoves(position, side, MOBILITY_CAP) - countMoves(position, opponent, MOBILITY_CAP) : 0,
+    bar3: shapeGap(BAR3),
+    largeL: shapeGap(LARGE_L),
+    topRows:
+      filled < TOP_ROWS_UNTIL
+        ? popcount(position.bits[(opponent - 1) * LIMBS]) - popcount(position.bits[(side - 1) * LIMBS])
+        : 0,
+    robust: mine.robust - theirs.robust,
+  }
 }
 
 /** Valeur d'une fin par blocage, du point de vue de `side`. */
@@ -416,8 +957,10 @@ type SearchContext = {
   maxNodes: number
   /** Réduire les coups tardifs. Voir `reduction`. */
   reduce: boolean
-  /** Poids du second axe dans l'évaluation. Voir `SECONDARY_AXIS_WEIGHT`. */
-  secondaryWeight: number
+  /** Second axe en crans, s'il est imposé. Voir `SECONDARY_WEIGHT`. */
+  secondaryWeight: number | undefined
+  criteria: EvaluationCriteria
+  weights: EvaluationWeights
   nodes: number
   aborted: boolean
 }
@@ -617,13 +1160,13 @@ function search(
     }
   }
 
-  if (depth <= 0) return evaluate(position, context.secondaryWeight)
+  if (depth <= 0) return evaluate(position, context.secondaryWeight, context.criteria, context.weights)
 
   const base = ply * MAX_MOVES
   const count = generateMoves(position, moveBuffer, base)
   // Le joueur au trait a toujours un coup ici : l'appelant a déjà résolu la
   // passe forcée et le blocage avant de récurser.
-  if (count === 0) return evaluate(position, context.secondaryWeight)
+  if (count === 0) return evaluate(position, context.secondaryWeight, context.criteria, context.weights)
   scoreMoves(moveBuffer, orderBuffer, base, count, ttBest, ply, position.side)
 
   let best = -MATE - 1
@@ -841,7 +1384,7 @@ export type MasterSearchOptions = {
    */
   reduce?: boolean
   /**
-   * Poids du second axe dans l'évaluation (voir `SECONDARY_AXIS_WEIGHT`).
+   * Poids du second axe dans l'évaluation, en crans d'axe (voir `SECONDARY_WEIGHT`).
    * Réglage à mesurer, arme contre arme, dans `duel-appariee.ts`.
    */
   secondaryAxisWeight?: number
@@ -853,6 +1396,13 @@ export type MasterSearchOptions = {
    * incomplète ne se transforme pas en force. L'option reste pour la remesurer.
    */
   keepPartial?: boolean
+  /** Critères d'évaluation, `DEFAULT_CRITERIA` par défaut. Voir `EvaluationCriteria`. */
+  criteria?: Partial<EvaluationCriteria>
+  /**
+   * Poids de l'évaluation de base, ceux des constantes par défaut. Voir
+   * `EvaluationWeights` ; `secondary` y l'emporte sur `secondaryAxisWeight`.
+   */
+  weights?: Partial<EvaluationWeights>
   /** Départage des ex æquo, comme ailleurs dans le domaine. */
   random?: () => number
 }
@@ -943,7 +1493,7 @@ export function searchMasterTopMoves(
   const keepOddDepth = options.allowOddDepth ?? true
   const reduce = options.reduce ?? false
   const keepPartial = options.keepPartial ?? false
-  const secondaryWeight = options.secondaryAxisWeight ?? SECONDARY_AXIS_WEIGHT
+  const secondaryWeight = options.secondaryAxisWeight
   const timed = maxNodes === Number.POSITIVE_INFINITY
   const context: SearchContext = {
     position,
@@ -954,6 +1504,8 @@ export function searchMasterTopMoves(
     maxNodes,
     reduce,
     secondaryWeight,
+    criteria: { ...DEFAULT_CRITERIA, ...options.criteria },
+    weights: options.weights ? evaluationWeights(secondaryWeight, options.weights) : evaluationWeights(secondaryWeight),
     nodes: 0,
     aborted: false,
   }

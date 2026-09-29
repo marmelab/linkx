@@ -4,9 +4,15 @@ import {
   TEMPO,
   chooseMasterMove,
   searchMasterTopMoves,
+  NO_CRITERIA,
+  DEFAULT_CRITERIA,
+  DEFAULT_WEIGHTS,
   evaluate,
+  evaluationTerms,
+  evaluationWeights,
 } from './engineSearch.ts'
-import { createEnginePosition, loadPosition } from './engineBoard.ts'
+import type { EvaluationCriteria, EvaluationWeights } from './engineSearch.ts'
+import { applyMove, createEnginePosition, generateMoves, loadPosition, undoMove } from './engineBoard.ts'
 import { referencePositionAfter } from './referenceGame.ts'
 import { chooseMoveForDifficulty } from './minimax.ts'
 import { createGamePosition, simulateLegalMove } from './simulation.ts'
@@ -156,6 +162,111 @@ describe('recherche du maître', () => {
     expect(evaluate(white)).toBe(TEMPO)
   })
 
+  describe("critères à l'essai", () => {
+    const enginePositionOf = (rows: string, inventories: Partial<Record<PlayerId, Inventory>>) =>
+      loadPosition(createEnginePosition(), {
+        board: boardFromText(rows),
+        inventories: { blue: createInitialInventory(), white: createInitialInventory(), ...inventories },
+        activePlayer: 'blue',
+      })
+    const gain = (
+      rows: string,
+      criteria: Partial<EvaluationCriteria>,
+      inventories: Partial<Record<PlayerId, Inventory>> = {},
+    ) => {
+      const position = enginePositionOf(rows, inventories)
+      return evaluate(position, undefined, { ...NO_CRITERIA, ...criteria }) - evaluate(position, undefined, NO_CRITERIA)
+    }
+    const empty = '.........\n'.repeat(7)
+
+    it('ne change rien à poids nul', () => {
+      expect(gain(`${empty}.........\nBB.....WW`, { ...NO_CRITERIA })).toBe(0)
+    })
+
+    it('compte les cases posées sur une case adverse', () => {
+      expect(gain(`${empty}B........\nW.......W`, { caps: 200 })).toBe(200)
+    })
+
+    it('pénalise les zones distinctes', () => {
+      expect(gain(`${empty}.........\nB...B...W`, { zoneCount: 300 })).toBe(-300)
+    })
+
+    it('ne voit aucune avance de gravité dans une position symétrique', () => {
+      expect(gain(`${empty}.........\nBB.....WW`, { gravity: 150 })).toBe(0)
+    })
+
+    it('fait payer la case vide qui reste sous la case à prendre', () => {
+      // Chacun est à une case du bord droit, mais celle de blanc est perchée.
+      const rows = `${'.........\n'.repeat(6)}WWWWWWWW.\nBBBBBBBB.\nBBBBBBBB.`
+      expect(gain(rows, { gravity: 150 })).toBe(150)
+    })
+
+    it('récompense une menace à deux cases que rien ne coupe', () => {
+      // Un domino blanc sur le trou laisse passer bleu par-dessus, en diagonale.
+      expect(gain(`${empty}.........\nBBB..BBBB`, { robust: 1000 })).toBe(1000)
+      expect(gain(`${empty}.........\nBB.....WW`, { robust: 1000 })).toBe(0)
+    })
+
+    it('compte la mobilité une fois le plateau à moitié plein', () => {
+      const stripes = `${'.........\n'.repeat(4)}${'BWBWBWBWB\n'.repeat(5)}`.trim()
+      expect(gain(stripes, { mobility: 150 })).toBe(0)
+      const none = { ...createInitialInventory(), mono: 0, domino: 0, bar3: 0, smallL: 0, s: 0, t: 0, largeL: 0 } as Inventory
+      expect(gain(stripes, { mobility: 150 }, { white: none })).toBe(8 * 150)
+      expect(gain(`${empty}.........\nBB.....WW`, { mobility: 150 }, { white: none })).toBe(0)
+    })
+
+    it('valorise la barre de 3 gardée et pénalise le grand L gardé', () => {
+      const rows = `${empty}.........\nBB.....WW`
+      expect(gain(rows, { reserve: 300 }, { blue: { ...createInitialInventory(), bar3: 1 } })).toBe(-300)
+      expect(gain(rows, { reserve: 300 }, { blue: { ...createInitialInventory(), largeL: 1 } })).toBe(150)
+    })
+
+    it('pénalise les cases des trois lignes du haut en début de partie', () => {
+      const rows = `${'B........\n'.repeat(3)}${'W........\n'.repeat(6)}`.trim()
+      expect(gain(rows, { topRows: 150 })).toBe(-450)
+    })
+
+    // Bleu est à une case du haut, mais cette case — deuxième colonne, troisième
+    // ligne — a deux cases vides sous elle : il faut combler la colonne d'abord.
+    const perched = [
+      '..B......',
+      '..B......',
+      '..W......',
+      'B.W......',
+      'B.W......',
+      'BWW......',
+      'BWW......',
+      'BWW......',
+      'BWW......',
+    ].join('\n')
+    const swapped = perched.replace(/[BW]/g, (cell) => (cell === 'B' ? 'W' : 'B'))
+
+    // Le camp sans réserve n'a plus d'axe vivant : seul l'autre est mesuré.
+    const spent = { ...createInitialInventory(), mono: 0, domino: 0, bar3: 0, smallL: 0, s: 0, t: 0, largeL: 0 } as Inventory
+
+    it('fait payer deux pas à la case suspendue dans la distance verticale', () => {
+      expect(gain(perched, { hanging: 2 }, { white: spent })).toBeLessThan(-1000)
+      expect(gain(swapped, { hanging: 2 }, { blue: spent })).toBeGreaterThan(1000)
+      // Le seuil compte : à trois cases vides dessous, la case perchée reste à un
+      // pas, et seul le haut de la première colonne s'alourdit.
+      expect(gain(perched, { hanging: 3 }, { white: spent })).toBe(0)
+    })
+
+    it('rend la case suspendue infranchissable, plus sévèrement encore', () => {
+      expect(gain(perched, { hangingWall: 2 }, { white: spent })).toBeLessThan(
+        gain(perched, { hanging: 2 }, { white: spent }),
+      )
+    })
+
+    it('relève le poids de la plus grande zone quand personne ne connectera bientôt', () => {
+      // Bleu à six cases de connecter, blanc à sept : 4 crans au-delà de deux,
+      // et une case de plus dans la plus grande zone bleue.
+      expect(gain(`${empty}.........\nBBB....WW`, { zoneStall: 10 })).toBe(40)
+      // À une case de connecter, rien ne change.
+      expect(gain(`${empty}.........\nBBBBBBB.W`, { zoneStall: 10 })).toBe(0)
+    })
+  })
+
   /**
    * La variante principale sert au livre d'ouverture, qui y récolte des coups
    * sans les rechercher. Elle doit donc être une suite **rejouable par le
@@ -223,6 +334,81 @@ describe('recherche du maître', () => {
     // Sans terme de tempo, cet écart valait environ 1 250 points, soit plus d'un
     // cran d'axe principal.
     expect(Math.abs(mean)).toBeLessThan(400)
+  })
+
+  describe("poids de l'évaluation", () => {
+    /** La partie de référence, et tous les enfants d'une position sur trois. */
+    const eachPosition = (visit: (position: ReturnType<typeof createEnginePosition>) => void) => {
+      const moves = new Int32Array(256)
+      for (let moveCount = 0; moveCount <= 20; moveCount += 1) {
+        const position = loadPosition(createEnginePosition(), referencePositionAfter(moveCount))
+        visit(position)
+        if (moveCount % 3 !== 0) continue
+        const count = generateMoves(position, moves, 0)
+        for (let index = 0; index < count; index += 1) {
+          applyMove(position, moves[index])
+          visit(position)
+          undoMove(position, moves[index])
+        }
+      }
+    }
+
+    it('rend exactement l\'évaluation des constantes quand les poids sont ceux par défaut', () => {
+      expect(evaluationWeights()).toEqual(DEFAULT_WEIGHTS)
+      eachPosition((position) => {
+        const value = evaluate(position)
+        expect(evaluate(position, undefined, DEFAULT_CRITERIA, evaluationWeights())).toBe(value)
+        expect(evaluate(position, 5, DEFAULT_CRITERIA, evaluationWeights())).toBe(value)
+      })
+    })
+
+    it('ne change aucun coup ni aucun score de la recherche avec les poids par défaut', () => {
+      for (const moveCount of [6, 10, 14]) {
+        const position = referencePositionAfter(moveCount)
+        const plain = searchMasterTopMoves(position, { maxNodes: 30_000 })
+        const weighted = searchMasterTopMoves(position, { maxNodes: 30_000, weights: { ...DEFAULT_WEIGHTS } })
+        expect(weighted?.score).toBe(plain?.score)
+        expect(weighted?.moves.map((move) => move.cells)).toEqual(plain?.moves.map((move) => move.cells))
+        expect(weighted?.nodes).toBe(plain?.nodes)
+      }
+    })
+
+    /** `evaluate` recomposée depuis ses termes bruts : c'est ce qu'ajuste `evaluationTerms`. */
+    const recompose = (
+      position: ReturnType<typeof createEnginePosition>,
+      criteria: EvaluationCriteria,
+      weights: EvaluationWeights,
+    ): number => {
+      const t = evaluationTerms(position, criteria)
+      return (
+        t.primary * weights.primary +
+        t.secondary * weights.secondary +
+        t.width * weights.pathWidth +
+        t.zone * (weights.zoneBase + Math.round((weights.zoneFill * t.filled) / 81)) +
+        t.zoneStall * criteria.zoneStall +
+        t.gravity * criteria.gravity +
+        t.zoneCount * criteria.zoneCount +
+        t.caps * criteria.caps +
+        t.mobility * criteria.mobility +
+        t.bar3 * criteria.bar3 +
+        t.largeL * criteria.largeL +
+        t.topRows * criteria.topRows +
+        t.robust * criteria.robust +
+        weights.tempo
+      )
+    }
+
+    it('se recompose depuis ses termes bruts, critères et seuils compris', () => {
+      const criteria = { ...NO_CRITERIA, gravity: 7, zoneCount: 11, caps: 13, mobility: 17, bar3: 19, largeL: 23, topRows: 29, robust: 31, zoneStall: 37 }
+      const weights = evaluationWeights(3, { primary: 1000, secondary: 250, pathWidth: 41, zoneBase: 9, zoneFill: 70, tempo: 500 })
+      eachPosition((position) => {
+        expect(recompose(position, DEFAULT_CRITERIA, DEFAULT_WEIGHTS)).toBe(evaluate(position))
+        for (const thresholds of [{}, { hanging: 2 }, { hangingWall: 3 }]) {
+          const all = { ...criteria, ...thresholds }
+          expect(recompose(position, all, weights)).toBe(evaluate(position, 3, all, weights))
+        }
+      })
+    })
   })
 
   it('est atteignable par le niveau, sans profondeur transmise', () => {

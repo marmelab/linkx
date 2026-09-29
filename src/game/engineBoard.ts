@@ -353,6 +353,34 @@ export function hasAnyMove(position: EnginePosition, side: number): boolean {
   return false
 }
 
+/** Coups légaux de `side`, comptés jusqu'à `cap` au plus. */
+export function countMoves(position: EnginePosition, side: number, cap: number): number {
+  const { top, inventory } = position
+  const base = (side - 1) * 7
+  let count = 0
+  for (let shape = 0; shape < 7; shape += 1) {
+    if (inventory[base + shape] === 0) continue
+    const entries = ORIENTATIONS[shape]
+    for (let index = 0; index < entries.length; index += 1) {
+      const entry = entries[index]
+      const lastColumn = N - entry.width
+      for (let column = 0; column <= lastColumn; column += 1) {
+        const anchorY = top[column + entry.colDx[0]] - 1 - entry.colMaxDy[0]
+        if (anchorY < 0) continue
+        let flush = true
+        for (let c = 1; c < entry.colCount; c += 1) {
+          if (top[column + entry.colDx[c]] - 1 - entry.colMaxDy[c] !== anchorY) {
+            flush = false
+            break
+          }
+        }
+        if (flush && ++count >= cap) return count
+      }
+    }
+  }
+  return count
+}
+
 // --- Poser, retirer, passer --------------------------------------------------
 
 export function flipSide(position: EnginePosition): void {

@@ -7,7 +7,7 @@
  * budget en direct au fort facteur de branchement du début de partie.
  *
  * Lancement (hors ligne, long) :
- *   node node_modules/vite-node/dist/cli.mjs scripts/generate-opening-book.ts --jobs 8
+ *   node node_modules/vite-node/dist/cli.mjs scripts/generate-opening-book.ts --replies 8 --jobs 8
  *
  * Options : --depth N (défaut 9, profondeur exigée de chaque recherche) ·
  * --jobs N (défaut 1, processus travaillant en parallèle) ·
@@ -35,8 +35,9 @@
  * Elle doit dépasser ce que la recherche en direct atteint, sans quoi le livre
  * n'apporterait rien — c'est tout son intérêt d'être calculé hors ligne. En jeu,
  * l'ouverture plafonne désormais à la profondeur **6** ; le livre vise donc
- * **9**, deux paliers au-dessus. Compter huit heures et demie en huit lots. Un
- * seul palier d'avance ne suffit pas : le livre engendré à profondeur 7 était
+ * **9**, deux paliers au-dessus. Compter treize heures en huit lots avec
+ * `--replies 8`, qui porte le livre de 102 à 467 entrées. Un seul palier
+ * d'avance ne suffit pas : le livre engendré à profondeur 7 était
  * moins bon que le jeu direct sur 14 des 50 ouvertures. Ce chiffre suit le
  * moteur : chaque fois qu'il gagne un palier en direct, le livre doit en gagner
  * un aussi, sans quoi il ne fait plus que répéter ce que le jeu trouve seul.

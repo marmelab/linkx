@@ -10,6 +10,7 @@ import {
   LIMBS,
   createLayers,
   fillLayers,
+  fillLayersWeighted,
   floodFrom,
   popcount,
   setTerrain,
@@ -78,16 +79,21 @@ function naiveFlood(seed: readonly boolean[], within: readonly boolean[]): boole
   return reached
 }
 
-/** Distances d'un parcours 0-1, case par case, pour comparaison. */
+/**
+ * Distances d'un parcours 0-1, case par case, pour comparaison. Une case de
+ * `heavy`, parmi celles à un pas, en coûte deux.
+ */
 function naiveDistances(
   free: readonly boolean[],
   step: readonly boolean[],
   entry: readonly boolean[],
+  heavy: readonly boolean[] = [],
 ): number[] {
   const distance = Array.from({ length: CELLS }, () => Number.POSITIVE_INFINITY)
+  const stepCost = (cell: number): number => (heavy[cell] ? 2 : 1)
   for (let cell = 0; cell < CELLS; cell += 1) {
     if (entry[cell] && free[cell]) distance[cell] = 0
-    else if (entry[cell] && step[cell]) distance[cell] = 1
+    else if (entry[cell] && step[cell]) distance[cell] = stepCost(cell)
   }
   let improving = true
   while (improving) {
@@ -95,7 +101,7 @@ function naiveDistances(
     for (let cell = 0; cell < CELLS; cell += 1) {
       if (distance[cell] === Number.POSITIVE_INFINITY) continue
       for (const next of neighbours(cell)) {
-        const cost = free[next] ? 0 : step[next] ? 1 : Number.POSITIVE_INFINITY
+        const cost = free[next] ? 0 : step[next] ? stepCost(next) : Number.POSITIVE_INFINITY
         const candidate = distance[cell] + cost
         if (candidate < distance[next]) {
           distance[next] = candidate
@@ -170,6 +176,46 @@ describe('plateau de bits', () => {
         for (let cell = 0; cell < CELLS; cell += 1) {
           expect(inLayer[cell]).toBe(expected[cell] === depth)
         }
+      }
+    }
+  })
+
+  it('fait payer deux pas aux cases lourdes, comme un parcours case par case', () => {
+    const random = seeded(29)
+    const layers = createLayers()
+    for (let round = 0; round < 200; round += 1) {
+      const free: boolean[] = []
+      const step: boolean[] = []
+      const heavy: boolean[] = []
+      for (let cell = 0; cell < CELLS; cell += 1) {
+        const draw = random()
+        free.push(draw < 0.2)
+        step.push(draw >= 0.2 && draw < 0.75)
+        heavy.push(draw >= 0.2 && draw < 0.75 && random() < 0.4)
+      }
+      const [f0, f1, f2] = toLimbs(free)
+      const [p0, p1, p2] = toLimbs(step)
+      const [h0, h1, h2] = toLimbs(heavy)
+      setTerrain(f0, f1, f2, p0, p1, p2)
+      for (const [entry, exit] of [
+        [EDGE_TOP, EDGE_BOTTOM],
+        [EDGE_LEFT, EDGE_RIGHT],
+      ]) {
+        const distance = fillLayersWeighted(entry, exit, layers, h0, h1, h2)
+        const expected = naiveDistances(free, step, toCells(Array.from(entry)), heavy)
+        const arrival = toCells(Array.from(exit))
+        const best = Math.min(...expected.filter((_, cell) => arrival[cell]))
+        expect(distance).toBe(Number.isFinite(best) ? best : -1)
+        if (distance >= 0) {
+          for (let depth = 0; depth <= distance; depth += 1) {
+            const inLayer = toCells(Array.from(layers), depth * LIMBS)
+            for (let cell = 0; cell < CELLS; cell += 1) {
+              expect(inLayer[cell]).toBe(expected[cell] === depth)
+            }
+          }
+        }
+        // Sans case lourde, c'est exactement `fillLayers`.
+        expect(fillLayersWeighted(entry, exit, layers, 0, 0, 0)).toBe(fillLayers(entry, exit, createLayers()))
       }
     }
   })

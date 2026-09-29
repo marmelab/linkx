@@ -282,3 +282,107 @@ export function fillLayers(
   }
   return -1
 }
+
+/**
+ * `fillLayers` où certaines cases à un pas en coûtent **deux** : `heavy`, un
+ * sous-ensemble des cases à un pas. Une case lourde atteinte depuis la couche
+ * `d` n'entre qu'à la couche `d + 2`, si bien qu'une couche peut rester vide
+ * sans que le parcours soit fini.
+ *
+ * Sert à l'évaluation à l'essai des cases suspendues (`engineSearch.ts`,
+ * `EvaluationCriteria.hanging`) ; à `heavy` vide, rend exactement `fillLayers`.
+ */
+export function fillLayersWeighted(
+  entry: Int32Array,
+  exit: Int32Array,
+  layers: Int32Array,
+  heavy0: number,
+  heavy1: number,
+  heavy2: number,
+): number {
+  const exit0 = exit[0]
+  const exit1 = exit[1]
+  const exit2 = exit[2]
+  const light0 = stepped0 & ~heavy0
+  const light1 = stepped1 & ~heavy1
+  const light2 = stepped2 & ~heavy2
+  const weighty0 = stepped0 & heavy0
+  const weighty1 = stepped1 & heavy1
+  const weighty2 = stepped2 & heavy2
+
+  let l0 = entry[0] & costless0
+  let l1 = entry[1] & costless1
+  let l2 = entry[2] & costless2
+  let v0 = l0
+  let v1 = l1
+  let v2 = l2
+  let f0 = l0
+  let f1 = l1
+  let f2 = l2
+  while ((f0 | f1 | f2) !== 0) {
+    boxOf(f0, f1, f2)
+    f0 = box0 & costless0 & ~v0
+    f1 = box1 & costless1 & ~v1
+    f2 = box2 & costless2 & ~v2
+    v0 |= f0
+    v1 |= f1
+    v2 |= f2
+    l0 |= f0
+    l1 |= f1
+    l2 |= f2
+  }
+  layers[0] = l0
+  layers[1] = l1
+  layers[2] = l2
+  if (((l0 & exit0) | (l1 & exit1) | (l2 & exit2)) !== 0) return 0
+
+  // `pending` entre à la couche courante : les cases lourdes voisines de la
+  // couche d'avant-hier, et au départ les cases légères du bord d'entrée — les
+  // lourdes du bord entrent une couche plus tard.
+  let pending0 = entry[0] & light0
+  let pending1 = entry[1] & light1
+  let pending2 = entry[2] & light2
+
+  for (let depth = 1; depth < MAX_LAYERS; depth += 1) {
+    boxOf(l0, l1, l2)
+    let n0 = ((box0 & light0) | pending0) & ~v0
+    let n1 = ((box1 & light1) | pending1) & ~v1
+    let n2 = ((box2 & light2) | pending2) & ~v2
+    pending0 = box0 & weighty0 & ~v0
+    pending1 = box1 & weighty1 & ~v1
+    pending2 = box2 & weighty2 & ~v2
+    if (depth === 1) {
+      pending0 |= entry[0] & weighty0 & ~v0
+      pending1 |= entry[1] & weighty1 & ~v1
+      pending2 |= entry[2] & weighty2 & ~v2
+    }
+    if ((n0 | n1 | n2 | pending0 | pending1 | pending2) === 0) return -1
+    v0 |= n0
+    v1 |= n1
+    v2 |= n2
+    f0 = n0
+    f1 = n1
+    f2 = n2
+    while ((f0 | f1 | f2) !== 0) {
+      boxOf(f0, f1, f2)
+      f0 = box0 & costless0 & ~v0
+      f1 = box1 & costless1 & ~v1
+      f2 = box2 & costless2 & ~v2
+      v0 |= f0
+      v1 |= f1
+      v2 |= f2
+      n0 |= f0
+      n1 |= f1
+      n2 |= f2
+    }
+    const slot = depth * LIMBS
+    layers[slot] = n0
+    layers[slot + 1] = n1
+    layers[slot + 2] = n2
+    if (((n0 & exit0) | (n1 & exit1) | (n2 & exit2)) !== 0) return depth
+    l0 = n0
+    l1 = n1
+    l2 = n2
+  }
+  return -1
+}

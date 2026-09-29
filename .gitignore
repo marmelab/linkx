@@ -31,3 +31,6 @@ supabase/.branches/
 .env
 .env.*
 supabase/functions/.env
+
+# Exports de la base du tournoi : ils nomment les IA des auteurs. Jamais versionnés.
+Supabase Snippet *.csv
