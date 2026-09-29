@@ -1,3 +1,12 @@
+---
+paths:
+  - "src/components/**"
+  - "src/App.tsx"
+  - "src/App.css"
+  - "src/index.css"
+  - "index.html"
+---
+
 # src/components — affichage
 
 Ce que doit **montrer** l'interface est spécifié dans `plan.md` (histoires 7, 8, 9 et 11). Ce fichier ne consigne que les pièges techniques : les erreurs qui coûtent cher à rediagnostiquer. La mise en page vit dans `src/App.css` et `src/index.css`.

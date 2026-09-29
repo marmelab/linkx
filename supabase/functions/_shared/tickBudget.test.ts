@@ -10,7 +10,7 @@ import {
 } from './tickBudget.ts'
 import { MOVE_DEADLINE_MS } from './botClient.ts'
 
-/** Horloge maximale d'une invocation edge, annoncée par le README. */
+/** Horloge maximale d'une invocation edge, annoncée par .claude/rules/tournoi-serveur.md. */
 const EDGE_WALL_CLOCK_MS = 150_000
 
 describe('ordre des trois délais', () => {
