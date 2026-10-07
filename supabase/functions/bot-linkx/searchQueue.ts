@@ -15,19 +15,16 @@
  */
 
 /**
- * Budget visé quand le temps ne manque pas, bien en deçà des 2 s de processeur.
+ * Budget visé quand le temps ne manque pas.
  *
- * Valeur **mesurée**, pas supposée. Le runtime ne réutilise pas son isolate
- * d'une requête simultanée à l'autre : vingt appels de front, c'est vingt
- * recherches en parallèle sur les mêmes cœurs, et le temps de processeur d'une
- * requête gonfle d'autant. Sur ce banc — vingt appels simultanés, trois lots de
- * vingt —, un budget de 1 000 ms fait couper 26 réponses sur 60 par
- * `WORKER_LIMIT` ; à 700 ms, quatre lots sur cinq passent sans une seule
- * coupure. La recherche convergeant en 640 ms environ sur la position
- * d'ouverture, la plus large du jeu, ce palier ne coûte pratiquement pas de
- * force.
+ * Valeur **mesurée** sur `npx supabase functions serve`, qui applique les
+ * seuils de la production : 1 s de processeur par isolate avant son retrait,
+ * 2 s avant la coupure. Une recherche qui franchit la première limite **en
+ * cours de requête** perd parfois sa réponse, coup calculé : 3 appels sur 450
+ * entre 1 200 et 1 500 ms, aucun sur 450 à 800 ou 900 ms, appels séquentiels
+ * comme les envoie la plateforme.
  */
-export const TARGET_BUDGET_MS = 700
+export const TARGET_BUDGET_MS = 900
 
 /** En deçà, la recherche ne vaut plus la peine d'être lancée. */
 export const MIN_BUDGET_MS = 200
