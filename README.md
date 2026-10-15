@@ -2,6 +2,8 @@
 
 Une implémentation en SPA React du jeu de plateau Linkx, jouable à deux sur le même écran ou contre l'ordinateur. L'application est installable et jouable hors ligne.
 
+<img width="1472" height="875" alt="image" src="https://github.com/user-attachments/assets/4570d2da-c62c-48d5-9571-6bc013c58d40" />
+
 Règle officielle : <https://www.jeux-abstraits.fr/wp-content/uploads/2026/07/lynkx.pdf> · fiche éditeur : <https://blueorangegames.eu/fr/jeux/linkx/>
 
 ## Démarrage
