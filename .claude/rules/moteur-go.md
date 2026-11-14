@@ -45,3 +45,10 @@ Les tampons de module du TS deviennent des champs : un `Searcher` (table de 2¹�
 ## Débit mesuré
 
 `scripts/bench-go.ts` et `go test ./conformance -run '^$' -bench ReferenceGame -benchtime 3x [-args -nodes N -budget MS]` cherchent les 24 positions en cours de la partie de référence. À 200 000 nœuds, mêmes 1 424 984 nœuds : environ 130 000 nœuds/s en TS, 360 000 à 400 000 en Go. Au budget de 2 500 ms, le Go gagne un palier sur 9 positions sur 24 (5 → 6 en ouverture, 9 → 10 au treizième demi-coup).
+
+## Force
+
+`scripts/duel-go.ts` oppose le binaire au maître TS avec le protocole de `duel-appariee.ts --comme-le-jeu` (statistique et ouvertures partagées dans `scripts/duel-commun.ts`) : les 50 premiers coups distincts de bleu, chacun joué deux fois couleurs échangées, livre puis recherche. Le binaire repartant d'une graine neuve à chaque requête, la suite graine par ouverture et par couleur tire **une graine par coup**, que chaque arme consomme comme l'entrée du maître.
+
+- Témoin, à nœuds égaux : `scripts/duel-go.ts --nodes 50000 --temoin --jobs 3` rejoue chaque ouverture TS contre TS. **100 parties sur 100 identiques** coup pour coup, donc 50 % pile. Une divergence est un bug du portage ou du harnais.
+- Au budget du jeu : `scripts/duel-go.ts --ms 2500 --jobs 3 --journal duel.jsonl` (six minutes : les parties font 17 poses, et une recherche rend la main vers 0,8 s faute de temps pour le palier suivant). Graine 1 : **58 victoires à 41**, une nulle, 58,5 % (Wilson [48,7 %, 67,7 %], apparié [51,7 %, 65,3 %]) ; ouvertures gagnées des deux couleurs **11 pour Go, 2 pour TS, p = 0,022**. Graine 2 : 54 à 46, 5 contre 1, p = 0,22, sans trancher. Profondeur moyenne 5,4 contre 5,0, environ 520 000 nœuds/s contre 173 000. Le Go est donc au moins aussi fort, et le gain d'un tiers de palier se voit en parties.
