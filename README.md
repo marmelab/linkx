@@ -68,6 +68,7 @@ supabase/migrations/ schéma, vues publiques, file, cron
 supabase/tests/      pgTAP
 docs/                déploiement, protocole des IA du tournoi
 engine-go/           portage Go du maître, à l'identique, hors du jeu et de la CI
+engine-alphazero/    plan d'une IA façon AlphaZero, à exécuter par étapes (`PLAN.md`)
 ```
 
 Les tests vivent à côté de leur module, en `*.test.ts` / `*.test.tsx`.
