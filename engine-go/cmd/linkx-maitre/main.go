@@ -1,18 +1,23 @@
 // Commande linkx-maitre : le maître en processus longue durée. Une requête JSON
 // par ligne sur l'entrée standard, une réponse JSON par ligne sur la sortie.
 //
-//	{"record": "4Lsr21 4Ss3", "budgetMs": 2500, "maxNodes": 0, "seed": 123, "book": true}
-//	{"move": "4Lsr32", "depth": 6, "nodes": 1305375, "score": 662, "exact": false, "fromBook": false, "elapsedMs": 2240}
+//	{"record": "4Lsr21 4Ss3", "budgetMs": 2500, "maxNodes": 0, "seed": 123, "book": true, "threads": 4}
+//	{"move": "4Lsr32", "depth": 6, "nodes": 1305375, "totalNodes": 7220584, "score": 662, "exact": false, "fromBook": false, "elapsedMs": 2240}
 //
 // maxNodes positif borne la recherche aux nœuds sans lire l'horloge ; sinon
 // budgetMs la borne au temps (2 500 ms par défaut). seed, s'il est fourni,
-// alimente le tirage parmi les ex æquo. Une erreur rend {"error": "…"}.
+// alimente le tirage parmi les ex æquo. threads (défaut : le drapeau
+// -threads, 1 sinon) cherche à plusieurs fils en Lazy SMP, au temps
+// seulement : borné aux nœuds, le maître reste mono-fil. nodes compte les
+// nœuds du palier retenu, totalNodes tout ce que les fils ont cherché. Une
+// erreur rend {"error": "…"}.
 package main
 
 import (
 	"bufio"
 	"encoding/json"
 	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"os"
@@ -30,24 +35,26 @@ type request struct {
 	MaxNodes int64   `json:"maxNodes"`
 	Seed     *int64  `json:"seed"`
 	Book     bool    `json:"book"`
+	Threads  int     `json:"threads"`
 }
 
 type response struct {
-	Move      string `json:"move"`
-	Depth     int    `json:"depth"`
-	Nodes     int64  `json:"nodes"`
-	Score     int    `json:"score"`
-	Exact     bool   `json:"exact"`
-	FromBook  bool   `json:"fromBook"`
-	ElapsedMs int64  `json:"elapsedMs"`
+	Move       string `json:"move"`
+	Depth      int    `json:"depth"`
+	Nodes      int64  `json:"nodes"`
+	TotalNodes int64  `json:"totalNodes"`
+	Score      int    `json:"score"`
+	Exact      bool   `json:"exact"`
+	FromBook   bool   `json:"fromBook"`
+	ElapsedMs  int64  `json:"elapsedMs"`
 }
 
 type failure struct {
 	Error string `json:"error"`
 }
 
-func answer(player *master.Player, line []byte) (any, error) {
-	var req request
+func answer(player *master.Player, line []byte, threads int) (any, error) {
+	req := request{Threads: threads}
 	if err := json.Unmarshal(line, &req); err != nil {
 		return nil, fmt.Errorf("requête illisible : %w", err)
 	}
@@ -59,7 +66,7 @@ func answer(player *master.Player, line []byte) (any, error) {
 		return nil, errors.New("la partie est déjà terminée")
 	}
 	options := master.Options{
-		Options: search.Options{BudgetMs: req.BudgetMs, MaxNodes: req.MaxNodes},
+		Options: search.Options{BudgetMs: req.BudgetMs, MaxNodes: req.MaxNodes, Threads: req.Threads},
 		Book:    req.Book,
 	}
 	if req.Seed != nil {
@@ -74,17 +81,18 @@ func answer(player *master.Player, line []byte) (any, error) {
 		return response{Move: notation.PassToken, ElapsedMs: elapsed}, nil
 	}
 	return response{
-		Move:      notation.SerializeLegalMove(decision.Move),
-		Depth:     decision.Depth,
-		Nodes:     decision.Nodes,
-		Score:     decision.Score,
-		Exact:     decision.Exact,
-		FromBook:  decision.FromBook,
-		ElapsedMs: elapsed,
+		Move:       notation.SerializeLegalMove(decision.Move),
+		Depth:      decision.Depth,
+		Nodes:      decision.Nodes,
+		TotalNodes: decision.TotalNodes,
+		Score:      decision.Score,
+		Exact:      decision.Exact,
+		FromBook:   decision.FromBook,
+		ElapsedMs:  elapsed,
 	}, nil
 }
 
-func serve(in io.Reader, out io.Writer) error {
+func serve(in io.Reader, out io.Writer, threads int) error {
 	player := master.NewPlayer()
 	reader := bufio.NewReaderSize(in, 1<<16)
 	writer := bufio.NewWriter(out)
@@ -93,7 +101,7 @@ func serve(in io.Reader, out io.Writer) error {
 	for {
 		line, readErr := reader.ReadBytes('\n')
 		if len(line) > 0 && len(trimSpace(line)) > 0 {
-			result, err := answer(player, line)
+			result, err := answer(player, line, threads)
 			if err != nil {
 				result = failure{Error: err.Error()}
 			}
@@ -125,7 +133,9 @@ func trimSpace(line []byte) []byte {
 }
 
 func main() {
-	if err := serve(os.Stdin, os.Stdout); err != nil {
+	threads := flag.Int("threads", 1, "fils de recherche par défaut d'une requête sans champ threads")
+	flag.Parse()
+	if err := serve(os.Stdin, os.Stdout, *threads); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}

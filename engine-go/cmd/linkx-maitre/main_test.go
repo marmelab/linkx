@@ -17,7 +17,7 @@ func TestServeAnswersOneLinePerRequest(t *testing.T) {
 		`pas du JSON`,
 	}, "\n")
 	var out strings.Builder
-	if err := serve(strings.NewReader(requests), &out); err != nil {
+	if err := serve(strings.NewReader(requests), &out, 1); err != nil {
 		t.Fatal(err)
 	}
 	lines := strings.Split(strings.TrimSuffix(out.String(), "\n"), "\n")
@@ -41,12 +41,29 @@ func TestServeAnswersOneLinePerRequest(t *testing.T) {
 	}
 }
 
+// Le champ threads l'emporte sur le drapeau ; au temps, totalNodes compte les aides.
+func TestServeThreads(t *testing.T) {
+	requests := `{"record": "4Lsr21 4Ss3", "budgetMs": 100}` + "\n" + `{"record": "4Lsr21 4Ss3", "budgetMs": 100, "threads": 1}`
+	var out strings.Builder
+	if err := serve(strings.NewReader(requests), &out, 3); err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(strings.TrimSuffix(out.String(), "\n"), "\n")
+	var parallel, single response
+	if len(lines) != 2 || json.Unmarshal([]byte(lines[0]), &parallel) != nil || json.Unmarshal([]byte(lines[1]), &single) != nil {
+		t.Fatalf("réponses %q", out.String())
+	}
+	if parallel.TotalNodes <= parallel.Nodes || single.TotalNodes < single.Nodes {
+		t.Errorf("trois fils : %s ; un fil : %s", lines[0], lines[1])
+	}
+}
+
 // Une réponse sort dès sa ligne traitée, sans attendre la fin de l'entrée.
 func TestServeFlushesEachAnswer(t *testing.T) {
 	inReader, inWriter := io.Pipe()
 	outReader, outWriter := io.Pipe()
 	done := make(chan error, 1)
-	go func() { done <- serve(inReader, outWriter) }()
+	go func() { done <- serve(inReader, outWriter, 1) }()
 	go inWriter.Write([]byte(`{"record": "", "maxNodes": 5000}` + "\n"))
 	line, err := bufio.NewReader(outReader).ReadString('\n')
 	if err != nil || !strings.Contains(line, `"move"`) {

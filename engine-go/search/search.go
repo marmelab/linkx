@@ -6,6 +6,7 @@ package search
 
 import (
 	"math"
+	"sync/atomic"
 	"time"
 
 	"github.com/marmelab/linkx/engine-go/board"
@@ -40,17 +41,9 @@ const (
 	IterationGrowth = 4
 )
 
-type ttEntry struct {
-	keyA, keyB uint32
-	score      int32
-	move       board.Move
-	depth      int8
-	flag       uint8
-	filled     bool
-}
-
 // Searcher porte la table, les tueurs, l'historique et les tampons d'une
-// recherche. Il n'est pas réentrant : un par fil d'exécution.
+// recherche. Il n'est pas réentrant : un par fil d'exécution. Ses aides de
+// Lazy SMP partagent sa table et ont chacun leurs tueurs, historique et tampons.
 type Searcher struct {
 	eval     Evaluator
 	position board.Position
@@ -72,6 +65,10 @@ type Searcher struct {
 	weights  Weights
 	nodes    int64
 	aborted  bool
+
+	// stop n'est posé que chez un aide : le fil principal l'arrête par là.
+	stop    *atomic.Bool
+	helpers []*Searcher
 }
 
 // NewSearcher alloue un moteur.
@@ -88,10 +85,18 @@ func (s *Searcher) exhausted() bool {
 	}
 	if s.nodes >= s.maxNodes {
 		s.aborted = true
-	} else if s.timed && s.nodes&checkInterval == 0 && s.now() >= s.deadline {
+	} else if s.timed && s.nodes&checkInterval == 0 && s.outOfTime() {
 		s.aborted = true
 	}
 	return s.aborted
+}
+
+// outOfTime : un aide ne lit jamais l'horloge, seulement l'ordre d'arrêt.
+func (s *Searcher) outOfTime() bool {
+	if s.stop != nil {
+		return s.stop.Load()
+	}
+	return s.now() >= s.deadline
 }
 
 // scoreMoves classe les coups sans les simuler : coup de la table, tueurs,
@@ -192,20 +197,21 @@ func (s *Searcher) search(depth, alpha, beta, ply int) int {
 
 	alphaOrigin := alpha
 	entry := &s.tt[position.HashA&ttMask]
+	key := ttKey(position)
 	var ttBest board.Move
-	if entry.filled && entry.keyA == position.HashA && entry.keyB == position.HashB {
-		ttBest = entry.move
-		if int(entry.depth) >= depth {
-			score := int(entry.score)
+	if hit, ok := probe(entry, key); ok {
+		ttBest = hit.move
+		if hit.depth >= depth {
+			score := hit.score
 			if score > MateThreshold {
 				score -= ply
 			} else if score < -MateThreshold {
 				score += ply
 			}
 			switch {
-			case entry.flag == flagExact,
-				entry.flag == flagLower && score >= beta,
-				entry.flag == flagUpper && score <= alpha:
+			case hit.flag == flagExact,
+				hit.flag == flagLower && score >= beta,
+				hit.flag == flagUpper && score <= alpha:
 				return score
 			}
 		}
@@ -295,10 +301,7 @@ func (s *Searcher) search(depth, alpha, beta, ply int) int {
 	} else if best >= beta {
 		flag = flagLower
 	}
-	*entry = ttEntry{
-		keyA: position.HashA, keyB: position.HashB,
-		score: int32(stored), move: bestMove, depth: int8(depth), flag: flag, filled: true,
-	}
+	store(entry, key, stored, bestMove, depth, flag)
 	return best
 }
 
@@ -317,8 +320,8 @@ func (s *Searcher) searchRoot(depth int) *rootResult {
 		return nil
 	}
 	var ttBest board.Move
-	if entry := &s.tt[position.HashA&ttMask]; entry.filled && entry.keyA == position.HashA && entry.keyB == position.HashB {
-		ttBest = entry.move
+	if hit, ok := probe(&s.tt[position.HashA&ttMask], ttKey(position)); ok {
+		ttBest = hit.move
 	}
 	s.scoreMoves(0, count, ttBest, 0, position.Side)
 
@@ -415,6 +418,14 @@ type Options struct {
 	Weights  *Weights
 	// Random départage les ex æquo ; absent, le premier l'emporte.
 	Random func() float64
+	// Threads, au-delà de 1, ajoute Threads - 1 aides de Lazy SMP. Ignoré
+	// quand MaxNodes est positif : la recherche bornée aux nœuds reste
+	// mono-fil, donc reproductible.
+	Threads int
+	// Iteration, s'il est fourni, est appelé à chaque palier achevé du fil
+	// principal, avec les nœuds de ce fil depuis le début : un observateur
+	// pour les mesures.
+	Iteration func(depth int, nodes int64)
 }
 
 // Result est le résultat d'une recherche (MasterSearch).
@@ -427,6 +438,8 @@ type Result struct {
 	// Exact dit si Score est la valeur de jeu vraie.
 	Exact bool
 	Nodes int64
+	// TotalNodes compte les nœuds de tous les fils, jusqu'à leur arrêt.
+	TotalNodes int64
 	// PV est la variante principale du premier des ex æquo.
 	PV []board.Move
 }
@@ -479,6 +492,15 @@ func (s *Searcher) TopMoves(source *rules.Position, options Options) *Result {
 	s.nodes = 0
 	s.aborted = false
 
+	threads := options.Threads
+	if !s.timed {
+		threads = 1
+	}
+	var stopHelpers func() int64
+	if threads > 1 {
+		stopHelpers = s.startHelpers(threads-1, ceiling, plies, options)
+	}
+
 	var decision *Result
 	for depth := 1; depth <= ceiling; depth++ {
 		iterationStart := 0.0
@@ -511,6 +533,9 @@ func (s *Searcher) TopMoves(source *rules.Position, options Options) *Result {
 				PV:    result.pv,
 			}
 		}
+		if options.Iteration != nil && !partial {
+			options.Iteration(depth, s.nodes)
+		}
 		if partial || exact {
 			break
 		}
@@ -522,7 +547,12 @@ func (s *Searcher) TopMoves(source *rules.Position, options Options) *Result {
 			}
 		}
 	}
+	total := s.nodes
+	if stopHelpers != nil {
+		total += stopHelpers()
+	}
 	if decision != nil {
+		decision.TotalNodes = total
 		return decision
 	}
 
@@ -532,16 +562,17 @@ func (s *Searcher) TopMoves(source *rules.Position, options Options) *Result {
 		return nil
 	}
 	first := s.moves[0]
-	return &Result{Moves: []board.Move{first}, Nodes: s.nodes, PV: []board.Move{first}}
+	return &Result{Moves: []board.Move{first}, Nodes: s.nodes, TotalNodes: total, PV: []board.Move{first}}
 }
 
 // Decision est le coup du maître (MasterDecision).
 type Decision struct {
-	Move  rules.LegalMove
-	Score int
-	Depth int
-	Exact bool
-	Nodes int64
+	Move       rules.LegalMove
+	Score      int
+	Depth      int
+	Exact      bool
+	Nodes      int64
+	TotalNodes int64
 }
 
 // Choose rend le coup du maître, tiré parmi les ex æquo par options.Random
@@ -552,11 +583,12 @@ func (s *Searcher) Choose(source *rules.Position, options Options) *Decision {
 		return nil
 	}
 	return &Decision{
-		Move:  board.ToLegalMove(PickTied(result.Moves, options.Random)),
-		Score: result.Score,
-		Depth: result.Depth,
-		Exact: result.Exact,
-		Nodes: result.Nodes,
+		Move:       board.ToLegalMove(PickTied(result.Moves, options.Random)),
+		Score:      result.Score,
+		Depth:      result.Depth,
+		Exact:      result.Exact,
+		Nodes:      result.Nodes,
+		TotalNodes: result.TotalNodes,
 	}
 }
 

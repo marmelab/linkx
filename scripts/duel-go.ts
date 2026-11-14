@@ -1,10 +1,15 @@
 /**
- * Duel apparié du maître TS contre son portage Go (`engine-go/`), comme le jeu.
+ * Duel apparié du maître TS contre son portage Go (`engine-go/`), ou de deux
+ * réglages du portage Go entre eux, comme le jeu.
  *
  *   node node_modules/vite-node/dist/cli.mjs scripts/duel-go.ts --nodes 50000 --openings 10 --temoin
  *   node node_modules/vite-node/dist/cli.mjs scripts/duel-go.ts --ms 2500 --jobs 3 --journal duel.jsonl
+ *   node node_modules/vite-node/dist/cli.mjs scripts/duel-go.ts --ms 2500 --jobs 1 --a go:threads=4 --b go:threads=1
  *
  * Options :
+ * - --a ARME, --b ARME (défaut `go` contre `ts`) : `ts`, `go` ou `go:threads=N`,
+ *   le binaire cherchant alors à N fils (Lazy SMP, au temps seulement). Avec
+ *   plusieurs fils, `--jobs 1` : sinon les processus se disputent les cœurs ;
  * - --ms N (défaut 2 500, `MASTER_BUDGET_MS`) : budget de temps par coup ;
  * - --nodes N : plafond de nœuds par coup à la place du temps ;
  * - --openings M (défaut : toutes) : nombre d'ouvertures jouées, chacune deux fois ;
@@ -13,9 +18,10 @@
  *   `choisir-ouvertures.ts` ;
  * - --graine N (défaut 1) · --jobs N · --journal FICHIER : comme `duel-appariee.ts`,
  *   le journal portant une ligne par **partie** ;
- * - --temoin : rejoue aussi chaque ouverture TS contre TS et compare les parties.
- *   À nœuds égaux, les deux moteurs étant identiques nœud pour nœud, chaque
- *   partie Go contre TS doit être celle de TS contre TS ;
+ * - --temoin : rejoue aussi chaque ouverture B contre B et compare les parties.
+ *   À nœuds égaux, si A et B sont identiques nœud pour nœud — Go et TS, ou
+ *   deux réglages de fils, ignorés aux nœuds —, chaque partie A contre B doit
+ *   être celle de B contre B ;
  * - --binaire CHEMIN : binaire du maître Go, construit d'office sinon.
  *
  * **Protocole.** Celui de `duel-appariee.ts --comme-le-jeu` : chaque ouverture
@@ -66,14 +72,27 @@ const PART = text('--part', '')
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const BINARY = text('--binaire', resolve(ROOT, 'engine-go/bin/linkx-maitre'))
 
+type Arm = { name: string; engine: 'go' | 'ts'; threads: number }
+
+function parseArm(spec: string): Arm {
+  const match = /^(go|ts)(?::threads=(\d+))?$/.exec(spec)
+  if (!match || (match[1] === 'ts' && match[2])) throw new Error(`arme inconnue : ${spec} (ts, go ou go:threads=N)`)
+  return { name: spec, engine: match[1] as Arm['engine'], threads: Number(match[2] ?? 1) }
+}
+
+const ARMS = { a: parseArm(text('--a', 'go')), b: parseArm(text('--b', 'ts')) }
+const LABELS =
+  ARMS.a.name === ARMS.b.name ? { a: `A (${ARMS.a.name})`, b: `B (${ARMS.b.name})` } : { a: ARMS.a.name, b: ARMS.b.name }
+
 const started = Date.now()
 const elapsed = () => `${((Date.now() - started) / 1000).toFixed(0)}s`
 
-type Engine = 'go' | 'ts'
+type Side = 'a' | 'b'
 
 // --- Armes -------------------------------------------------------------------
 
-type Choice = { token: string; fromBook: boolean; depth: number; nodes: number; ms: number }
+/** `nodes` : nœuds du palier retenu ; `totalNodes` : tout ce qu'ont cherché les fils. */
+type Choice = { token: string; fromBook: boolean; depth: number; nodes: number; totalNodes: number; ms: number }
 
 type GoAnswer = Partial<Choice> & { move?: string; elapsedMs?: number; error?: string }
 
@@ -91,8 +110,8 @@ class GoMaster {
     })
   }
 
-  async choose(record: string, seed: number): Promise<Choice> {
-    const request = { record, budgetMs: MS, maxNodes: NODES, seed, book: true }
+  async choose(record: string, seed: number, threads: number): Promise<Choice> {
+    const request = { record, budgetMs: MS, maxNodes: NODES, seed, book: true, threads }
     const line = await new Promise<string>((resolveLine) => {
       this.pending = resolveLine
       this.process.stdin.write(`${JSON.stringify(request)}\n`)
@@ -104,6 +123,7 @@ class GoMaster {
       fromBook: answer.fromBook ?? false,
       depth: answer.depth ?? 0,
       nodes: answer.nodes ?? 0,
+      totalNodes: answer.totalNodes ?? answer.nodes ?? 0,
       ms: answer.elapsedMs ?? 0,
     }
   }
@@ -118,7 +138,7 @@ function chooseTs(position: GamePosition, seed: number): Choice {
   const random = seededRandom(seed)
   const start = performance.now()
   const bookMove = lookupOpeningMove(position, random)
-  if (bookMove) return { token: tokenOf(bookMove), fromBook: true, depth: 0, nodes: 0, ms: 0 }
+  if (bookMove) return { token: tokenOf(bookMove), fromBook: true, depth: 0, nodes: 0, totalNodes: 0, ms: 0 }
   const decision = chooseMasterMove(position, MS > 0 ? { budgetMs: MS, random } : { maxNodes: NODES, random })
   if (!decision) throw new Error('Le joueur au trait devrait disposer d’un coup légal.')
   return {
@@ -126,6 +146,7 @@ function chooseTs(position: GamePosition, seed: number): Choice {
     fromBook: false,
     depth: decision.depth,
     nodes: decision.nodes,
+    totalNodes: decision.nodes,
     ms: performance.now() - start,
   }
 }
@@ -133,51 +154,56 @@ function chooseTs(position: GamePosition, seed: number): Choice {
 // --- Partie ------------------------------------------------------------------
 
 /** Cumuls d'une arme sur une partie, coups du livre exclus. */
-type Tally = { searches: number; depthSum: number; nodes: number; ms: number }
+type Tally = { searches: number; depthSum: number; nodes: number; totalNodes: number; ms: number }
 
-const emptyTally = (): Tally => ({ searches: 0, depthSum: 0, nodes: 0, ms: 0 })
+const TALLY_KEYS = ['searches', 'depthSum', 'nodes', 'totalNodes', 'ms'] as const
+
+const emptyTally = (): Tally => ({ searches: 0, depthSum: 0, nodes: 0, totalNodes: 0, ms: 0 })
 
 type Game = {
   opening: number
   notation: string
-  white: Engine
-  blue: Engine
+  white: Side
+  blue: Side
   record: string
-  winner: Engine | null
+  winner: Side | null
   winnerColor: PlayerId | null
-  tally: Record<Engine, Tally>
+  tally: Record<Side, Tally>
 }
 
 async function play(
   opening: Opening,
   index: number,
-  sides: Record<PlayerId, Engine>,
-  go: GoMaster,
+  sides: Record<PlayerId, Side>,
+  go: GoMaster | null,
 ): Promise<Game> {
   const seeds: Record<PlayerId, () => number> = {
     white: seededRandom(seedOf(SEED, index, 'white')),
     blue: seededRandom(seedOf(SEED, index, 'blue')),
   }
-  const tally: Record<Engine, Tally> = { go: emptyTally(), ts: emptyTally() }
+  const tally: Record<Side, Tally> = { a: emptyTally(), b: emptyTally() }
   const tokens = opening.notation.split(/\s+/).filter(Boolean)
   let position = opening.position
   let winnerColor: PlayerId | null | undefined
   for (let turn = 0; turn < 60 && winnerColor === undefined; turn += 1) {
     const player = position.activePlayer
-    const engine = sides[player]
+    const side = sides[player]
+    const arm = ARMS[side]
     const seed = Math.floor(seeds[player]() * 4_294_967_296)
-    const choice = engine === 'go' ? await go.choose(tokens.join(' '), seed) : chooseTs(position, seed)
+    const choice =
+      arm.engine === 'go' ? await go!.choose(tokens.join(' '), seed, arm.threads) : chooseTs(position, seed)
     if (!choice.fromBook) {
-      const sum = tally[engine]
+      const sum = tally[side]
       sum.searches += 1
       sum.depthSum += choice.depth
       sum.nodes += choice.nodes
+      sum.totalNodes += choice.totalNodes
       sum.ms += choice.ms
     }
     const move: LegalMove | undefined = enumerateLegalMoves(position.board, position.inventories[player]).find(
       (candidate) => tokenOf(candidate) === choice.token,
     )
-    if (!move) throw new Error(`${engine} joue ${choice.token}, illégal après « ${tokens.join(' ')} »`)
+    if (!move) throw new Error(`${arm.name} joue ${choice.token}, illégal après « ${tokens.join(' ')} »`)
     tokens.push(choice.token)
     const transition = simulateLegalMove(position, move)
     if (transition.result) winnerColor = transition.result.winner ?? null
@@ -198,21 +224,21 @@ async function play(
   }
 }
 
-/** Les deux parties d'une ouverture, Go en blanc puis Go en bleu ; et le témoin TS contre TS. */
+/** Les deux parties d'une ouverture, A en blanc puis A en bleu ; et le témoin B contre B. */
 type PairOutcome = PairResult & { games: Game[]; control?: Game }
 
-async function playPair(opening: Opening, index: number, go: GoMaster): Promise<PairOutcome> {
+async function playPair(opening: Opening, index: number, go: GoMaster | null): Promise<PairOutcome> {
   const games = [
-    await play(opening, index, { white: 'go', blue: 'ts' }, go),
-    await play(opening, index, { white: 'ts', blue: 'go' }, go),
+    await play(opening, index, { white: 'a', blue: 'b' }, go),
+    await play(opening, index, { white: 'b', blue: 'a' }, go),
   ]
-  const points = games.map((game) => (game.winner === null ? 0.5 : game.winner === 'go' ? 1 : 0))
+  const points = games.map((game) => (game.winner === null ? 0.5 : game.winner === 'a' ? 1 : 0))
   return {
     index,
     notation: opening.notation,
     points: [points[0], points[1]],
     games,
-    control: CONTROL ? await play(opening, index, { white: 'ts', blue: 'ts' }, go) : undefined,
+    control: CONTROL ? await play(opening, index, { white: 'b', blue: 'b' }, go) : undefined,
   }
 }
 
@@ -229,78 +255,81 @@ function divergence(a: string, b: string): string | null {
 // --- Exécution ---------------------------------------------------------------
 
 const openings = OPENINGS_FILE ? fileOpenings(OPENINGS_FILE, LIMIT) : defaultOpenings(LIMIT)
+const usesGo = ARMS.a.engine === 'go' || ARMS.b.engine === 'go'
 
 if (PART) {
   const [part, parts] = PART.split('/').map(Number)
-  const go = new GoMaster(BINARY)
+  const go = usesGo ? new GoMaster(BINARY) : null
   for (const [index, opening] of openings.entries()) {
     if (index % parts !== part) continue
     console.log(JSON.stringify(await playPair(opening, index, go)))
   }
-  go.close()
+  go?.close()
 } else {
-  if (!process.argv.includes('--binaire')) {
+  if (usesGo && !process.argv.includes('--binaire')) {
     const build = spawnSync('go', ['build', '-o', 'bin/linkx-maitre', './cmd/linkx-maitre'], {
       cwd: resolve(ROOT, 'engine-go'),
       stdio: 'inherit',
     })
     if (build.status !== 0) throw new Error('go build a échoué')
   }
-  if (!existsSync(BINARY)) throw new Error(`binaire introuvable : ${BINARY}`)
+  if (usesGo && !existsSync(BINARY)) throw new Error(`binaire introuvable : ${BINARY}`)
   process.stderr.write(
-    `duel apparié : go contre ts, ${MS > 0 ? `${MS} ms` : `${NODES} nœuds`} par coup, ` +
+    `duel apparié : ${LABELS.a} contre ${LABELS.b}, ${MS > 0 ? `${MS} ms` : `${NODES} nœuds`} par coup, ` +
       `${openings.length} ouvertures${OPENINGS_FILE ? ` de ${OPENINGS_FILE}` : ''}, ` +
-      `comme le jeu (graine ${SEED}), ${JOBS} processus${CONTROL ? ', avec témoin TS contre TS' : ''}\n`,
+      `comme le jeu (graine ${SEED}), ${JOBS} processus${CONTROL ? `, avec témoin ${ARMS.b.name} contre ${ARMS.b.name}` : ''}\n`,
   )
   const pairs: PairResult[] = []
-  const totals: Record<Engine, Tally> = { go: emptyTally(), ts: emptyTally() }
+  const totals: Record<Side, Tally> = { a: emptyTally(), b: emptyTally() }
   const control = { identical: 0, games: 0, divergences: [] as string[] }
   const record = (pair: PairOutcome) => {
     pairs.push({ index: pair.index, notation: pair.notation, points: pair.points })
     for (const game of pair.games) {
-      for (const engine of ['go', 'ts'] as const) {
-        for (const key of ['searches', 'depthSum', 'nodes', 'ms'] as const) totals[engine][key] += game.tally[engine][key]
+      for (const side of ['a', 'b'] as const) {
+        for (const key of TALLY_KEYS) totals[side][key] += game.tally[side][key]
       }
       const different = pair.control ? divergence(game.record, pair.control.record) : null
       if (pair.control) {
         control.games += 1
         if (different === null) control.identical += 1
-        else control.divergences.push(`${pair.notation}, go en ${game.white === 'go' ? 'blanc' : 'bleu'}, ${different}`)
+        else control.divergences.push(`${pair.notation}, A en ${game.white === 'a' ? 'blanc' : 'bleu'}, ${different}`)
       }
       if (JOURNAL) {
-        const summary = (engine: Engine) => {
-          const { searches, depthSum, nodes, ms } = game.tally[engine]
+        const summary = (side: Side) => {
+          const { searches, depthSum, totalNodes, ms } = game.tally[side]
           return {
+            arm: ARMS[side].name,
             depth: searches ? Number((depthSum / searches).toFixed(2)) : null,
-            nodesPerSecond: ms ? Math.round(nodes / (ms / 1000)) : null,
-            ...game.tally[engine],
+            nodesPerSecond: ms ? Math.round(totalNodes / (ms / 1000)) : null,
+            ...game.tally[side],
           }
         }
         const line = {
           ...game,
           tally: undefined,
-          go: summary('go'),
-          ts: summary('ts'),
+          a: summary('a'),
+          b: summary('b'),
           ...(pair.control ? { controlRecord: pair.control.record, identicalToControl: different === null } : {}),
         }
         appendFileSync(JOURNAL, `${JSON.stringify(line)}\n`)
       }
     }
     process.stderr.write(
-      `[${elapsed()}] ${pairs.length}/${openings.length} ${pair.notation} — go en blanc : ${pair.points[0]} · ` +
-        `go en bleu : ${pair.points[1]}${pair.control ? ` · témoin : ${pair.games.map((game) => (divergence(game.record, pair.control!.record) ? 'diverge' : 'identique')).join(', ')}` : ''}\n`,
+      `[${elapsed()}] ${pairs.length}/${openings.length} ${pair.notation} — A en blanc : ${pair.points[0]} · ` +
+        `A en bleu : ${pair.points[1]}${pair.control ? ` · témoin : ${pair.games.map((game) => (divergence(game.record, pair.control!.record) ? 'diverge' : 'identique')).join(', ')}` : ''}\n`,
     )
   }
   const summary = () => {
-    let out = report(pairs, openings.length, 'go', 'ts', elapsed())
-    for (const engine of ['go', 'ts'] as const) {
-      const { searches, depthSum, nodes, ms } = totals[engine]
+    let out = report(pairs, openings.length, LABELS.a, LABELS.b, elapsed())
+    for (const side of ['a', 'b'] as const) {
+      const { searches, depthSum, totalNodes, ms } = totals[side]
       out +=
-        `\n${engine} : profondeur moyenne ${searches ? (depthSum / searches).toFixed(2) : '—'} sur ${searches} recherches, ` +
-        `${ms ? Math.round(nodes / (ms / 1000)).toLocaleString('fr-FR') : '—'} nœuds/s`
+        `\n${LABELS[side]} : profondeur moyenne ${searches ? (depthSum / searches).toFixed(2) : '—'} sur ${searches} recherches, ` +
+        `${ms ? Math.round(totalNodes / (ms / 1000)).toLocaleString('fr-FR') : '—'} nœuds/s tous fils confondus, ` +
+        `${searches ? Math.round(ms / searches) : '—'} ms par recherche`
     }
     if (CONTROL) {
-      out += `\ntémoin : ${control.identical}/${control.games} parties identiques à TS contre TS (${percent(control.games ? control.identical / control.games : 0)})`
+      out += `\ntémoin : ${control.identical}/${control.games} parties identiques à ${ARMS.b.name} contre ${ARMS.b.name} (${percent(control.games ? control.identical / control.games : 0)})`
       for (const line of control.divergences) out += `\n  divergence : ${line}`
     }
     return out
