@@ -24,6 +24,7 @@ npm run dev
 | `node scripts/generate-icons.mjs` | régénère les icônes PNG de `public/` |
 | `npx supabase start` | pile Supabase locale, dans Docker |
 | `npx supabase functions serve <nom> --no-verify-jwt` | sert une fonction edge en local |
+| `cd engine-go && go test ./...` | prouve le portage Go du maître identique au TS (`.claude/rules/moteur-go.md`) |
 
 Les outils de mesure du moteur (`scripts/*.ts`) sont décrits dans `.claude/rules/moteur.md` ; le déploiement dans `docs/deploiement.md`.
 
@@ -66,6 +67,7 @@ supabase/functions/  fonctions edge ; `_shared/` porte leur logique pure
 supabase/migrations/ schéma, vues publiques, file, cron
 supabase/tests/      pgTAP
 docs/                déploiement, protocole des IA du tournoi
+engine-go/           portage Go du maître, à l'identique, hors du jeu et de la CI
 ```
 
 Les tests vivent à côté de leur module, en `*.test.ts` / `*.test.tsx`.
