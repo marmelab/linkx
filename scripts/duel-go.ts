@@ -5,13 +5,19 @@
  *   node node_modules/vite-node/dist/cli.mjs scripts/duel-go.ts --nodes 50000 --openings 10 --temoin
  *   node node_modules/vite-node/dist/cli.mjs scripts/duel-go.ts --ms 2500 --jobs 3 --journal duel.jsonl
  *   node node_modules/vite-node/dist/cli.mjs scripts/duel-go.ts --ms 2500 --jobs 1 --a go:threads=4 --b go:threads=1
+ *   node node_modules/vite-node/dist/cli.mjs scripts/duel-go.ts --ms 2500 --jobs 3 --a mcts --b go
+ *   node node_modules/vite-node/dist/cli.mjs scripts/duel-go.ts --iterations 2000 --a mcts --b mcts --temoin
  *
  * Options :
  * - --a ARME, --b ARME (défaut `go` contre `ts`) : `ts`, `go` ou `go:threads=N`,
- *   le binaire cherchant alors à N fils (Lazy SMP, au temps seulement). Avec
- *   plusieurs fils, `--jobs 1` : sinon les processus se disputent les cœurs ;
+ *   le binaire cherchant alors à N fils (Lazy SMP, au temps seulement) ; ou
+ *   `mcts`, le MCTS hybride d'`engine-mcts/`, suivi s'il le faut de ses
+ *   réglages, `mcts:threads=2,c=2.5,k=1900` (clés de `params`, voir
+ *   `.claude/rules/moteur-mcts.md`). Avec plusieurs fils, `--jobs 1` : sinon
+ *   les processus se disputent les cœurs ;
  * - --ms N (défaut 2 500, `MASTER_BUDGET_MS`) : budget de temps par coup ;
- * - --nodes N : plafond de nœuds par coup à la place du temps ;
+ * - --nodes N : plafond de nœuds par coup à la place du temps, pour `go` et `ts` ;
+ * - --iterations N : plafond d'itérations par coup à la place du temps, pour `mcts` ;
  * - --openings M (défaut : toutes) : nombre d'ouvertures jouées, chacune deux fois ;
  * - --ouvertures FICHIER : ouvertures d'un fichier JSONL (voir `duel-appariee.ts`)
  *   au lieu des 50 premiers coups distincts de bleu, ceux que mesure
@@ -22,7 +28,8 @@
  *   À nœuds égaux, si A et B sont identiques nœud pour nœud — Go et TS, ou
  *   deux réglages de fils, ignorés aux nœuds —, chaque partie A contre B doit
  *   être celle de B contre B ;
- * - --binaire CHEMIN : binaire du maître Go, construit d'office sinon.
+ * - --binaire CHEMIN, --binaire-mcts CHEMIN : binaires du maître Go et du MCTS,
+ *   construits d'office sinon.
  *
  * **Protocole.** Celui de `duel-appariee.ts --comme-le-jeu` : chaque ouverture
  * jouée deux fois, couleurs échangées ; livre d'ouverture au premier coup puis
@@ -61,7 +68,8 @@ const text = (name: string, fallback: string): string => {
 }
 
 const NODES = arg('--nodes', 0)
-const MS = NODES > 0 ? 0 : arg('--ms', 2_500)
+const ITERATIONS = arg('--iterations', 0)
+const MS = NODES > 0 && ITERATIONS === 0 ? 0 : arg('--ms', 2_500)
 const LIMIT = arg('--openings', Number.POSITIVE_INFINITY)
 const OPENINGS_FILE = text('--ouvertures', '')
 const SEED = arg('--graine', 1)
@@ -71,13 +79,22 @@ const CONTROL = process.argv.includes('--temoin')
 const PART = text('--part', '')
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const BINARY = text('--binaire', resolve(ROOT, 'engine-go/bin/linkx-maitre'))
+const MCTS_BINARY = text('--binaire-mcts', resolve(ROOT, 'engine-mcts/bin/linkx-mcts'))
 
-type Arm = { name: string; engine: 'go' | 'ts'; threads: number }
+type Arm = { name: string; engine: 'go' | 'ts' | 'mcts'; threads: number; params: Record<string, number> }
 
 function parseArm(spec: string): Arm {
-  const match = /^(go|ts)(?::threads=(\d+))?$/.exec(spec)
-  if (!match || (match[1] === 'ts' && match[2])) throw new Error(`arme inconnue : ${spec} (ts, go ou go:threads=N)`)
-  return { name: spec, engine: match[1] as Arm['engine'], threads: Number(match[2] ?? 1) }
+  const unknown = new Error(`arme inconnue : ${spec} (ts, go, go:threads=N, mcts ou mcts:threads=N,c=X,…)`)
+  const match = /^(go|ts|mcts)(?::(.+))?$/.exec(spec)
+  if (!match) throw unknown
+  const engine = match[1] as Arm['engine']
+  const pairs = (match[2] ?? '').split(',').filter(Boolean).map((pair) => pair.split('='))
+  if (pairs.some(([key, value]) => !key || !Number.isFinite(Number(value)))) throw unknown
+  const values = Object.fromEntries(pairs.map(([key, value]) => [key, Number(value)]))
+  const { threads = 1, ...params } = values
+  if (engine === 'ts' && pairs.length > 0) throw unknown
+  if (engine === 'go' && Object.keys(params).length > 0) throw unknown
+  return { name: spec, engine, threads, params }
 }
 
 const ARMS = { a: parseArm(text('--a', 'go')), b: parseArm(text('--b', 'ts')) }
@@ -91,12 +108,15 @@ type Side = 'a' | 'b'
 
 // --- Armes -------------------------------------------------------------------
 
-/** `nodes` : nœuds du palier retenu ; `totalNodes` : tout ce qu'ont cherché les fils. */
+/**
+ * `nodes` : nœuds du palier retenu ; `totalNodes` : tout ce qu'ont cherché les
+ * fils. Pour le MCTS, l'un et l'autre comptent les itérations, sans profondeur.
+ */
 type Choice = { token: string; fromBook: boolean; depth: number; nodes: number; totalNodes: number; ms: number }
 
-type GoAnswer = Partial<Choice> & { move?: string; elapsedMs?: number; error?: string }
+type GoAnswer = Partial<Choice> & { move?: string; elapsedMs?: number; iterations?: number; error?: string }
 
-/** Le binaire Go, une requête à la fois. */
+/** Un binaire Go, maître ou MCTS, une requête à la fois. */
 class GoMaster {
   private readonly process: ChildProcessByStdio<Writable, Readable, null>
   private pending: ((line: string) => void) | null = null
@@ -110,20 +130,24 @@ class GoMaster {
     })
   }
 
-  async choose(record: string, seed: number, threads: number): Promise<Choice> {
-    const request = { record, budgetMs: MS, maxNodes: NODES, seed, book: true, threads }
+  async choose(record: string, seed: number, arm: Arm): Promise<Choice> {
+    const request =
+      arm.engine === 'mcts'
+        ? { record, budgetMs: MS, maxIterations: ITERATIONS, seed, book: true, threads: arm.threads, params: arm.params }
+        : { record, budgetMs: MS, maxNodes: NODES, seed, book: true, threads: arm.threads }
     const line = await new Promise<string>((resolveLine) => {
       this.pending = resolveLine
       this.process.stdin.write(`${JSON.stringify(request)}\n`)
     })
     const answer = JSON.parse(line) as GoAnswer
-    if (answer.error || !answer.move) throw new Error(`Go, « ${record} » : ${answer.error ?? line}`)
+    if (answer.error || !answer.move) throw new Error(`${arm.name}, « ${record} » : ${answer.error ?? line}`)
+    const work = arm.engine === 'mcts' ? answer.iterations : undefined
     return {
       token: answer.move,
       fromBook: answer.fromBook ?? false,
       depth: answer.depth ?? 0,
-      nodes: answer.nodes ?? 0,
-      totalNodes: answer.totalNodes ?? answer.nodes ?? 0,
+      nodes: work ?? answer.nodes ?? 0,
+      totalNodes: work ?? answer.totalNodes ?? answer.nodes ?? 0,
       ms: answer.elapsedMs ?? 0,
     }
   }
@@ -175,7 +199,7 @@ async function play(
   opening: Opening,
   index: number,
   sides: Record<PlayerId, Side>,
-  go: GoMaster | null,
+  engines: Engines,
 ): Promise<Game> {
   const seeds: Record<PlayerId, () => number> = {
     white: seededRandom(seedOf(SEED, index, 'white')),
@@ -191,7 +215,7 @@ async function play(
     const arm = ARMS[side]
     const seed = Math.floor(seeds[player]() * 4_294_967_296)
     const choice =
-      arm.engine === 'go' ? await go!.choose(tokens.join(' '), seed, arm.threads) : chooseTs(position, seed)
+      arm.engine === 'ts' ? chooseTs(position, seed) : await engines[arm.engine]!.choose(tokens.join(' '), seed, arm)
     if (!choice.fromBook) {
       const sum = tally[side]
       sum.searches += 1
@@ -227,10 +251,10 @@ async function play(
 /** Les deux parties d'une ouverture, A en blanc puis A en bleu ; et le témoin B contre B. */
 type PairOutcome = PairResult & { games: Game[]; control?: Game }
 
-async function playPair(opening: Opening, index: number, go: GoMaster | null): Promise<PairOutcome> {
+async function playPair(opening: Opening, index: number, engines: Engines): Promise<PairOutcome> {
   const games = [
-    await play(opening, index, { white: 'a', blue: 'b' }, go),
-    await play(opening, index, { white: 'b', blue: 'a' }, go),
+    await play(opening, index, { white: 'a', blue: 'b' }, engines),
+    await play(opening, index, { white: 'b', blue: 'a' }, engines),
   ]
   const points = games.map((game) => (game.winner === null ? 0.5 : game.winner === 'a' ? 1 : 0))
   return {
@@ -238,7 +262,7 @@ async function playPair(opening: Opening, index: number, go: GoMaster | null): P
     notation: opening.notation,
     points: [points[0], points[1]],
     games,
-    control: CONTROL ? await play(opening, index, { white: 'b', blue: 'b' }, go) : undefined,
+    control: CONTROL ? await play(opening, index, { white: 'b', blue: 'b' }, engines) : undefined,
   }
 }
 
@@ -255,27 +279,39 @@ function divergence(a: string, b: string): string | null {
 // --- Exécution ---------------------------------------------------------------
 
 const openings = OPENINGS_FILE ? fileOpenings(OPENINGS_FILE, LIMIT) : defaultOpenings(LIMIT)
-const usesGo = ARMS.a.engine === 'go' || ARMS.b.engine === 'go'
+const timed = (arm: Arm) => (arm.engine === 'mcts' ? ITERATIONS === 0 : NODES === 0)
+const uses = (engine: Arm['engine']) => ARMS.a.engine === engine || ARMS.b.engine === engine
+const usesGo = uses('go')
+const usesMcts = uses('mcts')
+
+type Engines = { go?: GoMaster; mcts?: GoMaster }
+
+function build(module: string, output: string, command: string, path: string, flag: string) {
+  if (!process.argv.includes(flag)) {
+    const result = spawnSync('go', ['build', '-o', output, command], { cwd: resolve(ROOT, module), stdio: 'inherit' })
+    if (result.status !== 0) throw new Error(`go build a échoué dans ${module}`)
+  }
+  if (!existsSync(path)) throw new Error(`binaire introuvable : ${path}`)
+}
 
 if (PART) {
   const [part, parts] = PART.split('/').map(Number)
-  const go = usesGo ? new GoMaster(BINARY) : null
+  const engines: Engines = {
+    go: usesGo ? new GoMaster(BINARY) : undefined,
+    mcts: usesMcts ? new GoMaster(MCTS_BINARY) : undefined,
+  }
   for (const [index, opening] of openings.entries()) {
     if (index % parts !== part) continue
-    console.log(JSON.stringify(await playPair(opening, index, go)))
+    console.log(JSON.stringify(await playPair(opening, index, engines)))
   }
-  go?.close()
+  engines.go?.close()
+  engines.mcts?.close()
 } else {
-  if (usesGo && !process.argv.includes('--binaire')) {
-    const build = spawnSync('go', ['build', '-o', 'bin/linkx-maitre', './cmd/linkx-maitre'], {
-      cwd: resolve(ROOT, 'engine-go'),
-      stdio: 'inherit',
-    })
-    if (build.status !== 0) throw new Error('go build a échoué')
-  }
-  if (usesGo && !existsSync(BINARY)) throw new Error(`binaire introuvable : ${BINARY}`)
+  if (usesGo) build('engine-go', 'bin/linkx-maitre', './cmd/linkx-maitre', BINARY, '--binaire')
+  if (usesMcts) build('engine-mcts', 'bin/linkx-mcts', './cmd/linkx-mcts', MCTS_BINARY, '--binaire-mcts')
   process.stderr.write(
-    `duel apparié : ${LABELS.a} contre ${LABELS.b}, ${MS > 0 ? `${MS} ms` : `${NODES} nœuds`} par coup, ` +
+    `duel apparié : ${LABELS.a} contre ${LABELS.b}, ` +
+      `${[MS > 0 ? `${MS} ms` : '', NODES > 0 ? `${NODES} nœuds` : '', ITERATIONS > 0 ? `${ITERATIONS} itérations` : ''].filter(Boolean).join(' ou ')} par coup, ` +
       `${openings.length} ouvertures${OPENINGS_FILE ? ` de ${OPENINGS_FILE}` : ''}, ` +
       `comme le jeu (graine ${SEED}), ${JOBS} processus${CONTROL ? `, avec témoin ${ARMS.b.name} contre ${ARMS.b.name}` : ''}\n`,
   )
@@ -323,10 +359,15 @@ if (PART) {
     let out = report(pairs, openings.length, LABELS.a, LABELS.b, elapsed())
     for (const side of ['a', 'b'] as const) {
       const { searches, depthSum, totalNodes, ms } = totals[side]
+      const mcts = ARMS[side].engine === 'mcts'
+      const rate = ms ? Math.round(totalNodes / (ms / 1000)).toLocaleString('fr-FR') : '—'
       out +=
-        `\n${LABELS[side]} : profondeur moyenne ${searches ? (depthSum / searches).toFixed(2) : '—'} sur ${searches} recherches, ` +
-        `${ms ? Math.round(totalNodes / (ms / 1000)).toLocaleString('fr-FR') : '—'} nœuds/s tous fils confondus, ` +
-        `${searches ? Math.round(ms / searches) : '—'} ms par recherche`
+        `\n${LABELS[side]} : ` +
+        (mcts
+          ? `${searches ? Math.round(totalNodes / searches).toLocaleString('fr-FR') : '—'} itérations par coup sur ${searches} recherches, ${rate} itérations/s tous fils confondus, `
+          : `profondeur moyenne ${searches ? (depthSum / searches).toFixed(2) : '—'} sur ${searches} recherches, ${rate} nœuds/s tous fils confondus, `) +
+        `${searches ? Math.round(ms / searches) : '—'} ms par recherche` +
+        (timed(ARMS[side]) && searches ? `, ${percent(ms / searches / MS)} du budget` : '')
     }
     if (CONTROL) {
       out += `\ntémoin : ${control.identical}/${control.games} parties identiques à ${ARMS.b.name} contre ${ARMS.b.name} (${percent(control.games ? control.identical / control.games : 0)})`
@@ -347,6 +388,8 @@ if (PART) {
         ...process.argv.slice(2),
         '--binaire',
         BINARY,
+        '--binaire-mcts',
+        MCTS_BINARY,
         '--part',
         `${part}/${Math.max(1, JOBS)}`,
       ],

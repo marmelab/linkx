@@ -35,6 +35,7 @@ Les outils de mesure du moteur (`scripts/*.ts`) sont décrits dans `.claude/rule
 - `.claude/rules/` porte le savoir propre à un périmètre ; chaque règle déclare les chemins qui la chargent. Y écrire tout ce qui ne sert pas à chaque session.
   - `domaine.md` — `src/game/` : sources uniques, modèle, notation, tests de domaine
   - `moteur.md` — moteur du maître, livre d'ouverture, scripts et discipline de mesure
+  - `moteur-go.md`, `moteur-mcts.md` — `engine-go/`, `engine-mcts/` : portage, protocole, mesures
   - `interface.md` — `src/components/`, `App.tsx`, CSS : pièges de rendu et de mise en page
   - `hors-ligne.md` — `public/`, service worker, worker de recherche, sous-chemin
   - `tournoi-ecrans.md` — `src/tournament/`
@@ -68,6 +69,7 @@ supabase/migrations/ schéma, vues publiques, file, cron
 supabase/tests/      pgTAP
 docs/                déploiement, protocole des IA du tournoi
 engine-go/           portage Go du maître, à l'identique, hors du jeu et de la CI
+engine-mcts/         MCTS hybride en Go sur l'évaluation du maître, hors du jeu et de la CI
 engine-alphazero/    plan d'une IA façon AlphaZero, à exécuter par étapes (`PLAN.md`)
 ```
 
